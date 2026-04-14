@@ -1,2 +1,8 @@
 # LLM_Benchmark
 
+## Couple of Notes
+- Ho organizzato la cartella riferimenti con le repo date dalla prof, consioglio di installare github desktop a tutti e scaricare la repo e farsi github desktop collegandolo a vscode come ho fatto io (basta aprire vscode selezionando come folder attiva quella della repo), in tal modo si lavora solo da vs code per qualsiasi cosa, ricordarsi di installare tutti i pacchetti insieme dal file requirements dalla repo di alessandro gentili.
+- Avevo ipotizzato che visto che dobbiamo creare un benchmark per testare capacita di planning di LLM si possono avere tre diversi domini di planning di cui due sono quelli gia implementati da alessandro gentili (repo si trova nella cartella refs) che sono planning urbano/logico (citycar) e planning spaziale (tetris) si potrebbe aggiungere un terzo planning e cioè un planning temporale, cosi avremmo un benchmark piu serio e scelti alcuni LLM confrontare i risultati.
+- Visto che c'era l'eventualità di avere LLM che girino in locale e simo spezia mi ha accennato a delle repo github contenenti diversi dati si potrebbero analizzare tali dati e inserire quelli utili nella nostra repo
+- Bisognerebbe anche creare una cartella nella repo con dentro i papers consigliati dalòla de filippo nelle ultime mail; se riesco lo faccio ora prima di condividervi la repo
+- Prossimi passi da intraprendere potrebbero essere quelli di capire la gerarchia di cartelle dentro alla repo di alessandro gentili (quella fatta meglio delle due) utilizzancdo anche i file readme e comprendere scopo e definizione di tutte le funzioni nei files, si puo fare direttamente da vscode come citato prima

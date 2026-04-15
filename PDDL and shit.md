@@ -8,6 +8,6 @@ Una soluzione pratica potrebbe essere quella di basare la classificazione prima 
 
  Dopodichè si potrebbe passare a una classificazione basata sulla complessità del dominio specifico:
  
- <img width="731" height="438" alt="Immagine 2026-04-15 154014" src="https://github.com/user-attachments/assets/f1273923-fee7-43bf-b9e8-d5cc3008f8ed" />
+<img width="763" height="353" alt="Immagine 2026-04-15 155650" src="https://github.com/user-attachments/assets/f91ee794-aa8a-47c3-82f4-ffc4fa8194f1" />
 
 

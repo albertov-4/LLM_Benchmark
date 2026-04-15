@@ -23,3 +23,15 @@ def compute_core_metrics(valid: bool, iterations: int, plan_length: int | None, 
         plan_length=plan_length,
         error_type=error_type,
     )
+
+
+def metrics_to_dict(metrics: RunMetrics) -> dict[str, object]:
+    """Serialize a metric bundle into a plain dictionary."""
+    return {
+        "validity_at_1": metrics.validity_at_1,
+        "validity_at_k": metrics.validity_at_k,
+        "repair_success": metrics.repair_success,
+        "iterations_to_valid": metrics.iterations_to_valid,
+        "plan_length": metrics.plan_length,
+        "error_type": metrics.error_type,
+    }

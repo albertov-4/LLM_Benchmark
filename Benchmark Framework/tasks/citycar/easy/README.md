@@ -7,4 +7,4 @@ Uso previsto:
 - bassa profondita di reasoning
 - verifica di sintassi, formato e validita base
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze semplici.

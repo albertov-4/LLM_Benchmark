@@ -6,4 +6,4 @@ Uso previsto:
 - configurazioni con piu pezzi o piu trasformazioni
 - reasoning composizionale piu evidente
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze intermedie.

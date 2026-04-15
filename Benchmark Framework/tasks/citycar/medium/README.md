@@ -7,4 +7,4 @@ Uso previsto:
 - dipendenze locali piu fitte
 - maggiore bisogno di tenere traccia dello stato implicito
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze intermedie.

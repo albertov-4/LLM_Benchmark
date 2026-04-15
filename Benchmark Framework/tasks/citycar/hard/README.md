@@ -7,4 +7,4 @@ Uso previsto:
 - dipendenze a lungo raggio
 - maggiore importanza del repair iterativo
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze difficili.

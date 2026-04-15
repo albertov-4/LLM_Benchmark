@@ -3,14 +3,26 @@
 Questa cartella contiene la definizione del benchmark a livello di task.
 
 Ogni famiglia di task dovrebbe avere:
-- un `manifest.yaml`
+- una cartella dedicata, per esempio `citycar/` o `tetris/`
+- una sottocartella `domain/` con `domain.pddl`
 - tre sottocartelle: `easy`, `medium`, `hard`
-- un riferimento chiaro al file di dominio
-- un mapping esplicito delle istanze incluse nel benchmark
+- istanze `.pddl` direttamente dentro i tier di difficolta
 
-File importante:
-- `metadata/task_index.csv`: tabella piatta utile per runner e analisi
+Convenzione consigliata:
+
+```text
+tasks/
+`-- <task_family>/
+    |-- domain/
+    |   `-- domain.pddl
+    |-- easy/
+    |-- medium/
+    `-- hard/
+```
 
 Regola pratica:
-- la difficolta non va decisa solo "a occhio", ma documentata nel manifest
-- ogni istanza dovrebbe avere almeno un tag o una motivazione sintetica
+- la difficolta non va decisa solo "a occhio", ma spiegata nel `README.md` della famiglia
+- la scoperta dei task puo essere fatta direttamente dalla struttura delle cartelle
+
+Nota:
+- una cartella `metadata/` puo esistere per csv o indici futuri, ma e opzionale

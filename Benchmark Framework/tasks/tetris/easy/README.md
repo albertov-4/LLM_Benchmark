@@ -7,4 +7,4 @@ Uso previsto:
 - pochi vincoli geometrici
 - controllo del formato e della comprensione del dominio
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze semplici.

@@ -6,4 +6,4 @@ Uso previsto:
 - configurazioni con piani lunghi
 - maggiore rischio di violare precondizioni o obiettivi
 
-Le istanze sono elencate in `../manifest.yaml`.
+Inserisci qui direttamente i file `.pddl` delle istanze difficili.

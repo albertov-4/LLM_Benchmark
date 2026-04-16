@@ -17,4 +17,4 @@ La sezione corrente sarà dedicata alla comprensione logica e sintattica del lin
 
 <img width="914" height="179" alt="Immagine 2026-04-15 164621" src="https://github.com/user-attachments/assets/01e46bfb-cfc2-4a89-a30e-4c233c95df62" />
 
-La prima cosa da capire è che tutte le cartelle contenenti la definzione di un problema in PDDL (e quindi un problema di planning) dovrebbero sempre avere una struttura simile: un file 
+La prima cosa da capire è che tutte le cartelle contenenti la definzione di un problema in PDDL (e quindi un problema di planning) dovrebbero sempre avere una struttura simile: un file chiamato domain che contiene le cosiddette "regole del gioco" e una cartella che contiene i test set chiamati tutti con il nome 

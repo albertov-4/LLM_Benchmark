@@ -17,4 +17,49 @@ La sezione corrente sarà dedicata alla comprensione logica e sintattica del lin
 
 <img width="914" height="179" alt="Immagine 2026-04-15 164621" src="https://github.com/user-attachments/assets/01e46bfb-cfc2-4a89-a30e-4c233c95df62" />
 
-La prima cosa da capire è che tutte le cartelle contenenti la definzione di un problema in PDDL (e quindi un problema di planning) dovrebbero sempre avere una struttura simile: un file chiamato domain che contiene le cosiddette "regole del gioco" e una cartella che contiene i test set chiamati tutti con il nome 
+La prima cosa da capire è che tutte le cartelle contenenti la definzione di un problema in PDDL (e quindi un problema di planning) dovrebbero sempre avere una struttura simile: un file chiamato domain che contiene le cosiddette "regole del gioco" e una cartella che contiene i test set chiamati tutti con il nome "pfile1", "pfile2", ecc.
+
+## File domain
+Il file domain contiene la definzione del mondo e le regole che bisogan rispettare; ci si aspetta di trovare le seguenti informazioni:
+- Una breve descrizione del problema di planning implementato (tipicamente in inglese)
+- La definizione del dominio in PDDL (dal POV logico è assimilabile alla definizione delle variabili e delle classi usate), in particolare si avranno tre principali sezioni:
+  - **:types** che è usato per definire la gerarchia degli oggetti nel mondo, nel nostro caso si avrà un qualcosa del tipo "   (:types farm - object)" per indicare che nel mondo esiste una categoria di oggetti chiamata farm. Il trattino (-) indica     l'appartenenza a un tipo. Si possono trovare anche diversi tipi di assegnazioni come ad esempio "(:types plant - thing)".
+  - **:predicates** che non sono altro che le proprietà del mondo dati gli oggetti definiti in precedenza, tipicamente se è    stato definito un oggetto in precendenza qui troveremo le relazioni che possono legare diverse istanze di tale oggetto. Ad   esempio nel caso del problema "farmland" si ha "(:predicates (adj ?f1 ?f2 - farm))" che sta a significare che vi è una       relazione di adiacenza "adj" tra due oggetti di tipo farm che qui vengono indicati da dei segnaposto "?f1", "?f2" e il       punto interrogativo sta a significare che quella è una variabile.
+  - **:functions** sono funzioni che tipicamente gestiscono numeri reali, possono essere usati per incrementare contatori      numerici (come quello che può rappresentare il costo) oppure per associare un numero a un oggetto del nostro mondo. Nel      caso del nostro problema abbiamo "(:functions (x ?b - farm) (cost))" in cui si defniscono rispettivamente due cose           denotate da parentesi tonde: la prima è un'associazione tra un numero "x" e una variabile denotata con segnaposto "?b" di    tipo farm; la seconda è solo la definzione di un'altra funzione chiamata "cost".
+- La definizione delle possibili azioni che sono disponibili nel dominio creato, i requisiti per compiere tali azioni e gli  effetti provocati da tali azioni; ci si aspetta di trovare una struttura in cui prima di tutto si definisce l'azione e il suo nome, dopodichè si devono inserire tre diverse caratteristiche:
+  - **:parameters** in cui vengono indicati gli oggetti coinvolti dall'azione, nel nostro problema troviamo la seguente        sintassi ":parameters (?f1 ?f2 - farm)" a indicare che in questo caso gli oggetti coinvolti dall'azione sarano due oggetti   di tipo farm.
+  - **:precondition** in cui vengono indicati quali sono i prerequisiti che devono essere presenti per poter effettuare la     tale azione; qui si possono trovare espressioni come "and" e "not", da notare che espressioni con l'and vanno inserite       prima delle quantità su cui devono avere effetto  , quantità che ci si aspetta di trovare racchiuse tra parentesi tonde.     Nel nostro problema si trova la seguente sintassi: ":precondition (and (not (= ?f1 ?f2)) (>= (x ?f1) 4) (adj ?f1 ?f2) )".    Se si procede ad analizzare la sintassi si nota che per riuscire a compiere l'azione associata a questo requisito devono     sussistere contemporaneamente tre condizioni: la prima ci dice dobbiamo verificare la fattoria di partenza e di arrivo       siano diverse e lo si fa con un not; la seconda che la risorsa associata al valore "x" nella fattoria di partenza sia        almeno pari a 4; la terza che ci sia una effettiva adiacenza tra la fattoria di partenza e quella di arrivo.
+  - **:effect** non sono altro che le conseguenze che vengono implementate una volta effettuata l'azione, qnche qui possono    sussistere conseguenze multiple se è presente un "and" e nel nostro caso troviamo:":effect (and(decrease (x ?f1) 4)          (increase (x ?f2) 2) (increase (cost) 1))". Si nota che se viene eseguita l'azione si hanno 3 effetti e cioè: il pirmo è     quello di decrementare il valore (e pertanto la risorsa associata) "x" nella fattoria di partenza di un valore pari a 4,     la seconda è quella di incrementare la risorsa e quindi il valore "x" nella fattoria di arrivo di un valore pari a 2 e la    terza è quella di incrementare la funzione costo di un valore pari a 1.
+
+Questo è quello che si trova all'interno del file domani di un problema posto correttamente, di seguito un'immagine completa del file domain riguardante il problema farmland viene allegata:
+
+<img width="551" height="536" alt="Immagine 2026-04-16 112618" src="https://github.com/user-attachments/assets/3826e969-dddf-41fd-a024-8397fd3eabab" />
+
+**Nota:** l'analisi appena fatta riguarda l'azione chiamata "move-fast", si noti anche che negli effetti di questa azione si ha una sorta di perdita di risorse in quanto dalla fattoria di partenza partono 4 di una risorsa indicata con "x" (in questo problema sono workers) e alla fattoria di arrivo arrivano solo 2 workers (l'incremento di x sulla fattoria di arrivo è pari a 2).
+
+## Cartella Instances
+Questa cartella contiene tutti i file in PDDL dei test set del problema di planning, tipicamente
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

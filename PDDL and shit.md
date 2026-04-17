@@ -38,7 +38,21 @@ Questo è quello che si trova all'interno del file domani di un problema posto c
 **Nota:** l'analisi appena fatta riguarda l'azione chiamata "move-fast", si noti anche che negli effetti di questa azione si ha una sorta di perdita di risorse in quanto dalla fattoria di partenza partono 4 di una risorsa indicata con "x" (in questo problema sono workers) e alla fattoria di arrivo arrivano solo 2 workers (l'incremento di x sulla fattoria di arrivo è pari a 2).
 
 ## Cartella Instances
-Questa cartella contiene tutti i file in PDDL dei test set del problema di planning, tipicamente
+Questa cartella contiene tutti i file problem in PDDL, tipicamente sono nominati con il nome "pfileX" dove X è tipicamente un numero da 1 a 20 che sta ad indicare la difficoltà del test; per esempio nel nostro caso il file nominato "pfile1.pddl" contiene solo due oggetti farm e quindi si ha un problema di panning decisamente tendente al caso piu semplice, per avere un parametro di confronto il file "pfile20.pddl" contiene 10 farms che  complicano notevolmente il problema di planning.
+
+**Struttura problem file (pfile)**
+
+Per essere correttamente impostato il problema deve avere la seguente struttura (notare che prima di impostare il problema occorre definire il dominio e quindi redarre il file domain):
+- Gli oggetti coinvolti dal problema (nel nostro caso quante farm sono coinvolte): "(:objects farm0 farm1  - farm)"
+- Lo stato iniziale da cui bisogan partire a risolvere il problema, nel nostro casoi con 2 sole farm si parte a definire quanti workers ci sono in ogni farm (la risorsa x) e i vincoli che legano le farms, si definisce poi anche il valore delle funzione create nel file domain (nel nostro caso si inizializza il valore della cost function a 0).
+- Lo stato finale che si vuole raggiungere (il goal): in questo caso vengono definite le condizioni che devono sussistere per poter ritenere il goal raggiunto e cioè nel nostro esempio e comnde desctritto anche nel file domain l'obiettivo è quello di avere ogni farm con almeno un worker (la riisorsa x). Solitamente si va a imporre anche un vincolo su qualche altra funzione relativa a qualcosa di importante che si vuole tenere d'occhio come il costo in questo caso e in particolare la condizione da rispettare è: "(>= (+ (* 1.0 (x farm0))(+ (* 1.7 (x farm1)) 0)) 840.0)". Per analizare questa espressione bisogna tenere conto di alcuni concetti importanti tra i quali il fatto che il PDDL lavora con notazione prefissa e ciò vuol dire che gli operatori matematici vengono prima delle quantità su cui agiscono e si deve fare molta attenzione all'ordine delle parentesi per non confondersi. Nella formula sopra riportata possiamo quindi arrivare a dire che la condizione si puo tradurre in " 1* (valore x associato a farm0)+ 1.7*(valore x associato a farm1) + 0 >= 840 "; di fatto è un vincolo per verificare l'utilizzo dei workers sia stato fatto seguendo una certa linea quindi la rete LLm utilizzata deve essere in grado anche di usare le azioni a disposizione per raggiungere questo obiettivo, altra cosa da tenere in considerazione riguardo al problema specifico è che in questo caso si vede come i workers nella farm1 valgano di piu di quelli nella farm0 (si deduce dal valore 1.7 in cui moltiplichiamo x della farm1 nella formula).
+
+## Cenni sintassi generale PDDL
+In questa sezione verranno accennati diversi concetti fondamentali per la comprensione sia logica che sintattica del PDDL, verranno pertanto presentati sia concetti visti nei due punti precedenti sia xconcetti totalmente nuovi ma comunque importanti.
+
+
+
+
 
 
   

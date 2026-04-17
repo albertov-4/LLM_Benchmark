@@ -43,13 +43,44 @@ Questa cartella contiene tutti i file problem in PDDL, tipicamente sono nominati
 **Struttura problem file (pfile)**
 
 Per essere correttamente impostato il problema deve avere la seguente struttura (notare che prima di impostare il problema occorre definire il dominio e quindi redarre il file domain):
+- Prima di tutto si definsce il dominio a cui il probelma è associato
 - Gli oggetti coinvolti dal problema (nel nostro caso quante farm sono coinvolte): "(:objects farm0 farm1  - farm)"
 - Lo stato iniziale da cui bisogan partire a risolvere il problema, nel nostro casoi con 2 sole farm si parte a definire quanti workers ci sono in ogni farm (la risorsa x) e i vincoli che legano le farms, si definisce poi anche il valore delle funzione create nel file domain (nel nostro caso si inizializza il valore della cost function a 0).
-- Lo stato finale che si vuole raggiungere (il goal): in questo caso vengono definite le condizioni che devono sussistere per poter ritenere il goal raggiunto e cioè nel nostro esempio e comnde desctritto anche nel file domain l'obiettivo è quello di avere ogni farm con almeno un worker (la riisorsa x). Solitamente si va a imporre anche un vincolo su qualche altra funzione relativa a qualcosa di importante che si vuole tenere d'occhio come il costo in questo caso e in particolare la condizione da rispettare è: "(>= (+ (* 1.0 (x farm0))(+ (* 1.7 (x farm1)) 0)) 840.0)". Per analizare questa espressione bisogna tenere conto di alcuni concetti importanti tra i quali il fatto che il PDDL lavora con notazione prefissa e ciò vuol dire che gli operatori matematici vengono prima delle quantità su cui agiscono e si deve fare molta attenzione all'ordine delle parentesi per non confondersi. Nella formula sopra riportata possiamo quindi arrivare a dire che la condizione si puo tradurre in " 1* (valore x associato a farm0)+ 1.7*(valore x associato a farm1) + 0 >= 840 "; di fatto è un vincolo per verificare l'utilizzo dei workers sia stato fatto seguendo una certa linea quindi la rete LLm utilizzata deve essere in grado anche di usare le azioni a disposizione per raggiungere questo obiettivo, altra cosa da tenere in considerazione riguardo al problema specifico è che in questo caso si vede come i workers nella farm1 valgano di piu di quelli nella farm0 (si deduce dal valore 1.7 in cui moltiplichiamo x della farm1 nella formula).
+- Lo stato finale che si vuole raggiungere (il goal): in questo caso vengono definite le condizioni che devono sussistere per poter ritenere il goal raggiunto e cioè nel nostro esempio e comnde desctritto anche nel file domain l'obiettivo è quello di avere ogni farm con almeno un worker (la riisorsa x). Solitamente si va a imporre anche un vincolo su qualche altra funzione relativa a qualcosa di importante che si vuole tenere d'occhio come il costo in questo caso e in particolare la condizione da rispettare è: "(>= (+ (* 1.0 (x farm0))(+ (* 1.7 (x farm1)) 0)) 840.0)". Per analizzare questa espressione bisogna tenere conto di alcuni concetti importanti tra i quali il fatto che il PDDL lavora con notazione prefissa e ciò vuol dire che gli operatori matematici vengono prima delle quantità su cui agiscono e si deve fare molta attenzione all'ordine delle parentesi per non confondersi. Nella formula sopra riportata possiamo quindi arrivare a dire che la condizione si puo tradurre in " 1* (valore x associato a farm0)+ 1.7*(valore x associato a farm1) + 0 >= 840 "; di fatto è un vincolo per verificare l'utilizzo dei workers sia stato fatto seguendo una certa linea quindi la rete LLM utilizzata deve essere in grado anche di usare le azioni a disposizione per raggiungere questo obiettivo, altra cosa da tenere in considerazione riguardo al problema specifico è che in questo caso si vede come i workers nella farm1 valgano di piu di quelli nella farm0 (si deduce dal valore 1.7 in cui moltiplichiamo x della farm1 nella formula).
 
-## Cenni sintassi generale PDDL
-In questa sezione verranno accennati diversi concetti fondamentali per la comprensione sia logica che sintattica del PDDL, verranno pertanto presentati sia concetti visti nei due punti precedenti sia xconcetti totalmente nuovi ma comunque importanti.
+Il problema "pfile1.pddl" nella sua interezza è mostrato nella seguente immagine:
 
+<img width="515" height="458" alt="pfile1" src="https://github.com/user-attachments/assets/69de151d-406c-4454-b279-d5e2963e038f" />
+
+
+## Cenni generali PDDL
+In questa sezione verranno accennati diversi concetti fondamentali per la comprensione sia logica che sintattica del PDDL, verranno pertanto presentati sia concetti visti nei due punti precedenti sia concetti totalmente nuovi ma comunque importanti: 
+- Un problema espresso in PDDL si divide in due parti distinte: il Dominio (la descrizione del mondo in cui vive il problema) e il Problema di Planning stesso (il problema singolo che va risolto).
+- Il PDDL è un liguaggio S-expression (notazione prefissa) il che richiede il fatto che le parentesi aperte vengano sempre chiuse e nel corretto ordine e anche che l'operatore (indipendentemente dal fatto che sia logico o matematico) deve essere inserito sempre prima delle quantita su cui agisce, le quali dovranno essere racchiuse da parentesi anch'esse.
+- Il PDDL si basa su assunzione del mondo chiuso (CWA) ciò vuol dire che per quanto riguarda i singoli problemi se ci si dimentica di esplicitare qualcosa nello stato iniziale verrà considerato falso.
+- Una funzione importante del PDDL è anche quella di poter definire azioni con una certa durata, ovviamente visto che si parla di azioni queste devono essere definite nel file Domain con la sintassi appropriata, ecco un esempio:
+  <img width="530" height="358" alt="time action" src="https://github.com/user-attachments/assets/8dbe2d41-7504-44f6-ba98-fcb7423253ae" />
+
+  Esistono vari vincoli temporali come "(at start (<condition/effect>))" che significa che quello che è specificato deve      accadere all'inizio dell'azione, con sintassi analoga si ha anche "at end"  e poi si può trovare anche "(over all           (<condition>))" che specifica che la condition deve essere vera per tutta la durata dell'azione.
+- Sono già state esplorate le funzioni che sono costrutti utili alla gestione delle quantità numeriche che possono variare nel tempo man mano che vengono eseguite azioni; sono costrutti molto importanti in quanto fondamentali per gestire e conoscere i cambiamenti nelle risorse di cui si vuole tenere traccia nel problema: cost function, energy consumption ecc.
+- Ci sono poi i processi che sono utili alla rappresentazione di attività continuative nel tempo e che possono continuare a sussistere solo se le condizioni necessarie rimangono valide, se tali condizioni sono verificate i processi sono sempre attivi, ecco un esempio:
+  
+  <img width="488" height="90" alt="processo" src="https://github.com/user-attachments/assets/2343f1c5-28d1-45e9-8ca8-b3c85b586f52" />
+
+  Come si nota dal codice vengono usati per modificare variabili e costanti numeriche nel tempo man mano che rimangono attivi. Dal punto di vista del coding tradizionale i processi possono essere visti come cicli while.
+
+- Come ultimo costrutto importante ci sono gli eventi che rppresentano occorennze istantanee che possono cambiare alcune proprietà del mondo, una volta che la condizione relativa a un determinato evento diventa vera tale evento accade subito e i suoi effetti si manifestano immediatamente. Ecco un esempio:
+
+  <img width="301" height="94" alt="Evento" src="https://github.com/user-attachments/assets/e8443219-8b25-4a50-b287-7d7cf8a2d37a" />
+
+  Dal punto di vista della programmazone classica il costrutto evento può essere visto come un costrutto IF.
+
+
+
+  
+
+
+  
 
 
 

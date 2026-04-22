@@ -26,3 +26,5 @@ Regola pratica:
 
 Nota:
 - una cartella `metadata/` puo esistere per csv o indici futuri, ma e opzionale
+- `citycar/` e `tetris/` contengono gia un set starter reale con dominio e una
+  prima istanza per `easy`, `medium` e `hard`

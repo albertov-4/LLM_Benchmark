@@ -10,7 +10,10 @@ Interfaccia minima attesa:
 Adapter previsti:
 - `hf_local.py`: modelli locali Hugging Face
 - `openai_api.py`: modelli serviti via API
-- `vllm.py`: modelli esposti via server vLLM
+
+Nota:
+- al momento il flow reale del framework usa soprattutto `hf_local.py`
+- `openai_api.py` resta uno scaffold per integrazioni future via API
 
 Regola:
 - il runner non deve conoscere i dettagli del provider

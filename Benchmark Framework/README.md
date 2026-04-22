@@ -9,6 +9,7 @@ Obiettivi:
 - definire tre livelli di difficolta: `easy`, `medium`, `hard`
 - salvare output e metriche in un formato comparabile
 - partire da zero, senza dipendere dalle repo dentro `References/`
+- poter lanciare test locali reali con adapter HF e validator `VAL`
 
 Struttura:
 
@@ -57,7 +58,7 @@ Come usare questa struttura:
 3. mettere le istanze `.pddl` nelle cartelle `easy`, `medium`, `hard`
 4. registrare i modelli in `models/model_registry.yaml`
 5. scegliere un protocollo in `protocols/`
-6. lanciare la batteria di test con i runner
+6. lanciare la batteria di test con `run_benchmark.py`
 7. salvare gli output grezzi in `outputs/raw/`
 8. salvare output parsati e metriche in `outputs/parsed/` e `outputs/scored/`
 
@@ -71,7 +72,19 @@ Cartelle chiave:
 - `analysis/`: notebook e report finali
 
 Nota:
-- `citycar` e `tetris` sono lasciati come esempi di famiglie di task, ma ora
-  la struttura e pensata per essere popolata ex novo
+- `citycar` e `tetris` sono ora famiglie starter reali, con dominio e istanze
+  `easy/medium/hard` gia pronte per i primi test locali
 - eventuali manifest o file indice possono essere aggiunti in futuro, ma non
   sono necessari per far funzionare il benchmark
+
+Entry point consigliato:
+- `python "Benchmark Framework/run_benchmark.py" --use-real-validator`
+- il launcher salva un riepilogo JSON in `outputs/scored/suite_result_latest.json`
+- inoltre salva per ogni job:
+  - `outputs/raw/<model_id>/<protocol_id>/<task_family>/<instance_id>.json`
+  - `outputs/parsed/<model_id>/<protocol_id>/<task_family>/<instance_id>.json`
+  - `outputs/scored/<model_id>/<protocol_id>/<task_family>/<instance_id>.json`
+
+Setup rapido:
+- dipendenze Python in [requirements.txt](C:/Users/utente/OneDrive/Documenti/GitHub/LLM_Benchmark/Benchmark Framework/requirements.txt)
+- istruzioni ambiente e validator in [SETUP.md](C:/Users/utente/OneDrive/Documenti/GitHub/LLM_Benchmark/Benchmark Framework/SETUP.md)

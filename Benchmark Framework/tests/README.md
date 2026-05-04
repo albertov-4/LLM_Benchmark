@@ -15,6 +15,7 @@ Struttura:
 - `test_run_case.py`: smoke test della pipeline di un singolo run
 - `test_run_suite.py`: smoke test dell'orchestrazione della suite
 - `test_real_validator.py`: integrazione del validator reale `VAL` sul task toy
+- `test_clear_outputs.py`: verifica che la pulizia output preservi `.gitkeep`
 - `run_mock_suite.py`: entry point manuale per lanciare la suite con i mock
 
 Obiettivo:
@@ -32,6 +33,7 @@ Comandi utili:
 - `python "Benchmark Framework/tests/test_run_case.py"`
 - `python "Benchmark Framework/tests/test_run_suite.py"`
 - `python "Benchmark Framework/tests/test_real_validator.py"`
+- `python "Benchmark Framework/tests/test_clear_outputs.py"`
 - `python "Benchmark Framework/tests/run_mock_suite.py"`
 - `test_run_case.py` verifica anche la persistenza di `raw/parsed/scored` su una cartella temporanea
 - `python -m unittest discover -s "Benchmark Framework/tests" -p "test_*.py"`

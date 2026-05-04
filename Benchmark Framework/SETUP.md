@@ -140,6 +140,12 @@ Il benchmark salva:
 - output parsed per job in `Benchmark Framework/outputs/parsed/...`
 - output scored per job in `Benchmark Framework/outputs/scored/...`
 
+Per pulire gli output generati mantenendo cartelle e `.gitkeep`:
+
+```powershell
+python "Benchmark Framework/clear_outputs.py"
+```
+
 ## 7. Problemi comuni
 
 ### Errore su `device_map: auto`

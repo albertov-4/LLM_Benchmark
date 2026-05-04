@@ -79,6 +79,7 @@ Nota:
 
 Entry point consigliato:
 - `python "Benchmark Framework/run_benchmark.py" --use-real-validator`
+- per pulire gli output generati: `python "Benchmark Framework/clear_outputs.py"`
 - default: usa `models/model_registry_nvidia.yaml` e tutti i modelli con `enabled: true`
 - per scegliere il backend via registry: `python "Benchmark Framework/run_benchmark.py" --adapter hf_local --protocol-id direct_plan --use-real-validator`
 - per un solo modello: `python "Benchmark Framework/run_benchmark.py" --model-id nvidia_gemma_4_31b_it --use-real-validator`

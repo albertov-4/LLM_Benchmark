@@ -7,6 +7,10 @@ Struttura:
 - `mocks/`: adapter e validator finti ma controllabili
 - `fixtures/`: piccoli task e file di configurazione usati nei test
 - `test_hf_local.py`: test dell'adapter locale HF senza dipendere da modelli reali
+- `test_llama_cpp_cli_adapter.py`: test dell'adapter llama.cpp CLI senza eseguire llama.cpp
+- `test_nvidia_api_adapter.py`: test dell'adapter NVIDIA API senza chiamate remote
+- `test_ollama_adapter.py`: test dell'adapter Ollama senza richiedere un server Ollama acceso
+- `test_prepare_models.py`: test dello script di preparazione modelli senza download reali
 - `test_parser.py`: test mirati del parser condiviso
 - `test_run_case.py`: smoke test della pipeline di un singolo run
 - `test_run_suite.py`: smoke test dell'orchestrazione della suite
@@ -20,6 +24,10 @@ Obiettivo:
 
 Comandi utili:
 - `python "Benchmark Framework/tests/test_hf_local.py"`
+- `python "Benchmark Framework/tests/test_llama_cpp_cli_adapter.py"`
+- `python "Benchmark Framework/tests/test_nvidia_api_adapter.py"`
+- `python "Benchmark Framework/tests/test_ollama_adapter.py"`
+- `python "Benchmark Framework/tests/test_prepare_models.py"`
 - `python "Benchmark Framework/tests/test_parser.py"`
 - `python "Benchmark Framework/tests/test_run_case.py"`
 - `python "Benchmark Framework/tests/test_run_suite.py"`

@@ -1,7 +1,9 @@
 """Local Hugging Face adapter for benchmark runs.
 
-This adapter is intended to be usable for real local runs while still staying
-testable without requiring `torch` or `transformers` at import time.
+This adapter accepts either a local model directory or a Hugging Face repo id.
+For HPC runs, prepare models first and point `weights_path` to local files; the
+standard `HF_HUB_OFFLINE` and `TRANSFORMERS_OFFLINE` environment variables are
+honored by the underlying Hugging Face libraries.
 """
 
 from dataclasses import dataclass
@@ -49,7 +51,7 @@ class HFLocalAdapter:
         return torch, AutoModelForCausalLM, AutoTokenizer
 
     def _resolve_model_source(self) -> str:
-        """Return the source passed to `from_pretrained(...)`."""
+        """Return the local path or repo id passed to `from_pretrained(...)`."""
         weights_path = self.config.weights_path.strip()
         if weights_path:
             candidate = Path(weights_path)

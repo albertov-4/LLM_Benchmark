@@ -4,7 +4,7 @@ Questa cartella contiene i componenti comuni di valutazione.
 
 Componenti:
 - `parser.py`: trasforma output grezzo in piano strutturato
-- `validator.py`: interfaccia comune al validator esterno e contratto di `ValidationResult`
+- `validator.py`: interfaccia comune al validator esterno e struttura di `ValidationResult`
 - `metrics.py`: metriche aggregate e per-run
 - `error_taxonomy.py`: insieme controllato di tipi di errore condivisi tra validator, parser e scoring
 

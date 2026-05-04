@@ -491,9 +491,9 @@ def build_model_adapter(
 ):
     """Build the adapter used by one suite job.
 
-    If no external factory is provided, this tries to instantiate the local
-    HF scaffold when possible. Otherwise it falls back to a placeholder adapter
-    so the suite orchestration can still be exercised end-to-end.
+    If no external factory is provided, this tries to instantiate a concrete
+    adapter when possible. Otherwise it falls back to a placeholder adapter so
+    the suite orchestration can still be exercised end-to-end.
     """
     if adapter_factory is not None:
         return adapter_factory(model_entry, protocol_config)
@@ -528,6 +528,108 @@ def build_model_adapter(
                 add_generation_prompt=bool(model_entry.get("add_generation_prompt", True)),
             )
             return hf_module.HFLocalAdapter(hf_config)
+        except Exception:
+            return _PlaceholderAdapter(model_id)
+
+    if adapter_name == "ollama":
+        try:
+            ollama_module = _load_framework_module(
+                "benchmark_framework_ollama_adapter",
+                "models/adapters/ollama.py",
+            )
+            generation_config = protocol_config.raw_config.get("generation", {})
+            if not isinstance(generation_config, dict):
+                generation_config = {}
+
+            top_k = generation_config.get("top_k", 10)
+            if top_k is None:
+                top_k = 10
+
+            ollama_config = ollama_module.OllamaConfig(
+                model_id=model_id,
+                ollama_model=str(model_entry.get("ollama_model", model_entry.get("api_model_name", ""))),
+                base_url=str(model_entry.get("base_url", "http://localhost:11434")),
+                temperature=float(generation_config.get("temperature", 0.0) or 0.0),
+                top_k=int(top_k),
+                max_tokens=int(generation_config.get("max_tokens", 4096) or 4096),
+                timeout_seconds=int(model_entry.get("timeout_seconds", 300) or 300),
+            )
+            return ollama_module.OllamaAdapter(ollama_config)
+        except Exception:
+            return _PlaceholderAdapter(model_id)
+
+    if adapter_name == "nvidia_api":
+        try:
+            nvidia_module = _load_framework_module(
+                "benchmark_framework_nvidia_api_adapter",
+                "models/adapters/nvidia_api.py",
+            )
+            generation_config = protocol_config.raw_config.get("generation", {})
+            if not isinstance(generation_config, dict):
+                generation_config = {}
+
+            extra_body: dict[str, Any] = {}
+            thinking_key = str(model_entry.get("thinking_key", "") or "").strip()
+            if thinking_key:
+                extra_body["chat_template_kwargs"] = {
+                    thinking_key: bool(model_entry.get("thinking_enabled", False)),
+                }
+            if model_entry.get("reasoning_budget") not in {None, "", "none"}:
+                extra_body["reasoning_budget"] = int(model_entry.get("reasoning_budget"))
+
+            nvidia_config = nvidia_module.NvidiaAPIConfig(
+                model_id=model_id,
+                api_model_name=str(model_entry.get("api_model_name", model_id)),
+                base_url=str(model_entry.get("base_url", "https://integrate.api.nvidia.com/v1")),
+                api_key_env=str(model_entry.get("api_key_env", "NVIDIA_API_KEY")),
+                api_mode=str(model_entry.get("api_mode", "chat_completions")),
+                stream=bool(model_entry.get("stream", False)),
+                temperature=float(model_entry.get("temperature", generation_config.get("temperature", 0.0)) or 0.0),
+                top_p=float(model_entry.get("top_p", generation_config.get("top_p", 0.95)) or 0.95),
+                max_tokens=int(model_entry.get("max_tokens", generation_config.get("max_tokens", 4096)) or 4096),
+                timeout_seconds=int(model_entry.get("timeout_seconds", 300) or 300),
+                extra_body=extra_body,
+            )
+            return nvidia_module.NvidiaAPIAdapter(nvidia_config)
+        except Exception:
+            return _PlaceholderAdapter(model_id)
+
+    if adapter_name == "llama_cpp_cli":
+        try:
+            llama_cpp_module = _load_framework_module(
+                "benchmark_framework_llama_cpp_cli_adapter",
+                "models/adapters/llama_cpp_cli.py",
+            )
+            generation_config = protocol_config.raw_config.get("generation", {})
+            if not isinstance(generation_config, dict):
+                generation_config = {}
+
+            top_k = generation_config.get("top_k", 10)
+            if top_k is None:
+                top_k = 10
+
+            llama_cpp_config = llama_cpp_module.LlamaCppCLIConfig(
+                model_id=model_id,
+                executable_path=str(model_entry.get("executable_path", "llama-cli")),
+                model_path=str(model_entry.get("model_path", model_entry.get("weights_path", ""))),
+                temperature=float(generation_config.get("temperature", 0.0) or 0.0),
+                top_k=int(top_k),
+                top_p=float(generation_config.get("top_p", model_entry.get("top_p", 0.95)) or 0.95),
+                max_tokens=int(generation_config.get("max_tokens", 4096) or 4096),
+                context_size=(
+                    None
+                    if model_entry.get("context_size") in {None, "", "none"}
+                    else int(model_entry.get("context_size"))
+                ),
+                threads=(
+                    None
+                    if model_entry.get("threads") in {None, "", "none"}
+                    else int(model_entry.get("threads"))
+                ),
+                timeout_seconds=int(model_entry.get("timeout_seconds", 300) or 300),
+                extra_args=[],
+            )
+            return llama_cpp_module.LlamaCppCLIAdapter(llama_cpp_config)
         except Exception:
             return _PlaceholderAdapter(model_id)
 
@@ -673,6 +775,9 @@ def run_suite(
     protocols_root: str | Path | None = None,
     prompts_root: str | Path | None = None,
     model_registry_path: str | Path | None = None,
+    model_id: str | None = None,
+    protocol_id: str | None = None,
+    adapter_override: str | None = None,
     output_root: str | Path | None = None,
     adapter_factory: Callable[[dict[str, Any], LoadedProtocolConfig], Any] | None = None,
     validator: Any | None = None,
@@ -690,6 +795,7 @@ def run_suite(
     Current behavior:
     - discover task cases from the benchmark folders
     - load protocol metadata and model registry entries
+    - optionally select one model, one protocol, or override adapters for enabled models
     - build adapters and validators for each job
     - call `run_case(...)` for every matrix entry
     - aggregate normalized results
@@ -702,17 +808,43 @@ def run_suite(
     resolved_tasks_root = _resolve_framework_path(tasks_root, "tasks")
     resolved_protocols_root = _resolve_framework_path(protocols_root, "protocols")
     resolved_prompts_root = _resolve_framework_path(prompts_root, "prompts")
-    resolved_model_registry_path = _resolve_framework_path(model_registry_path, "models/model_registry.yaml")
+    resolved_model_registry_path = _resolve_framework_path(model_registry_path, "models/model_registry_nvidia.yaml")
     resolved_output_root = _resolve_framework_path(output_root, "outputs") if output_root is not None else None
 
     task_cases = discover_task_cases(resolved_tasks_root)
-    model_entries = [
-        entry
-        for entry in load_model_registry_entries_pseudocode(resolved_model_registry_path)
-        if bool(entry.get("enabled", True))
-    ]
+    all_model_entries = load_model_registry_entries_pseudocode(resolved_model_registry_path)
+    if model_id is not None:
+        model_entries = [
+            entry
+            for entry in all_model_entries
+            if str(entry.get("model_id", "")) == model_id
+        ]
+    else:
+        model_entries = [
+            entry
+            for entry in all_model_entries
+            if bool(entry.get("enabled", True))
+        ]
+        if adapter_override is not None:
+            model_entries = [
+                {
+                    **entry,
+                    "adapter": adapter_override,
+                }
+                for entry in model_entries
+            ]
+
     model_ids = [str(entry["model_id"]) for entry in model_entries if "model_id" in entry]
-    protocol_ids = discover_protocol_ids(resolved_protocols_root)
+    discovered_protocol_ids = discover_protocol_ids(resolved_protocols_root)
+    if protocol_id is not None:
+        if protocol_id not in discovered_protocol_ids:
+            raise ValueError(
+                f"Protocol {protocol_id!r} was not found in {resolved_protocols_root}. "
+                f"Available protocols: {', '.join(discovered_protocol_ids) or 'none'}"
+            )
+        protocol_ids = [protocol_id]
+    else:
+        protocol_ids = discovered_protocol_ids
     run_matrix = build_run_matrix(task_cases, model_ids, protocol_ids)
 
     model_lookup = {
@@ -729,7 +861,14 @@ def run_suite(
     suite_results: list[dict[str, Any]] = []
     orchestration_errors: list[dict[str, Any]] = []
 
-    for job in run_matrix:
+    total_jobs = len(run_matrix)
+    for job_index, job in enumerate(run_matrix, start=1):
+        task_label = f"{job.task_case.task_family}/{job.task_case.tier}/{job.task_case.instance_id}"
+        print(
+            f"[{job_index}/{total_jobs}] START "
+            f"model={job.model_id} protocol={job.protocol_id} task={task_label}",
+            flush=True,
+        )
         try:
             protocol_config = load_protocol_config_pseudocode(job.protocol_id, resolved_protocols_root)
             protocol_spec = build_protocol_spec(protocol_config)
@@ -768,7 +907,16 @@ def run_suite(
                 feedback_prompt=prompt_bundle.feedback_prompt,
                 output_root=resolved_output_root,
             )
-            suite_results.append(_normalize_record(result))
+            normalized_result = _normalize_record(result)
+            suite_results.append(normalized_result)
+            solved = normalized_result.get("solved")
+            iterations_used = normalized_result.get("iterations_used")
+            print(
+                f"[{job_index}/{total_jobs}] DONE "
+                f"model={job.model_id} protocol={job.protocol_id} task={task_label} "
+                f"solved={solved} iterations={iterations_used}",
+                flush=True,
+            )
         except Exception as exc:
             error_payload = {
                 "model_id": job.model_id,
@@ -780,6 +928,12 @@ def run_suite(
                 "error_message": str(exc),
             }
             orchestration_errors.append(error_payload)
+            print(
+                f"[{job_index}/{total_jobs}] ERROR "
+                f"model={job.model_id} protocol={job.protocol_id} task={task_label} "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
             if stop_on_error:
                 raise
 

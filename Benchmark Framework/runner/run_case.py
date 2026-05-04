@@ -119,7 +119,7 @@ def _build_artifact_paths(
     task_spec: TaskSpec,
 ) -> tuple[Path, Path, Path]:
     """Return the canonical raw/parsed/scored paths for one run."""
-    relative_dir = Path(model_id) / protocol_id / task_spec.task_family
+    relative_dir = Path(model_id) / protocol_id / task_spec.task_family / task_spec.tier
     file_name = f"{task_spec.instance_id}.json"
     return (
         output_root / "raw" / relative_dir / file_name,

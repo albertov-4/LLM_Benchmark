@@ -255,6 +255,9 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertTrue(raw_path.exists())
             self.assertTrue(parsed_path.exists())
             self.assertTrue(scored_path.exists())
+            self.assertIn("easy", raw_path.parts)
+            self.assertIn("easy", parsed_path.parts)
+            self.assertIn("easy", scored_path.parts)
 
             raw_payload = json.loads(raw_path.read_text(encoding="utf-8"))
             parsed_payload = json.loads(parsed_path.read_text(encoding="utf-8"))

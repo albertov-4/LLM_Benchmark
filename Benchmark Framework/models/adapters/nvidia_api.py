@@ -1,0 +1,245 @@
+"""NVIDIA API adapter using the OpenAI-compatible client."""
+
+from dataclasses import dataclass, field
+from importlib import import_module
+import json
+import os
+from pathlib import Path
+from time import perf_counter
+from typing import Any
+
+
+@dataclass(slots=True)
+class NvidiaAPIConfig:
+    model_id: str
+    api_model_name: str
+    base_url: str = "https://integrate.api.nvidia.com/v1"
+    api_key_env: str = "NVIDIA_API_KEY"
+    secrets_path: str = "secrets.local.json"
+    api_mode: str = "chat_completions"
+    stream: bool = False
+    temperature: float = 0.0
+    top_p: float = 0.95
+    max_tokens: int = 4096
+    timeout_seconds: int = 300
+    extra_body: dict[str, Any] = field(default_factory=dict)
+
+
+class NvidiaAPIAdapter:
+    """Adapter for NVIDIA-hosted chat models exposed through OpenAI API shape."""
+
+    def __init__(self, config: NvidiaAPIConfig):
+        self.config = config
+        self.client: Any | None = None
+
+    def _load_openai_client_class(self):
+        try:
+            openai_module = import_module("openai")
+        except ImportError as exc:  # pragma: no cover - depends on local env
+            raise RuntimeError("NvidiaAPIAdapter requires `openai` to be installed.") from exc
+        return getattr(openai_module, "OpenAI")
+
+    def _get_api_key(self) -> str:
+        api_key = os.environ.get(self.config.api_key_env, "").strip()
+        if api_key:
+            return api_key
+
+        api_key = self._get_api_key_from_local_secrets()
+        if api_key:
+            return api_key
+
+        raise RuntimeError(
+            f"NVIDIA API key not found. Set `{self.config.api_key_env}` "
+            f"or add it to {self._resolve_secrets_path()}."
+        )
+
+    def _resolve_secrets_path(self) -> Path:
+        secrets_path = Path(self.config.secrets_path)
+        if secrets_path.is_absolute():
+            return secrets_path
+        return Path(__file__).resolve().parents[2] / secrets_path
+
+    def _get_api_key_from_local_secrets(self) -> str:
+        secrets_path = self._resolve_secrets_path()
+        if not secrets_path.exists():
+            return ""
+
+        try:
+            payload = json.loads(secrets_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid JSON in local secrets file: {secrets_path}") from exc
+
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"Local secrets file must contain a JSON object: {secrets_path}")
+
+        value = payload.get(self.config.api_key_env, "")
+        if not isinstance(value, str):
+            raise RuntimeError(
+                f"Secret `{self.config.api_key_env}` in {secrets_path} must be a string."
+            )
+        return value.strip()
+
+    def _get_client(self):
+        if self.client is not None:
+            return self.client
+
+        OpenAI = self._load_openai_client_class()
+        self.client = OpenAI(
+            base_url=self.config.base_url,
+            api_key=self._get_api_key(),
+            timeout=self.config.timeout_seconds,
+        )
+        return self.client
+
+    @staticmethod
+    def _extract_usage(completion: Any) -> dict[str, Any]:
+        usage = getattr(completion, "usage", None)
+        if usage is None:
+            return {
+                "prompt_tokens": None,
+                "completion_tokens": None,
+                "total_tokens": None,
+            }
+
+        return {
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None),
+        }
+
+    @staticmethod
+    def _extract_raw_text(completion: Any) -> str:
+        choices = getattr(completion, "choices", None) or []
+        if not choices:
+            return ""
+
+        first_choice = choices[0]
+        message = getattr(first_choice, "message", None)
+        if message is None:
+            return ""
+
+        return str(getattr(message, "content", "") or "").strip()
+
+    @staticmethod
+    def _render_messages_as_input(messages: list[dict[str, str]]) -> str:
+        rendered_lines: list[str] = []
+        for message in messages:
+            role = str(message.get("role", "user")).upper()
+            content = str(message.get("content", "")).strip()
+            rendered_lines.append(f"{role}:\n{content}")
+        return "\n\n".join(rendered_lines).strip()
+
+    @staticmethod
+    def _extract_response_text(response: Any) -> str:
+        output_text = getattr(response, "output_text", None)
+        if output_text is not None:
+            return str(output_text).strip()
+
+        output = getattr(response, "output", None)
+        if isinstance(output, list):
+            chunks: list[str] = []
+            for item in output:
+                content = getattr(item, "content", None)
+                if not isinstance(content, list):
+                    continue
+                for content_item in content:
+                    text = getattr(content_item, "text", None)
+                    if text:
+                        chunks.append(str(text))
+            if chunks:
+                return "".join(chunks).strip()
+
+        return str(response).strip()
+
+    def _generate_chat_completion(self, client, messages: list[dict[str, str]]) -> dict[str, Any]:
+        completion = client.chat.completions.create(
+            model=self.config.api_model_name,
+            messages=messages,
+            temperature=self.config.temperature,
+            top_p=self.config.top_p,
+            max_tokens=self.config.max_tokens,
+            extra_body=self.config.extra_body,
+            stream=self.config.stream,
+        )
+
+        if not self.config.stream:
+            return {
+                "raw_text": self._extract_raw_text(completion),
+                "reasoning_text": "",
+                "usage": self._extract_usage(completion),
+            }
+
+        content_chunks: list[str] = []
+        reasoning_chunks: list[str] = []
+        for chunk in completion:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+
+            delta = getattr(choices[0], "delta", None)
+            if delta is None:
+                continue
+
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                reasoning_chunks.append(str(reasoning))
+
+            content = getattr(delta, "content", None)
+            if content is not None:
+                content_chunks.append(str(content))
+
+        return {
+            "raw_text": "".join(content_chunks).strip(),
+            "reasoning_text": "".join(reasoning_chunks).strip(),
+            "usage": {
+                "prompt_tokens": None,
+                "completion_tokens": None,
+                "total_tokens": None,
+            },
+        }
+
+    def _generate_response(self, client, messages: list[dict[str, str]]) -> dict[str, Any]:
+        response = client.responses.create(
+            model=self.config.api_model_name,
+            input=self._render_messages_as_input(messages),
+            max_output_tokens=self.config.max_tokens,
+            top_p=self.config.top_p,
+            temperature=self.config.temperature,
+            stream=self.config.stream,
+        )
+
+        if self.config.stream:
+            chunks = [str(chunk) for chunk in response]
+            raw_text = "".join(chunks).strip()
+        else:
+            raw_text = self._extract_response_text(response)
+
+        return {
+            "raw_text": raw_text,
+            "reasoning_text": "",
+            "usage": self._extract_usage(response),
+        }
+
+    def generate(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        """Run one NVIDIA API generation and return a normalized payload."""
+        client = self._get_client()
+
+        start_time = perf_counter()
+        if self.config.api_mode == "responses":
+            generation = self._generate_response(client, messages)
+        else:
+            generation = self._generate_chat_completion(client, messages)
+        latency_s = perf_counter() - start_time
+
+        notes: list[str] = []
+        if generation["reasoning_text"]:
+            notes.append("reasoning_content captured separately from raw_text.")
+
+        return {
+            "model_id": self.config.model_id,
+            "raw_text": generation["raw_text"],
+            "usage": generation["usage"],
+            "latency_s": latency_s,
+            "notes": notes,
+            "reasoning_text": generation["reasoning_text"],
+        }

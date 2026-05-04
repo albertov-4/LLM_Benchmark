@@ -14,6 +14,20 @@ from pathlib import Path
 from typing import Any
 
 
+DEFAULT_MODEL_REGISTRY_PATH = "models/model_registry_nvidia.yaml"
+
+ADAPTER_REGISTRY_PATHS = {
+    "nvidia": "models/model_registry_nvidia.yaml",
+    "nvidia_api": "models/model_registry_nvidia.yaml",
+    "hf": "models/model_registry_hf.yaml",
+    "hf_local": "models/model_registry_hf.yaml",
+    "huggingface": "models/model_registry_hf.yaml",
+    "ollama": "models/model_registry_ollama.yaml",
+    "llama_cpp": "models/model_registry_llama_cpp.yaml",
+    "llama_cpp_cli": "models/model_registry_llama_cpp.yaml",
+}
+
+
 def _load_module(module_name: str, path: Path):
     spec = spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
@@ -36,6 +50,15 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _resolve_model_registry_path(model_registry_path: str | None, adapter: str | None) -> str:
+    """Resolve the registry selected by explicit path, adapter shortcut, or default."""
+    if model_registry_path:
+        return model_registry_path
+    if adapter:
+        return ADAPTER_REGISTRY_PATHS[adapter]
+    return DEFAULT_MODEL_REGISTRY_PATH
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the LLM planning benchmark suite.")
     parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark Framework.")
@@ -43,8 +66,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompts-root", default="prompts", help="Prompts root relative to Benchmark Framework.")
     parser.add_argument(
         "--model-registry-path",
-        default="models/model_registry.yaml",
-        help="Model registry path relative to Benchmark Framework.",
+        default=None,
+        help="Manual model registry path relative to Benchmark Framework. Overrides --adapter.",
+    )
+    parser.add_argument(
+        "--model-id",
+        default=None,
+        help="Run only one model from the registry, using its YAML adapter.",
+    )
+    parser.add_argument(
+        "--protocol-id",
+        default=None,
+        help="Run only one protocol from the protocols folder.",
+    )
+    parser.add_argument(
+        "--adapter",
+        choices=sorted(ADAPTER_REGISTRY_PATHS),
+        default=None,
+        help="Select the matching model registry automatically, for example hf_local, nvidia_api, ollama, or llama_cpp_cli.",
     )
     parser.add_argument(
         "--output-root",
@@ -94,12 +133,18 @@ def main() -> int:
         "benchmark_framework_run_suite_entrypoint",
         framework_root / "runner" / "run_suite.py",
     )
+    resolved_model_registry_path = _resolve_model_registry_path(
+        model_registry_path=args.model_registry_path,
+        adapter=args.adapter,
+    )
 
     result = run_suite_module.run_suite(
         tasks_root=args.tasks_root,
         protocols_root=args.protocols_root,
         prompts_root=args.prompts_root,
-        model_registry_path=args.model_registry_path,
+        model_registry_path=resolved_model_registry_path,
+        model_id=args.model_id,
+        protocol_id=args.protocol_id,
         output_root=args.output_root,
         use_real_validator=args.use_real_validator,
         validator_command=args.validator_command,

@@ -160,6 +160,73 @@ class RunSuiteSmokeTest(unittest.TestCase):
         self.assertIn("TOY DOMAIN PROMPT", messages[1]["content"])
         self.assertIn("FINAL ANSWER FORMAT", messages[1]["content"])
 
+    def test_run_suite_filters_one_protocol_id(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_protocol_filter_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_suite_protocol_filter_adapter_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_protocol_filter_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        def adapter_factory(model_entry, protocol_config):
+            return mock_adapter_module.MockAdapter(
+                scripted_outputs=["(move a b)"],
+                model_id=str(model_entry.get("model_id", "mock_model")),
+            )
+
+        protocol_body = "\n".join(
+            [
+                "prompting:",
+                "  use_system_prompt: true",
+                "  include_domain_prompt: true",
+                "  include_examples: false",
+                "  include_chain_of_thought: false",
+                "  include_external_feedback: false",
+                "evaluation:",
+                "  max_iterations: 1",
+                "  require_final_plan_only: true",
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prompts_root = Path(tmp_dir)
+            (prompts_root / "system.txt").write_text("SYSTEM PROMPT", encoding="utf-8")
+            (prompts_root / "toy.txt").write_text("TOY DOMAIN PROMPT", encoding="utf-8")
+            (prompts_root / "feedback.txt").write_text("FEEDBACK PROMPT", encoding="utf-8")
+            protocols_root = prompts_root / "protocols"
+            protocols_root.mkdir()
+            (protocols_root / "direct_plan.yaml").write_text(
+                "protocol_id: direct_plan\n" + protocol_body,
+                encoding="utf-8",
+            )
+            (protocols_root / "iterative_repair.yaml").write_text(
+                "protocol_id: iterative_repair\n" + protocol_body,
+                encoding="utf-8",
+            )
+
+            fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+            result = run_suite_module.run_suite(
+                tasks_root=fixtures_root / "tasks",
+                protocols_root=protocols_root,
+                prompts_root=prompts_root,
+                model_registry_path=fixtures_root / "models" / "model_registry.yaml",
+                protocol_id="direct_plan",
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+            )
+
+        self.assertEqual(result["protocol_ids"], ["direct_plan"])
+        self.assertEqual(result["summary"]["num_protocols"], 1)
+        self.assertEqual(result["summary"]["num_jobs"], 1)
+        self.assertEqual({job["protocol_id"] for job in result["run_matrix"]}, {"direct_plan"})
+
     def test_run_suite_can_use_real_validator(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         validate_command = _resolve_validate_command(framework_root)
@@ -196,6 +263,123 @@ class RunSuiteSmokeTest(unittest.TestCase):
         self.assertEqual(result["aggregate_results"]["overall"]["num_solved"], 1)
         self.assertEqual(result["suite_results"][0]["validation_result"]["status"], "valid")
         self.assertEqual(result["orchestration_errors"], [])
+
+    def test_adapter_override_applies_to_enabled_models(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_adapter_override_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_suite_adapter_override_adapter_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_adapter_override_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        captured_entries = []
+
+        def adapter_factory(model_entry, protocol_config):
+            captured_entries.append(dict(model_entry))
+            return mock_adapter_module.MockAdapter(
+                scripted_outputs=["(move a b)"],
+                model_id=str(model_entry.get("model_id", "mock_model")),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            registry_path = tmp_root / "model_registry.yaml"
+            registry_path.write_text(
+                "\n".join(
+                    [
+                        "models:",
+                        "  - model_id: model_a",
+                        "    adapter: hf_local",
+                        "    provider: huggingface_local",
+                        "    enabled: true",
+                        "  - model_id: model_b",
+                        "    adapter: ollama",
+                        "    provider: ollama_local",
+                        "    enabled: true",
+                        "  - model_id: model_c",
+                        "    adapter: hf_local",
+                        "    provider: huggingface_local",
+                        "    enabled: false",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+            result = run_suite_module.run_suite(
+                tasks_root=fixtures_root / "tasks",
+                protocols_root=fixtures_root / "protocols",
+                model_registry_path=registry_path,
+                adapter_override="nvidia_api",
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+            )
+
+        self.assertEqual(result["model_ids"], ["model_a", "model_b"])
+        self.assertEqual([entry["adapter"] for entry in captured_entries], ["nvidia_api", "nvidia_api"])
+
+    def test_model_id_selection_uses_yaml_adapter_even_with_override(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_model_id_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_suite_model_id_adapter_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_model_id_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        captured_entries = []
+
+        def adapter_factory(model_entry, protocol_config):
+            captured_entries.append(dict(model_entry))
+            return mock_adapter_module.MockAdapter(
+                scripted_outputs=["(move a b)"],
+                model_id=str(model_entry.get("model_id", "mock_model")),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            registry_path = tmp_root / "model_registry.yaml"
+            registry_path.write_text(
+                "\n".join(
+                    [
+                        "models:",
+                        "  - model_id: model_a",
+                        "    adapter: hf_local",
+                        "    provider: huggingface_local",
+                        "    enabled: true",
+                        "  - model_id: model_b",
+                        "    adapter: llama_cpp_cli",
+                        "    provider: llama_cpp_local",
+                        "    enabled: false",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+            result = run_suite_module.run_suite(
+                tasks_root=fixtures_root / "tasks",
+                protocols_root=fixtures_root / "protocols",
+                model_registry_path=registry_path,
+                model_id="model_b",
+                adapter_override="nvidia_api",
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+            )
+
+        self.assertEqual(result["model_ids"], ["model_b"])
+        self.assertEqual(captured_entries[0]["adapter"], "llama_cpp_cli")
 
 
 if __name__ == "__main__":

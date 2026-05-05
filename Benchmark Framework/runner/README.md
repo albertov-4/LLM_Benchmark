@@ -5,7 +5,6 @@ Questa cartella contiene gli entry point logici per eseguire il benchmark.
 File previsti:
 - `run_case.py`: esecuzione di un singolo task con un singolo modello e protocollo
 - `run_suite.py`: esecuzione di una suite completa
-- `batch_matrix.py`: costruzione della matrice modello x protocollo x difficolta
 
 Responsabilita del runner:
 - scoprire i task dalla struttura delle cartelle
@@ -17,7 +16,6 @@ Responsabilita del runner:
 Struttura generale:
 - `run_case.py` rappresenta l'unita minima del benchmark: un modello, un protocollo, un task
 - `run_suite.py` costruisce e orchestra una campagna completa a partire da task, modelli e protocolli disponibili
-- `batch_matrix.py` e il punto naturale in cui esplicitare o filtrare la matrice dei job prima dell'esecuzione
 
 Struttura di `run_suite.py`:
 - scopre task, protocolli e modelli a partire dalla struttura del framework
@@ -69,9 +67,9 @@ Flusso di un run:
 - se la validazione fallisce, il runner costruisce feedback di repair e avvia una nuova iterazione fino al limite previsto dal protocollo
 - al termine del loop, `metrics.py` trasforma il risultato normalizzato del run in metriche confrontabili
 - se riceve un `output_root`, salva tre artefatti per-job:
-  - raw output del modello
-  - piano parsato e validazione
-  - risultato scored finale con metriche e path degli artefatti
+  - `raw`: messaggi inviati al modello, payload di generazione e testo grezzo
+  - `parsed`: piano estratto dal parser e problemi di formato
+  - `scored`: validazione, feedback di repair, metriche e path degli artefatti
 
 Flusso di una suite:
 - `run_suite.py` parte dalla discovery dei task e costruisce la matrice completa dei job
@@ -81,11 +79,14 @@ Flusso di una suite:
 - internamente `run_suite.py` mantiene anche `adapter_override` per test e usi avanzati
 - se passi `--model-id`, viene eseguito solo quel modello usando l'adapter dichiarato nel YAML
 - se passi `--protocol-id`, viene eseguito solo quel protocollo
+- se passi `--task-family`, `--tier` o `--instance-id`, la matrice viene limitata ai task corrispondenti
 - se il protocollo richiede esempi o feedback esterno, li carica dai file nella cartella `prompts/`
-- se non riceve un adapter factory reale, usa uno scaffold minimo per mantenere il flusso eseguibile
+- la documentazione dei protocolli vive in `protocols/README.md`
+- se un adapter non puo essere inizializzato, restituisce un adapter non disponibile con payload normalizzato
 - se riceve `use_real_validator=True`, costruisce automaticamente un `VALValidatorAdapter`
 - se non riceve un validator reale, usa un validator di fallback che segnala l'assenza del componente
 - dopo l'esecuzione dei singoli run, aggrega i risultati per modello, protocollo e livello di difficolta
+- `suite_results` resta compatto: contiene esito, metriche e path agli artefatti; i dettagli completi restano nei file `raw`, `parsed` e `scored`
 
 Ordine di selezione del validator:
 - se passi `validator_factory`, `run_suite.py` usa quella

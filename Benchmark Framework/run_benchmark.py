@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,19 @@ def _resolve_model_registry_path(model_registry_path: str | None, adapter: str |
     return DEFAULT_MODEL_REGISTRY_PATH
 
 
+def _build_run_id() -> str:
+    """Return a filesystem-friendly timestamp for one benchmark launch."""
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def _resolve_output_base(output_root: str | Path, framework_root: Path) -> Path:
+    """Resolve the base output directory relative to the framework root."""
+    output_base = Path(output_root)
+    if output_base.is_absolute():
+        return output_base
+    return framework_root / output_base
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the LLM planning benchmark suite.")
     parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark Framework.")
@@ -80,6 +94,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run only one protocol from the protocols folder.",
     )
     parser.add_argument(
+        "--task-family",
+        default=None,
+        help="Run only one task family, for example <task_family>.",
+    )
+    parser.add_argument(
+        "--tier",
+        choices=("easy", "medium", "hard"),
+        default=None,
+        help="Run only one difficulty tier.",
+    )
+    parser.add_argument(
+        "--instance-id",
+        default=None,
+        help="Run only one instance id, for example instance-01.",
+    )
+    parser.add_argument(
         "--adapter",
         choices=sorted(ADAPTER_REGISTRY_PATHS),
         default=None,
@@ -88,7 +118,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         default="outputs",
-        help="Per-run artifact root relative to Benchmark Framework.",
+        help="Base output directory relative to Benchmark Framework.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run folder name. Defaults to a timestamp.",
     )
     parser.add_argument(
         "--use-real-validator",
@@ -113,8 +148,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-json",
-        default="outputs/scored/suite_result_latest.json",
-        help="Where to save the suite result JSON, relative to Benchmark Framework.",
+        default=None,
+        help="Optional explicit suite JSON path. Defaults to outputs/scored/<run_id>/suite_result.json.",
     )
     parser.add_argument(
         "--print-full-result",
@@ -137,6 +172,8 @@ def main() -> int:
         model_registry_path=args.model_registry_path,
         adapter=args.adapter,
     )
+    run_id = args.run_id or _build_run_id()
+    output_root = _resolve_output_base(args.output_root, framework_root)
 
     result = run_suite_module.run_suite(
         tasks_root=args.tasks_root,
@@ -145,7 +182,11 @@ def main() -> int:
         model_registry_path=resolved_model_registry_path,
         model_id=args.model_id,
         protocol_id=args.protocol_id,
-        output_root=args.output_root,
+        task_family=args.task_family,
+        tier=args.tier,
+        instance_id=args.instance_id,
+        output_root=output_root,
+        run_id=run_id,
         use_real_validator=args.use_real_validator,
         validator_command=args.validator_command,
         validator_timeout_seconds=args.validator_timeout_seconds,
@@ -154,7 +195,13 @@ def main() -> int:
 
     serializable_result = _json_safe(result)
 
-    output_path = framework_root / args.output_json
+    output_path = (
+        Path(args.output_json)
+        if args.output_json
+        else output_root / "scored" / run_id / "suite_result.json"
+    )
+    if not output_path.is_absolute():
+        output_path = framework_root / output_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(serializable_result, indent=2, ensure_ascii=False),
@@ -168,6 +215,8 @@ def main() -> int:
             "summary": serializable_result.get("summary", {}),
             "aggregate_results": serializable_result.get("aggregate_results", {}),
             "orchestration_errors": serializable_result.get("orchestration_errors", []),
+            "run_id": run_id,
+            "output_root": str(output_root),
             "saved_to": str(output_path),
         }
         print(json.dumps(summary_payload, indent=2, ensure_ascii=False))

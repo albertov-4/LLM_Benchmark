@@ -11,6 +11,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
 
@@ -49,28 +50,14 @@ def _framework_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _parse_scalar(raw_value: str) -> Any:
-    value = raw_value.strip()
-    if not value:
-        return ""
-
-    lower_value = value.lower()
-    if lower_value == "true":
-        return True
-    if lower_value == "false":
-        return False
-    if lower_value in {"null", "none"}:
-        return None
-
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        return value[1:-1]
-
-    try:
-        if "." in value:
-            return float(value)
-        return int(value)
-    except ValueError:
-        return value
+def _load_config_loader():
+    module_path = _framework_root() / "utils" / "config_loader.py"
+    spec = spec_from_file_location("benchmark_framework_prepare_models_config_loader", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load module from {module_path}")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def resolve_framework_path(path_value: str | Path, framework_root: Path) -> Path:
@@ -85,43 +72,7 @@ def load_model_registry(model_registry_path: str | Path) -> list[ModelRegistryEn
     if not registry_path.exists():
         raise FileNotFoundError(f"Model registry not found: {registry_path}")
 
-    model_entries: list[dict[str, Any]] = []
-    current_entry: dict[str, Any] | None = None
-    in_models_section = False
-
-    for line in registry_path.read_text(encoding="utf-8").splitlines():
-        raw_line = line.rstrip()
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        if indent == 0:
-            if current_entry is not None:
-                model_entries.append(current_entry)
-                current_entry = None
-            in_models_section = stripped == "models:"
-            continue
-
-        if not in_models_section:
-            continue
-
-        if indent == 2 and stripped.startswith("- "):
-            if current_entry is not None:
-                model_entries.append(current_entry)
-            current_entry = {}
-            item_content = stripped[2:]
-            if ":" in item_content:
-                key, _, raw_value = item_content.partition(":")
-                current_entry[key.strip()] = _parse_scalar(raw_value)
-            continue
-
-        if current_entry is not None and indent >= 4 and ":" in stripped and not stripped.startswith("- "):
-            key, _, raw_value = stripped.partition(":")
-            current_entry[key.strip()] = _parse_scalar(raw_value)
-
-    if current_entry is not None:
-        model_entries.append(current_entry)
+    model_entries = _load_config_loader().load_model_registry_entries(registry_path)
 
     registry_entries: list[ModelRegistryEntry] = []
     for raw_entry in model_entries:

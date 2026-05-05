@@ -58,6 +58,18 @@ class RunBenchmarkCLITest(unittest.TestCase):
             "models/custom_registry.yaml",
         )
 
+    def test_relative_output_root_is_resolved_inside_framework(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        module = _load_module(
+            "benchmark_framework_test_run_benchmark_output_base",
+            framework_root / "run_benchmark.py",
+        )
+
+        self.assertEqual(
+            module._resolve_output_base("outputs", framework_root),
+            framework_root / "outputs",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

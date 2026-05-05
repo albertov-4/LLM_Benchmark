@@ -1,4 +1,4 @@
-"""Validator interface scaffold."""
+"""Validator interfaces and VAL integration."""
 
 import re
 import subprocess
@@ -38,14 +38,9 @@ class ValidatorAdapter:
     """Common interface for a symbolic validator."""
 
     def validate(self, domain_file: str, problem_file: str, plan_text: str) -> ValidationResult:
-        """Pseudocode contract for a symbolic validator.
+        """Validate a plan and normalize the outcome.
 
-        Expected future implementation:
-        1. materialize `plan_text` into a temporary file if needed
-        2. invoke the external validator
-        3. normalize its response into `ValidationResult`
-
-        Expected semantic contract:
+        Semantic contract:
         - `valid=True` implies `status="valid"` and `error_type=None`
         - `status="invalid"` describes a logical plan failure
         - `status="parse_error"`, `status="timeout"` and

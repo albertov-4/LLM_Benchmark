@@ -90,36 +90,6 @@ class RealValidatorIntegrationTest(unittest.TestCase):
         self.assertIsNotNone(result.raw_validator_output)
         self.assertIn("operator", result.raw_validator_output.lower())
 
-    def test_real_validator_accepts_citycar_starter_plan(self) -> None:
-        validator = self._build_validator()
-        domain_file = self.framework_root / "tasks" / "citycar" / "domain" / "domain.pddl"
-        problem_file = self.framework_root / "tasks" / "citycar" / "easy" / "instance-01.pddl"
-        result = validator.validate(
-            domain_file=str(domain_file),
-            problem_file=str(problem_file),
-            plan_text="(move car1 j1 j2)\n(move car1 j2 j3)",
-        )
-
-        self.assertTrue(result.valid)
-        self.assertEqual(result.status, "valid")
-        self.assertIsNone(result.error_type)
-        self.assertEqual(result.plan_length, 2)
-
-    def test_real_validator_accepts_tetris_starter_plan(self) -> None:
-        validator = self._build_validator()
-        domain_file = self.framework_root / "tasks" / "tetris" / "domain" / "domain.pddl"
-        problem_file = self.framework_root / "tasks" / "tetris" / "medium" / "instance-01.pddl"
-        result = validator.validate(
-            domain_file=str(domain_file),
-            problem_file=str(problem_file),
-            plan_text="(slide piece2 c3 c4)\n(slide piece1 c1 c2)\n(slide piece1 c2 c3)\n(slide piece2 c4 c5)",
-        )
-
-        self.assertTrue(result.valid)
-        self.assertEqual(result.status, "valid")
-        self.assertIsNone(result.error_type)
-        self.assertEqual(result.plan_length, 4)
-
 
 if __name__ == "__main__":
     unittest.main()

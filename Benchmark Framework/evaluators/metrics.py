@@ -1,4 +1,4 @@
-"""Benchmark metrics scaffold."""
+"""Benchmark metric computation."""
 
 from dataclasses import dataclass
 from typing import Any

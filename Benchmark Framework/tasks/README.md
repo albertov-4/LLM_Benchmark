@@ -3,7 +3,7 @@
 Questa cartella contiene la definizione del benchmark a livello di task.
 
 Ogni famiglia di task dovrebbe avere:
-- una cartella dedicata, per esempio `citycar/` o `tetris/`
+- una cartella dedicata, per esempio `<task_family>/`
 - una sottocartella `domain/` con `domain.pddl`
 - tre sottocartelle: `easy`, `medium`, `hard`
 - istanze `.pddl` direttamente dentro i tier di difficolta
@@ -26,5 +26,5 @@ Regola pratica:
 
 Nota:
 - una cartella `metadata/` puo esistere per csv o indici futuri, ma e opzionale
-- `citycar/` e `tetris/` contengono gia un set starter reale con dominio e una
-  prima istanza per `easy`, `medium` e `hard`
+- le famiglie concrete del benchmark vengono scoperte direttamente dalla
+  struttura delle cartelle

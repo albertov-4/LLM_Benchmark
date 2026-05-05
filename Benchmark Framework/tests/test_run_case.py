@@ -242,6 +242,7 @@ class RunCaseSmokeTest(unittest.TestCase):
                 task_spec=task_spec,
                 protocol_spec=protocol_spec,
                 output_root=tmp_dir,
+                run_id="test-run",
             )
 
             self.assertIsNotNone(result.raw_output_path)
@@ -255,6 +256,9 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertTrue(raw_path.exists())
             self.assertTrue(parsed_path.exists())
             self.assertTrue(scored_path.exists())
+            self.assertIn("test-run", raw_path.parts)
+            self.assertIn("test-run", parsed_path.parts)
+            self.assertIn("test-run", scored_path.parts)
             self.assertIn("easy", raw_path.parts)
             self.assertIn("easy", parsed_path.parts)
             self.assertIn("easy", scored_path.parts)
@@ -264,8 +268,19 @@ class RunCaseSmokeTest(unittest.TestCase):
             scored_payload = json.loads(scored_path.read_text(encoding="utf-8"))
 
             self.assertEqual(raw_payload["raw_output"], "(move a b)")
+            self.assertEqual(raw_payload["attempts"][0]["iteration"], 1)
+            self.assertIn("messages", raw_payload["attempts"][0])
+            self.assertIn("generation", raw_payload["attempts"][0])
+            self.assertEqual(raw_payload["attempts"][0]["raw_output"], "(move a b)")
+            self.assertNotIn("parsed_plan", raw_payload["attempts"][0])
+            self.assertNotIn("validation_result", raw_payload["attempts"][0])
             self.assertEqual(parsed_payload["parsed_plan"]["actions"], ["(move a b)"])
+            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["actions"], ["(move a b)"])
+            self.assertNotIn("validation_result", parsed_payload["attempts"][0])
             self.assertTrue(scored_payload["solved"])
+            self.assertEqual(scored_payload["attempts"][0]["iteration"], 1)
+            self.assertEqual(scored_payload["attempts"][0]["validation_result"]["valid"], True)
+            self.assertNotIn("messages", scored_payload["attempts"][0])
 
 
 if __name__ == "__main__":

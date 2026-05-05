@@ -1,4 +1,4 @@
-"""Suite-level benchmark scaffold based on directory discovery.
+"""Suite-level benchmark orchestration based on directory discovery.
 
 This module orchestrates a full benchmark campaign by:
 - discovering tasks from the folder hierarchy
@@ -49,8 +49,8 @@ class LoadedPromptBundle:
     feedback_prompt: str
 
 
-class _PlaceholderAdapter:
-    """Minimal adapter used when no concrete adapter is provided yet."""
+class _UnavailableAdapter:
+    """Minimal adapter used when a configured adapter cannot be created."""
 
     def __init__(self, model_id: str):
         self.model_id = model_id
@@ -63,7 +63,7 @@ class _PlaceholderAdapter:
             "latency_s": None,
             "notes": [
                 "No concrete adapter factory was provided.",
-                "This placeholder keeps the suite runnable while the real adapter is still under development.",
+                "The configured adapter could not be initialized for this run.",
             ],
             "message_count": len(messages),
         }
@@ -159,27 +159,11 @@ def _resolve_validate_command(
 
 def _parse_scalar(raw_value: str) -> Any:
     """Parse a simple scalar from the lightweight YAML-like config files."""
-    value = raw_value.strip()
-    if not value:
-        return ""
-
-    lower_value = value.lower()
-    if lower_value == "true":
-        return True
-    if lower_value == "false":
-        return False
-    if lower_value in {"null", "none"}:
-        return None
-
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        return value[1:-1]
-
-    try:
-        if "." in value:
-            return float(value)
-        return int(value)
-    except ValueError:
-        return value
+    config_loader = _load_framework_module(
+        "benchmark_framework_config_loader",
+        "utils/config_loader.py",
+    )
+    return config_loader.parse_scalar(raw_value)
 
 
 def _normalize_record(value: Any) -> dict[str, Any]:
@@ -197,11 +181,60 @@ def _normalize_record(value: Any) -> dict[str, Any]:
     raise TypeError(f"Unsupported record type: {type(value)!r}")
 
 
+def _build_suite_result_summary(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep suite-level results compact; details live in per-job artifacts."""
+    return {
+        "model_id": result.get("model_id"),
+        "task_id": result.get("task_id"),
+        "protocol_id": result.get("protocol_id"),
+        "task_family": result.get("task_family"),
+        "tier": result.get("tier"),
+        "instance_id": result.get("instance_id"),
+        "solved": result.get("solved"),
+        "iterations_used": result.get("iterations_used"),
+        "max_iterations": result.get("max_iterations"),
+        "stopped_by_iteration_limit": result.get("stopped_by_iteration_limit"),
+        "metrics": result.get("metrics", {}),
+        "raw_output_path": result.get("raw_output_path"),
+        "parsed_output_path": result.get("parsed_output_path"),
+        "scored_output_path": result.get("scored_output_path"),
+    }
+
+
 def _read_text_if_exists(file_path: Path) -> str:
     """Read a UTF-8 text file when present, otherwise return an empty string."""
     if not file_path.exists():
         return ""
     return file_path.read_text(encoding="utf-8").strip()
+
+
+def _parse_optional_int(value: Any, field_name: str) -> int | None:
+    """Parse optional integer config fields from registry entries."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in {"", "none", "null"}:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid integer value for {field_name}: {value!r}") from exc
+
+
+def _read_required_text(file_path: Path, description: str) -> str:
+    """Read a required UTF-8 text file and fail clearly when it is missing or empty."""
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"Missing {description}: {file_path}. "
+            "Create this prompt file or disable the related protocol option."
+        )
+
+    content = file_path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise ValueError(
+            f"Empty {description}: {file_path}. "
+            "Fill this prompt file or disable the related protocol option."
+        )
+    return content
 
 
 def load_prompt_bundle(
@@ -226,9 +259,10 @@ def load_prompt_bundle(
 
     domain_prompt = ""
     if include_domain_prompt:
-        domain_prompt = _read_text_if_exists(prompts_root_path / f"{task_family}.txt")
-        if not domain_prompt:
-            domain_prompt = _read_text_if_exists(prompts_root_path / "default.txt")
+        domain_prompt = _read_required_text(
+            prompts_root_path / f"{task_family}.txt",
+            f"domain prompt for task family '{task_family}'",
+        )
 
     if include_examples:
         example_prompt = _read_text_if_exists(prompts_root_path / "examples" / f"{task_family}.txt")
@@ -287,6 +321,35 @@ def discover_task_cases(tasks_root: str | Path) -> list[DiscoveredTaskCase]:
     return cases
 
 
+def filter_task_cases(
+    task_cases: list[DiscoveredTaskCase],
+    task_family: str | None = None,
+    tier: str | None = None,
+    instance_id: str | None = None,
+) -> list[DiscoveredTaskCase]:
+    """Filter discovered task cases by optional task selectors."""
+    filtered_cases = task_cases
+    if task_family is not None:
+        filtered_cases = [
+            task_case
+            for task_case in filtered_cases
+            if task_case.task_family == task_family
+        ]
+    if tier is not None:
+        filtered_cases = [
+            task_case
+            for task_case in filtered_cases
+            if task_case.tier == tier
+        ]
+    if instance_id is not None:
+        filtered_cases = [
+            task_case
+            for task_case in filtered_cases
+            if task_case.instance_id == instance_id
+        ]
+    return filtered_cases
+
+
 def discover_protocol_ids(protocols_root: str | Path) -> list[str]:
     """Return protocol ids based on yaml filenames.
 
@@ -299,63 +362,16 @@ def discover_protocol_ids(protocols_root: str | Path) -> list[str]:
     return sorted(file_path.stem for file_path in root.glob("*.yaml"))
 
 
-def load_model_registry_entries_pseudocode(model_registry_path: str | Path) -> list[dict[str, Any]]:
-    """Extract model entries from the registry using a lightweight parser."""
-    registry_path = Path(model_registry_path)
-    if not registry_path.exists():
-        return []
-
-    model_entries: list[dict[str, Any]] = []
-    current_entry: dict[str, Any] | None = None
-    in_models_section = False
-
-    for line in registry_path.read_text(encoding="utf-8").splitlines():
-        raw_line = line.rstrip()
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        if indent == 0:
-            if current_entry is not None:
-                model_entries.append(current_entry)
-                current_entry = None
-            in_models_section = stripped == "models:"
-            continue
-
-        if not in_models_section:
-            continue
-
-        if indent == 2 and stripped.startswith("- "):
-            if current_entry is not None:
-                model_entries.append(current_entry)
-            current_entry = {}
-            item_content = stripped[2:]
-            if ":" in item_content:
-                key, _, raw_value = item_content.partition(":")
-                current_entry[key.strip()] = _parse_scalar(raw_value)
-            continue
-
-        if current_entry is not None and indent >= 4 and ":" in stripped and not stripped.startswith("- "):
-            key, _, raw_value = stripped.partition(":")
-            current_entry[key.strip()] = _parse_scalar(raw_value)
-
-    if current_entry is not None:
-        model_entries.append(current_entry)
-
-    return model_entries
+def load_model_registry_entries(model_registry_path: str | Path) -> list[dict[str, Any]]:
+    """Extract model entries from the registry."""
+    config_loader = _load_framework_module(
+        "benchmark_framework_config_loader",
+        "utils/config_loader.py",
+    )
+    return config_loader.load_model_registry_entries(model_registry_path)
 
 
-def load_model_ids_from_registry_pseudocode(model_registry_path: str | Path) -> list[str]:
-    """Extract model ids from the registry preserving registry order."""
-    return [
-        str(entry["model_id"])
-        for entry in load_model_registry_entries_pseudocode(model_registry_path)
-        if "model_id" in entry
-    ]
-
-
-def load_protocol_config_pseudocode(
+def load_protocol_config(
     protocol_id: str,
     protocols_root: str | Path,
 ) -> LoadedProtocolConfig:
@@ -481,6 +497,7 @@ def build_protocol_spec(protocol_config: LoadedProtocolConfig):
         max_iterations=protocol_config.max_iterations,
         require_final_plan_only=protocol_config.require_final_plan_only,
         include_external_feedback=bool(prompting_config.get("include_external_feedback", False)),
+        include_chain_of_thought=bool(prompting_config.get("include_chain_of_thought", False)),
     )
 
 
@@ -492,8 +509,8 @@ def build_model_adapter(
     """Build the adapter used by one suite job.
 
     If no external factory is provided, this tries to instantiate a concrete
-    adapter when possible. Otherwise it falls back to a placeholder adapter so
-    the suite orchestration can still be exercised end-to-end.
+    adapter when possible. Otherwise it falls back to an unavailable adapter
+    that returns a normalized error-like generation payload.
     """
     if adapter_factory is not None:
         return adapter_factory(model_entry, protocol_config)
@@ -529,7 +546,7 @@ def build_model_adapter(
             )
             return hf_module.HFLocalAdapter(hf_config)
         except Exception:
-            return _PlaceholderAdapter(model_id)
+            return _UnavailableAdapter(model_id)
 
     if adapter_name == "ollama":
         try:
@@ -556,7 +573,7 @@ def build_model_adapter(
             )
             return ollama_module.OllamaAdapter(ollama_config)
         except Exception:
-            return _PlaceholderAdapter(model_id)
+            return _UnavailableAdapter(model_id)
 
     if adapter_name == "nvidia_api":
         try:
@@ -574,8 +591,12 @@ def build_model_adapter(
                 extra_body["chat_template_kwargs"] = {
                     thinking_key: bool(model_entry.get("thinking_enabled", False)),
                 }
-            if model_entry.get("reasoning_budget") not in {None, "", "none"}:
-                extra_body["reasoning_budget"] = int(model_entry.get("reasoning_budget"))
+            reasoning_budget = _parse_optional_int(
+                model_entry.get("reasoning_budget"),
+                "reasoning_budget",
+            )
+            if reasoning_budget is not None:
+                extra_body["reasoning_budget"] = reasoning_budget
 
             nvidia_config = nvidia_module.NvidiaAPIConfig(
                 model_id=model_id,
@@ -592,7 +613,7 @@ def build_model_adapter(
             )
             return nvidia_module.NvidiaAPIAdapter(nvidia_config)
         except Exception:
-            return _PlaceholderAdapter(model_id)
+            return _UnavailableAdapter(model_id)
 
     if adapter_name == "llama_cpp_cli":
         try:
@@ -616,24 +637,16 @@ def build_model_adapter(
                 top_k=int(top_k),
                 top_p=float(generation_config.get("top_p", model_entry.get("top_p", 0.95)) or 0.95),
                 max_tokens=int(generation_config.get("max_tokens", 4096) or 4096),
-                context_size=(
-                    None
-                    if model_entry.get("context_size") in {None, "", "none"}
-                    else int(model_entry.get("context_size"))
-                ),
-                threads=(
-                    None
-                    if model_entry.get("threads") in {None, "", "none"}
-                    else int(model_entry.get("threads"))
-                ),
+                context_size=_parse_optional_int(model_entry.get("context_size"), "context_size"),
+                threads=_parse_optional_int(model_entry.get("threads"), "threads"),
                 timeout_seconds=int(model_entry.get("timeout_seconds", 300) or 300),
                 extra_args=[],
             )
             return llama_cpp_module.LlamaCppCLIAdapter(llama_cpp_config)
         except Exception:
-            return _PlaceholderAdapter(model_id)
+            return _UnavailableAdapter(model_id)
 
-    return _PlaceholderAdapter(model_id)
+    return _UnavailableAdapter(model_id)
 
 
 def build_real_val_validator(
@@ -777,8 +790,12 @@ def run_suite(
     model_registry_path: str | Path | None = None,
     model_id: str | None = None,
     protocol_id: str | None = None,
+    task_family: str | None = None,
+    tier: str | None = None,
+    instance_id: str | None = None,
     adapter_override: str | None = None,
     output_root: str | Path | None = None,
+    run_id: str = "",
     adapter_factory: Callable[[dict[str, Any], LoadedProtocolConfig], Any] | None = None,
     validator: Any | None = None,
     validator_factory: Callable[[], Any] | None = None,
@@ -790,12 +807,12 @@ def run_suite(
     validator_extra_args: list[str] | None = None,
     stop_on_error: bool = False,
 ) -> dict[str, Any]:
-    """Run a full benchmark campaign using the current scaffold.
+    """Run a full benchmark campaign.
 
     Current behavior:
     - discover task cases from the benchmark folders
     - load protocol metadata and model registry entries
-    - optionally select one model, one protocol, or override adapters for enabled models
+    - optionally select one model, one protocol, task filters, or override adapters for enabled models
     - build adapters and validators for each job
     - call `run_case(...)` for every matrix entry
     - aggregate normalized results
@@ -811,8 +828,14 @@ def run_suite(
     resolved_model_registry_path = _resolve_framework_path(model_registry_path, "models/model_registry_nvidia.yaml")
     resolved_output_root = _resolve_framework_path(output_root, "outputs") if output_root is not None else None
 
-    task_cases = discover_task_cases(resolved_tasks_root)
-    all_model_entries = load_model_registry_entries_pseudocode(resolved_model_registry_path)
+    discovered_task_cases = discover_task_cases(resolved_tasks_root)
+    task_cases = filter_task_cases(
+        discovered_task_cases,
+        task_family=task_family,
+        tier=tier,
+        instance_id=instance_id,
+    )
+    all_model_entries = load_model_registry_entries(resolved_model_registry_path)
     if model_id is not None:
         model_entries = [
             entry
@@ -870,7 +893,7 @@ def run_suite(
             flush=True,
         )
         try:
-            protocol_config = load_protocol_config_pseudocode(job.protocol_id, resolved_protocols_root)
+            protocol_config = load_protocol_config(job.protocol_id, resolved_protocols_root)
             protocol_spec = build_protocol_spec(protocol_config)
             task_spec = build_task_spec_from_case(job.task_case)
             prompt_bundle = load_prompt_bundle(
@@ -906,6 +929,7 @@ def run_suite(
                 domain_prompt=prompt_bundle.domain_prompt,
                 feedback_prompt=prompt_bundle.feedback_prompt,
                 output_root=resolved_output_root,
+                run_id=run_id,
             )
             normalized_result = _normalize_record(result)
             suite_results.append(normalized_result)
@@ -943,7 +967,7 @@ def run_suite(
         "protocol_ids": protocol_ids,
         "model_ids": model_ids,
         "run_matrix": [asdict(job) for job in run_matrix],
-        "suite_results": suite_results,
+        "suite_results": [_build_suite_result_summary(result) for result in suite_results],
         "aggregate_results": aggregate_suite_results(suite_results),
         "orchestration_errors": orchestration_errors,
     }

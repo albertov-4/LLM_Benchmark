@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 
-OUTPUT_SUBDIRECTORIES = ("raw", "parsed", "scored")
+OUTPUT_SUBDIRECTORIES = ("raw", "parsed", "scored", "runs")
 KEEP_FILE_NAMES = {".gitkeep"}
 
 

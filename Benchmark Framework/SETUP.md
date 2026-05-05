@@ -125,6 +125,12 @@ Per limitare il test a un solo modello:
 python "Benchmark Framework/run_benchmark.py" --model-id nvidia_gemma_4_31b_it --use-real-validator
 ```
 
+Per limitare il test a una famiglia, difficolta o istanza:
+
+```powershell
+python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator
+```
+
 Se `Validate` non e nel `PATH`:
 
 ```powershell
@@ -135,10 +141,12 @@ python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-c
 
 Il benchmark salva:
 
-- JSON finale della suite in `Benchmark Framework/outputs/scored/suite_result_latest.json`
-- output raw per job in `Benchmark Framework/outputs/raw/...`
-- output parsed per job in `Benchmark Framework/outputs/parsed/...`
-- output scored per job in `Benchmark Framework/outputs/scored/...`
+- una cartella timestampata dentro `Benchmark Framework/outputs/raw/`, `parsed/` e `scored/`
+- JSON finale della suite in `Benchmark Framework/outputs/scored/<timestamp>/suite_result.json`
+- output raw per job in `Benchmark Framework/outputs/raw/<timestamp>/...`
+- output parsed per job in `Benchmark Framework/outputs/parsed/<timestamp>/...`
+- output scored per job in `Benchmark Framework/outputs/scored/<timestamp>/...`
+- dettaglio delle iterazioni in `attempts`, inclusi prompt/messaggi e feedback
 
 Per pulire gli output generati mantenendo cartelle e `.gitkeep`:
 

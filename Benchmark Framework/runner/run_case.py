@@ -1,7 +1,7 @@
-"""Single benchmark case scaffold.
+"""Single benchmark case execution.
 
-This file contains guided pseudocode for the smallest benchmark unit:
-one model, one protocol, one task instance.
+This module runs the smallest benchmark unit: one model, one protocol,
+one task instance.
 """
 
 import json
@@ -32,6 +32,7 @@ class ProtocolSpec:
     max_iterations: int
     require_final_plan_only: bool
     include_external_feedback: bool = False
+    include_chain_of_thought: bool = False
 
 
 @dataclass(slots=True)
@@ -51,6 +52,7 @@ class ResultRecord:
     raw_output: str | None = None
     parsed_plan: dict[str, Any] | None = None
     validation_result: dict[str, Any] | None = None
+    attempts: list[dict[str, Any]] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
     raw_output_path: str | None = None
     parsed_output_path: str | None = None
@@ -67,6 +69,7 @@ class CasePayload(TypedDict):
     validation_result: dict[str, Any] | None
     metrics: dict[str, Any]
     raw_generations: list[dict[str, Any]]
+    attempts: list[dict[str, Any]]
 
 
 @lru_cache(maxsize=None)
@@ -114,6 +117,7 @@ def _json_safe(value: Any) -> Any:
 
 def _build_artifact_paths(
     output_root: Path,
+    run_id: str,
     model_id: str,
     protocol_id: str,
     task_spec: TaskSpec,
@@ -122,9 +126,9 @@ def _build_artifact_paths(
     relative_dir = Path(model_id) / protocol_id / task_spec.task_family / task_spec.tier
     file_name = f"{task_spec.instance_id}.json"
     return (
-        output_root / "raw" / relative_dir / file_name,
-        output_root / "parsed" / relative_dir / file_name,
-        output_root / "scored" / relative_dir / file_name,
+        output_root / "raw" / run_id / relative_dir / file_name,
+        output_root / "parsed" / run_id / relative_dir / file_name,
+        output_root / "scored" / run_id / relative_dir / file_name,
     )
 
 
@@ -135,6 +139,48 @@ def _write_json_artifact(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(_json_safe(payload), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def _build_raw_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only prompt and model-generation data for raw artifacts."""
+    raw_attempts: list[dict[str, Any]] = []
+    for attempt in attempts:
+        raw_attempts.append(
+            {
+                "iteration": attempt.get("iteration"),
+                "messages": attempt.get("messages", []),
+                "generation": attempt.get("generation", {}),
+                "raw_output": attempt.get("raw_output"),
+            }
+        )
+    return raw_attempts
+
+
+def _build_parsed_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only parser output for parsed artifacts."""
+    parsed_attempts: list[dict[str, Any]] = []
+    for attempt in attempts:
+        parsed_attempts.append(
+            {
+                "iteration": attempt.get("iteration"),
+                "parsed_plan": attempt.get("parsed_plan"),
+            }
+        )
+    return parsed_attempts
+
+
+def _build_scored_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only validation and repair data for scored artifacts."""
+    scored_attempts: list[dict[str, Any]] = []
+    for attempt in attempts:
+        scored_attempts.append(
+            {
+                "iteration": attempt.get("iteration"),
+                "validation_result": attempt.get("validation_result"),
+                "feedback_to_next_iteration": attempt.get("feedback_to_next_iteration"),
+            }
+        )
+    return scored_attempts
 
 
 def _parse_generation_output(raw_text: str) -> dict[str, Any]:
@@ -196,7 +242,7 @@ def _run_validator(
             task_spec.problem_file,
             plan_text,
         )
-    except Exception as exc:  # pragma: no cover - defensive scaffold behavior
+    except Exception as exc:  # pragma: no cover - defensive validator handling
         return {
             "valid": False,
             "status": "validator_error",
@@ -260,16 +306,15 @@ def build_messages(
     domain_prompt: str = "",
     feedback_messages: list[str] | None = None,
 ) -> list[dict[str, str]]:
-    """Build a chat-style message list shared across adapters.
-
-    Pseudocode decisions:
-    - always keep a chat-like representation
-    - adapter implementations can convert messages to provider-specific format
-    """
+    """Build a chat-style message list shared across adapters."""
     feedback_messages = feedback_messages or []
     protocol_instruction_lines: list[str] = []
 
     if protocol_spec.require_final_plan_only:
+        if protocol_spec.include_chain_of_thought:
+            protocol_instruction_lines.append(
+                "You may reason internally, but do not include reasoning in the final answer."
+            )
         protocol_instruction_lines.append(
             "FINAL ANSWER FORMAT: return only parenthesized PDDL actions, one per line."
         )
@@ -277,11 +322,19 @@ def build_messages(
             "Do not include explanations, headings, markdown fences, bullets, or numbering in the final answer."
         )
     else:
+        if protocol_spec.include_chain_of_thought:
+            protocol_instruction_lines.append(
+                "You may include a brief rationale before the final plan."
+            )
+            protocol_instruction_lines.append(
+                "Keep the rationale concise and focused on action applicability and goal achievement."
+            )
+        else:
+            protocol_instruction_lines.append(
+                "Do not include reasoning unless it is necessary to make the final plan understandable."
+            )
         protocol_instruction_lines.append(
-            "You may include brief reasoning, but end with a clean action sequence."
-        )
-        protocol_instruction_lines.append(
-            "Keep each action on its own line in parenthesized PDDL form so the parser can extract it."
+            "End with a clean final action sequence, with each action on its own line in parenthesized PDDL form."
         )
 
     protocol_instructions = "\n".join(protocol_instruction_lines)
@@ -353,7 +406,7 @@ def run_generation_loop(
     domain_prompt: str = "",
     feedback_prompt: str = "",
 ) -> CasePayload:
-    """Core pseudocode loop for one benchmark case.
+    """Run the generation, parsing, validation and repair loop for one case.
 
     Expected adapter contract:
     - adapter.generate(messages) -> {"raw_text": "...", ...}
@@ -365,6 +418,7 @@ def run_generation_loop(
     """
     feedback_messages: list[str] = []
     raw_generations: list[dict[str, Any]] = []
+    attempts: list[dict[str, Any]] = []
     last_parsed_plan: dict[str, Any] | None = None
     last_validation_result: dict[str, Any] | None = None
 
@@ -388,22 +442,35 @@ def run_generation_loop(
 
         parsed_plan = _parse_generation_output(raw_text)
         last_parsed_plan = parsed_plan
+        attempt_record: dict[str, Any] = {
+            "iteration": iteration,
+            "messages": messages,
+            "generation": generation,
+            "raw_output": raw_text,
+            "parsed_plan": parsed_plan,
+            "validation_result": None,
+            "feedback_to_next_iteration": None,
+        }
 
         actions = parsed_plan.get("actions", [])
         if not isinstance(actions, list) or not actions:
             validation_result = _build_parse_failure_result(raw_text, parsed_plan)
             last_validation_result = validation_result
+            attempt_record["validation_result"] = validation_result
             if protocol_spec.include_external_feedback:
-                feedback_messages.append(
-                    build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
-                )
+                feedback = build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
+                feedback_messages.append(feedback)
+                attempt_record["feedback_to_next_iteration"] = feedback
+            attempts.append(attempt_record)
             continue
 
         plan_text = "\n".join(action for action in actions if isinstance(action, str))
         validation_result = _run_validator(validator, task_spec, plan_text)
         last_validation_result = validation_result
+        attempt_record["validation_result"] = validation_result
 
         if bool(validation_result.get("valid", False)):
+            attempts.append(attempt_record)
             return {
                 "solved": True,
                 "iterations_used": iteration,
@@ -414,12 +481,14 @@ def run_generation_loop(
                 "validation_result": validation_result,
                 "metrics": {},
                 "raw_generations": raw_generations,
+                "attempts": attempts,
             }
 
         if protocol_spec.include_external_feedback:
-            feedback_messages.append(
-                build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
-            )
+            feedback = build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
+            feedback_messages.append(feedback)
+            attempt_record["feedback_to_next_iteration"] = feedback
+        attempts.append(attempt_record)
 
     final_raw_output = None
     if raw_generations:
@@ -435,6 +504,7 @@ def run_generation_loop(
         "validation_result": last_validation_result,
         "metrics": {},
         "raw_generations": raw_generations,
+        "attempts": attempts,
     }
 
 
@@ -448,6 +518,7 @@ def build_result_record(
     raw_output: str | None = None,
     parsed_plan: dict[str, Any] | None = None,
     validation_result: dict[str, Any] | None = None,
+    attempts: list[dict[str, Any]] | None = None,
     metrics: dict[str, Any] | None = None,
     raw_output_path: str | None = None,
     parsed_output_path: str | None = None,
@@ -468,6 +539,7 @@ def build_result_record(
         raw_output=raw_output,
         parsed_plan=parsed_plan,
         validation_result=validation_result,
+        attempts=attempts or [],
         metrics=metrics or {},
         raw_output_path=raw_output_path,
         parsed_output_path=parsed_output_path,
@@ -485,8 +557,9 @@ def run_case(
     domain_prompt: str = "",
     feedback_prompt: str = "",
     output_root: str | Path | None = None,
+    run_id: str = "",
 ) -> ResultRecord:
-    """Pseudocode entry point for one benchmark case.
+    """Run one benchmark case and optionally persist its artifacts.
 
     Current implemented flow:
     1. load task files
@@ -495,8 +568,6 @@ def run_case(
     4. compute core metrics from the normalized run payload
     5. return a normalized record
 
-    Still left as future work:
-    - support richer attempt history serialization
     """
     task_inputs = load_task_inputs(task_spec)
 
@@ -532,6 +603,7 @@ def run_case(
         output_root_path = Path(output_root)
         raw_path, parsed_path, scored_path = _build_artifact_paths(
             output_root=output_root_path,
+            run_id=run_id,
             model_id=model_id,
             protocol_id=protocol_spec.protocol_id,
             task_spec=task_spec,
@@ -544,10 +616,9 @@ def run_case(
             "task_family": task_spec.task_family,
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
-            "solved": case_payload["solved"],
-            "iterations_used": case_payload["iterations_used"],
             "raw_output": case_payload["raw_output"],
             "raw_generations": case_payload["raw_generations"],
+            "attempts": _build_raw_attempts(case_payload["attempts"]),
         }
         parsed_payload = {
             "model_id": model_id,
@@ -556,8 +627,9 @@ def run_case(
             "task_family": task_spec.task_family,
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
+            "raw_output_path": str(raw_path),
             "parsed_plan": case_payload["parsed_plan"],
-            "validation_result": case_payload["validation_result"],
+            "attempts": _build_parsed_attempts(case_payload["attempts"]),
         }
 
         _write_json_artifact(raw_path, raw_payload)
@@ -577,6 +649,7 @@ def run_case(
         raw_output=case_payload["raw_output"],
         parsed_plan=case_payload["parsed_plan"],
         validation_result=case_payload["validation_result"],
+        attempts=case_payload["attempts"],
         metrics=metrics_dict,
         raw_output_path=raw_output_path,
         parsed_output_path=parsed_output_path,
@@ -584,6 +657,12 @@ def run_case(
     )
 
     if output_root is not None and scored_output_path is not None:
-        _write_json_artifact(Path(scored_output_path), asdict(result_record))
+        scored_payload = asdict(result_record)
+        scored_payload["raw_output"] = None
+        scored_payload["parsed_plan"] = None
+        scored_payload["raw_output_path"] = raw_output_path
+        scored_payload["parsed_output_path"] = parsed_output_path
+        scored_payload["attempts"] = _build_scored_attempts(case_payload["attempts"])
+        _write_json_artifact(Path(scored_output_path), scored_payload)
 
     return result_record

@@ -7,5 +7,6 @@ Qui vanno i notebook dedicati a:
 - analisi del repair iterativo
 
 Consiglio:
-- lavorare sempre sui file in `outputs/scored/`
-- usare i file in `outputs/raw/` solo per debug o analisi qualitative
+- lavorare sempre sui file in `outputs/scored/<timestamp>/`
+- usare i file in `outputs/raw/<timestamp>/` solo per debug o analisi qualitative
+- confrontare run diversi partendo dalle rispettive cartelle timestampate in `outputs/scored/`

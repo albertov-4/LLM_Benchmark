@@ -1,7 +1,7 @@
 # Benchmark Framework
 
-Questa cartella e una proposta di struttura comune per confrontare piu LLM sugli
-stessi task di planning, con protocolli e metriche coerenti.
+Questa cartella contiene un framework per confrontare piu LLM sugli stessi task
+di planning, con protocolli e metriche coerenti.
 
 Obiettivi:
 - confrontare modelli diversi sulla stessa base
@@ -59,8 +59,8 @@ Come usare questa struttura:
 4. registrare i modelli nei file `models/model_registry_*.yaml`
 5. scegliere un protocollo in `protocols/`
 6. lanciare la batteria di test con `run_benchmark.py`
-7. salvare gli output grezzi in `outputs/raw/`
-8. salvare output parsati e metriche in `outputs/parsed/` e `outputs/scored/`
+7. salvare gli output grezzi nella cartella timestampata del run
+8. salvare output parsati e metriche nella stessa cartella timestampata
 
 Cartelle chiave:
 - `tasks/`: benchmark vero e proprio
@@ -72,8 +72,8 @@ Cartelle chiave:
 - `analysis/`: notebook e report finali
 
 Nota:
-- `citycar` e `tetris` sono ora famiglie starter reali, con dominio e istanze
-  `easy/medium/hard` gia pronte per i primi test locali
+- ogni famiglia di task deve avere un dominio PDDL e almeno una istanza in uno
+  dei tier disponibili
 - eventuali manifest o file indice possono essere aggiunti in futuro, ma non
   sono necessari per far funzionare il benchmark
 
@@ -84,14 +84,20 @@ Entry point consigliato:
 - per scegliere il backend via registry: `python "Benchmark Framework/run_benchmark.py" --adapter hf_local --protocol-id direct_plan --use-real-validator`
 - per un solo modello: `python "Benchmark Framework/run_benchmark.py" --model-id nvidia_gemma_4_31b_it --use-real-validator`
 - per un solo protocollo: `python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator`
+- per una sola famiglia/tier/istanza: `python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator`
 - per un registry diverso: `python "Benchmark Framework/run_benchmark.py" --model-registry-path "models/model_registry_ollama.yaml" --model-id ollama_phi_4_mini_instruct`
-- il launcher salva un riepilogo JSON in `outputs/scored/suite_result_latest.json`
+- il launcher crea una cartella timestampata dentro `raw`, `parsed` e `scored`
+- il riepilogo della suite viene salvato in `outputs/scored/<timestamp>/suite_result.json`
 - durante l'esecuzione stampa una riga `START`, `DONE` o `ERROR` per ogni job
 - inoltre salva per ogni job:
-  - `outputs/raw/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
-  - `outputs/parsed/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
-  - `outputs/scored/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
+  - `outputs/raw/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
+  - `outputs/parsed/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
+  - `outputs/scored/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
+- `raw` salva messaggi inviati, payload di generazione e testo grezzo del modello
+- `parsed` salva il piano estratto dal parser e gli eventuali problemi di formato
+- `scored` salva validazione, feedback di repair, metriche e path degli artefatti
 
 Setup rapido:
 - dipendenze Python in [requirements.txt](requirements.txt)
 - istruzioni ambiente e validator in [SETUP.md](SETUP.md)
+- spiegazione dei protocolli in [protocols/README.md](protocols/README.md)

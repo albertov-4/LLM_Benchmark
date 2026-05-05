@@ -227,6 +227,57 @@ class RunSuiteSmokeTest(unittest.TestCase):
         self.assertEqual(result["summary"]["num_jobs"], 1)
         self.assertEqual({job["protocol_id"] for job in result["run_matrix"]}, {"direct_plan"})
 
+    def test_run_suite_filters_task_family_tier_and_instance(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_task_filter_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_suite_task_filter_adapter_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_task_filter_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        def adapter_factory(model_entry, protocol_config):
+            return mock_adapter_module.MockAdapter(
+                scripted_outputs=["(move a b)"],
+                model_id=str(model_entry.get("model_id", "mock_model")),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            tasks_root = tmp_root / "tasks"
+            for task_family in ("toy", "other"):
+                for tier in ("easy", "hard"):
+                    tier_root = tasks_root / task_family / tier
+                    tier_root.mkdir(parents=True)
+                    domain_root = tasks_root / task_family / "domain"
+                    domain_root.mkdir(exist_ok=True)
+                    (domain_root / "domain.pddl").write_text("(define (domain toy))", encoding="utf-8")
+                    (tier_root / "instance-01.pddl").write_text("(define (problem p1))", encoding="utf-8")
+
+            fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+            result = run_suite_module.run_suite(
+                tasks_root=tasks_root,
+                protocols_root=fixtures_root / "protocols",
+                model_registry_path=fixtures_root / "models" / "model_registry.yaml",
+                task_family="toy",
+                tier="hard",
+                instance_id="instance-01",
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+            )
+
+        self.assertEqual(result["summary"]["num_task_cases"], 1)
+        self.assertEqual(result["summary"]["num_jobs"], 1)
+        self.assertEqual(result["task_cases"][0]["task_family"], "toy")
+        self.assertEqual(result["task_cases"][0]["tier"], "hard")
+        self.assertEqual(result["task_cases"][0]["instance_id"], "instance-01")
+
     def test_run_suite_can_use_real_validator(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         validate_command = _resolve_validate_command(framework_root)
@@ -261,7 +312,9 @@ class RunSuiteSmokeTest(unittest.TestCase):
         self.assertEqual(result["summary"]["num_jobs"], 1)
         self.assertEqual(len(result["suite_results"]), 1)
         self.assertEqual(result["aggregate_results"]["overall"]["num_solved"], 1)
-        self.assertEqual(result["suite_results"][0]["validation_result"]["status"], "valid")
+        self.assertTrue(result["suite_results"][0]["solved"])
+        self.assertTrue(result["suite_results"][0]["metrics"]["validity_at_1"])
+        self.assertIn("scored_output_path", result["suite_results"][0])
         self.assertEqual(result["orchestration_errors"], [])
 
     def test_adapter_override_applies_to_enabled_models(self) -> None:

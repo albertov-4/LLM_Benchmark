@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import lru_cache
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from time import perf_counter
 from typing import Any, TypedDict
 
 
@@ -403,6 +404,7 @@ def run_generation_loop(
     task_spec: TaskSpec,
     task_inputs: dict[str, str],
     protocol_spec: ProtocolSpec,
+    model_id: str = "",
     system_prompt: str = "",
     domain_prompt: str = "",
     feedback_prompt: str = "",
@@ -422,6 +424,8 @@ def run_generation_loop(
     attempts: list[dict[str, Any]] = []
     last_parsed_plan: dict[str, Any] | None = None
     last_validation_result: dict[str, Any] | None = None
+    model_label = model_id or getattr(adapter, "model_id", "unknown-model")
+    task_label = f"{task_spec.task_family}/{task_spec.tier}/{task_spec.instance_id}"
 
     for iteration in range(1, protocol_spec.max_iterations + 1):
         messages = build_messages(
@@ -433,9 +437,34 @@ def run_generation_loop(
             feedback_messages=feedback_messages,
         )
 
-        generation = adapter.generate(messages)
+        print(
+            f"[GEN START] model={model_label} protocol={protocol_spec.protocol_id} "
+            f"task={task_label} iteration={iteration}",
+            flush=True,
+        )
+        generation_start = perf_counter()
+        try:
+            generation = adapter.generate(messages)
+        except Exception as exc:
+            elapsed_seconds = perf_counter() - generation_start
+            print(
+                f"[GEN ERROR] model={model_label} protocol={protocol_spec.protocol_id} "
+                f"task={task_label} iteration={iteration} elapsed={elapsed_seconds:.1f}s "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            raise
+        generation_elapsed = perf_counter() - generation_start
         if not isinstance(generation, dict):
             generation = {"raw_text": str(generation)}
+        raw_text_preview = generation.get("raw_text", "")
+        raw_text_length = len(raw_text_preview) if isinstance(raw_text_preview, str) else len(str(raw_text_preview))
+        print(
+            f"[GEN DONE] model={model_label} protocol={protocol_spec.protocol_id} "
+            f"task={task_label} iteration={iteration} elapsed={generation_elapsed:.1f}s "
+            f"raw_chars={raw_text_length}",
+            flush=True,
+        )
         raw_generations.append(generation)
 
         raw_text = generation.get("raw_text", "")
@@ -443,6 +472,13 @@ def run_generation_loop(
 
         parsed_plan = _parse_generation_output(raw_text)
         last_parsed_plan = parsed_plan
+        actions = parsed_plan.get("actions", [])
+        action_count = len(actions) if isinstance(actions, list) else 0
+        print(
+            f"[PARSE DONE] model={model_label} protocol={protocol_spec.protocol_id} "
+            f"task={task_label} iteration={iteration} actions={action_count}",
+            flush=True,
+        )
         attempt_record: dict[str, Any] = {
             "iteration": iteration,
             "messages": messages,
@@ -453,11 +489,16 @@ def run_generation_loop(
             "feedback_to_next_iteration": None,
         }
 
-        actions = parsed_plan.get("actions", [])
         if not isinstance(actions, list) or not actions:
             validation_result = _build_parse_failure_result(raw_text, parsed_plan)
             last_validation_result = validation_result
             attempt_record["validation_result"] = validation_result
+            print(
+                f"[VALIDATE SKIP] model={model_label} protocol={protocol_spec.protocol_id} "
+                f"task={task_label} iteration={iteration} "
+                f"error={validation_result.get('error_type')}",
+                flush=True,
+            )
             if protocol_spec.include_external_feedback:
                 feedback = build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
                 feedback_messages.append(feedback)
@@ -466,9 +507,21 @@ def run_generation_loop(
             continue
 
         plan_text = "\n".join(action for action in actions if isinstance(action, str))
+        print(
+            f"[VALIDATE START] model={model_label} protocol={protocol_spec.protocol_id} "
+            f"task={task_label} iteration={iteration}",
+            flush=True,
+        )
         validation_result = _run_validator(validator, task_spec, plan_text)
         last_validation_result = validation_result
         attempt_record["validation_result"] = validation_result
+        print(
+            f"[VALIDATE DONE] model={model_label} protocol={protocol_spec.protocol_id} "
+            f"task={task_label} iteration={iteration} "
+            f"valid={bool(validation_result.get('valid', False))} "
+            f"error={validation_result.get('error_type')}",
+            flush=True,
+        )
 
         if bool(validation_result.get("valid", False)):
             attempts.append(attempt_record)
@@ -578,6 +631,7 @@ def run_case(
         task_spec=task_spec,
         task_inputs=task_inputs,
         protocol_spec=protocol_spec,
+        model_id=model_id,
         system_prompt=system_prompt,
         domain_prompt=domain_prompt,
         feedback_prompt=feedback_prompt,

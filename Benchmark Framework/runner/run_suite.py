@@ -613,6 +613,10 @@ def build_model_adapter(
                     model_entry.get("job_timeout_seconds"),
                     "job_timeout_seconds",
                 ),
+                debug_stream=bool(model_entry.get("debug_stream", False)),
+                debug_stream_interval_seconds=int(
+                    model_entry.get("debug_stream_interval_seconds", 10) or 10
+                ),
                 extra_body=extra_body,
             )
             return nvidia_module.NvidiaAPIAdapter(nvidia_config)

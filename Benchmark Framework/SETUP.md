@@ -82,6 +82,7 @@ For streaming NVIDIA models:
 - `timeout_seconds` controls the API/client timeout
 - `job_timeout_seconds` optionally limits the total streaming attempt duration
 - if a stream is interrupted after text has been received, the benchmark keeps the partial output and marks it in the saved generation payload
+- set `debug_stream: true` on one registry entry to print streaming progress diagnostics
 
 Environment variable option:
 

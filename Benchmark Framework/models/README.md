@@ -61,6 +61,8 @@ NVIDIA API fields:
 - `max_tokens`: maximum generated tokens requested from the provider.
 - `timeout_seconds`: API/client timeout.
 - `job_timeout_seconds`: optional total generation-attempt timeout for streaming runs.
+- `debug_stream`: enables NVIDIA streaming progress logs for this model.
+- `debug_stream_interval_seconds`: minimum interval between NVIDIA streaming progress logs.
 - `thinking_key`: provider-specific key inserted under `chat_template_kwargs` to enable or disable thinking/reasoning modes.
 - `thinking_enabled`: boolean value used with `thinking_key`.
 - `reasoning_budget`: provider-specific reasoning budget passed in the request body.
@@ -105,6 +107,7 @@ Most runs only require these fields:
 - `top_p`
 - `timeout_seconds`
 - `job_timeout_seconds` for NVIDIA streaming runs
+- `debug_stream` when diagnosing NVIDIA streaming stalls
 - `stream` for APIs that support streaming
 
 ## Generation Sampling Fields

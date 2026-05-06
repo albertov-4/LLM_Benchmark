@@ -30,6 +30,12 @@ Single-run flow:
 - iterative protocols add validator feedback and retry until success or budget exhaustion
 - metrics are computed from the normalized final result
 
+Runtime diagnostics:
+- each iteration prints `GEN START` and `GEN DONE`
+- parsing prints `PARSE DONE` with the number of extracted actions
+- validation prints `VALIDATE START`, `VALIDATE DONE` or `VALIDATE SKIP`
+- NVIDIA streaming adapters can print additional stream progress when `debug_stream: true` is set in the registry
+
 Saved artifacts:
 - `raw`: messages sent to the model and generation payloads, stored per attempt
 - `parsed`: parsed plans and parser-level issues, stored per attempt

@@ -23,6 +23,8 @@ class NvidiaAPIConfig:
     max_tokens: int = 4096
     timeout_seconds: int = 300
     job_timeout_seconds: int | None = None
+    debug_stream: bool = False
+    debug_stream_interval_seconds: int = 10
     extra_body: dict[str, Any] = field(default_factory=dict)
 
 
@@ -153,6 +155,15 @@ class NvidiaAPIAdapter:
         return str(response).strip()
 
     def _generate_chat_completion(self, client, messages: list[dict[str, str]]) -> dict[str, Any]:
+        if self.config.debug_stream:
+            print(
+                f"[NVIDIA REQUEST START] model={self.config.model_id} "
+                f"api_model={self.config.api_model_name} stream={self.config.stream} "
+                f"timeout={self.config.timeout_seconds} "
+                f"job_timeout={self.config.job_timeout_seconds}",
+                flush=True,
+            )
+
         completion = client.chat.completions.create(
             model=self.config.api_model_name,
             messages=messages,
@@ -164,6 +175,11 @@ class NvidiaAPIAdapter:
         )
 
         if not self.config.stream:
+            if self.config.debug_stream:
+                print(
+                    f"[NVIDIA REQUEST DONE] model={self.config.model_id} stream=False",
+                    flush=True,
+                )
             return {
                 "raw_text": self._extract_raw_text(completion),
                 "reasoning_text": "",
@@ -181,9 +197,19 @@ class NvidiaAPIAdapter:
         partial_output = False
         timed_out_by_job_limit = False
         stream_start = perf_counter()
+        last_debug_print = stream_start
+        chunk_count = 0
+
+        if self.config.debug_stream:
+            print(
+                f"[NVIDIA STREAM START] model={self.config.model_id} "
+                f"max_tokens={self.config.max_tokens}",
+                flush=True,
+            )
 
         try:
             for chunk in completion:
+                chunk_count += 1
                 choices = getattr(chunk, "choices", None) or []
                 if choices:
                     delta = getattr(choices[0], "delta", None)
@@ -196,8 +222,22 @@ class NvidiaAPIAdapter:
                         if content is not None:
                             content_chunks.append(str(content))
 
+                elapsed_seconds = perf_counter() - stream_start
+                if (
+                    self.config.debug_stream
+                    and elapsed_seconds - last_debug_print
+                    >= self.config.debug_stream_interval_seconds
+                ):
+                    last_debug_print = perf_counter()
+                    print(
+                        f"[NVIDIA STREAM PROGRESS] model={self.config.model_id} "
+                        f"elapsed={elapsed_seconds:.1f}s chunks={chunk_count} "
+                        f"content_chars={len(''.join(content_chunks))} "
+                        f"reasoning_chars={len(''.join(reasoning_chunks))}",
+                        flush=True,
+                    )
+
                 if self.config.job_timeout_seconds is not None:
-                    elapsed_seconds = perf_counter() - stream_start
                     if elapsed_seconds > self.config.job_timeout_seconds:
                         stream_complete = False
                         stream_error = (
@@ -206,11 +246,36 @@ class NvidiaAPIAdapter:
                         )
                         partial_output = True
                         timed_out_by_job_limit = True
+                        if self.config.debug_stream:
+                            print(
+                                f"[NVIDIA STREAM TIMEOUT] model={self.config.model_id} "
+                                f"elapsed={elapsed_seconds:.1f}s "
+                                f"limit={self.config.job_timeout_seconds}s "
+                                f"content_chars={len(''.join(content_chunks))}",
+                                flush=True,
+                            )
                         break
         except Exception as exc:
             stream_complete = False
             stream_error = f"{type(exc).__name__}: {exc}"
             partial_output = True
+            if self.config.debug_stream:
+                print(
+                    f"[NVIDIA STREAM ERROR] model={self.config.model_id} "
+                    f"{stream_error} content_chars={len(''.join(content_chunks))} "
+                    f"reasoning_chars={len(''.join(reasoning_chunks))}",
+                    flush=True,
+                )
+
+        if self.config.debug_stream:
+            elapsed_seconds = perf_counter() - stream_start
+            print(
+                f"[NVIDIA STREAM DONE] model={self.config.model_id} "
+                f"complete={stream_complete} elapsed={elapsed_seconds:.1f}s "
+                f"chunks={chunk_count} content_chars={len(''.join(content_chunks))} "
+                f"reasoning_chars={len(''.join(reasoning_chunks))}",
+                flush=True,
+            )
 
         return {
             "raw_text": "".join(content_chunks).strip(),

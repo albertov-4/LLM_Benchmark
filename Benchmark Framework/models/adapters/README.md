@@ -18,6 +18,7 @@ NVIDIA streaming behavior:
 - if the stream is interrupted after chunks were received, the adapter returns the partial text instead of raising an orchestration error
 - partial streaming results include `partial_output: true`, `stream_complete: false` and a readable `stream_error`
 - `job_timeout_seconds` can stop a long streaming attempt and return the text accumulated so far
+- `debug_stream: true` prints request, stream start, progress, error and completion diagnostics
 
 Rules:
 - the runner should not depend on provider-specific response formats

@@ -34,6 +34,7 @@ Saved artifacts:
 - `raw`: messages sent to the model, generation payloads and raw text
 - `parsed`: parsed plans and parser-level issues
 - `scored`: validation results, repair feedback, metrics and artifact paths
+- streaming adapters can mark generation payloads with `partial_output`, `stream_complete`, `stream_error` and `timed_out_by_job_limit`
 
 Suite flow:
 - `run_suite.py` builds the model x protocol x task matrix

@@ -609,6 +609,10 @@ def build_model_adapter(
                 top_p=float(model_entry.get("top_p", generation_config.get("top_p", 0.95)) or 0.95),
                 max_tokens=int(model_entry.get("max_tokens", generation_config.get("max_tokens", 4096)) or 4096),
                 timeout_seconds=int(model_entry.get("timeout_seconds", 300) or 300),
+                job_timeout_seconds=_parse_optional_int(
+                    model_entry.get("job_timeout_seconds"),
+                    "job_timeout_seconds",
+                ),
                 extra_body=extra_body,
             )
             return nvidia_module.NvidiaAPIAdapter(nvidia_config)

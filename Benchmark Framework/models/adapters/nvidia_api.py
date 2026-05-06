@@ -22,6 +22,7 @@ class NvidiaAPIConfig:
     top_p: float = 0.95
     max_tokens: int = 4096
     timeout_seconds: int = 300
+    job_timeout_seconds: int | None = None
     extra_body: dict[str, Any] = field(default_factory=dict)
 
 
@@ -167,26 +168,49 @@ class NvidiaAPIAdapter:
                 "raw_text": self._extract_raw_text(completion),
                 "reasoning_text": "",
                 "usage": self._extract_usage(completion),
+                "stream_complete": True,
+                "stream_error": None,
+                "partial_output": False,
+                "timed_out_by_job_limit": False,
             }
 
         content_chunks: list[str] = []
         reasoning_chunks: list[str] = []
-        for chunk in completion:
-            choices = getattr(chunk, "choices", None) or []
-            if not choices:
-                continue
+        stream_complete = True
+        stream_error: str | None = None
+        partial_output = False
+        timed_out_by_job_limit = False
+        stream_start = perf_counter()
 
-            delta = getattr(choices[0], "delta", None)
-            if delta is None:
-                continue
+        try:
+            for chunk in completion:
+                choices = getattr(chunk, "choices", None) or []
+                if choices:
+                    delta = getattr(choices[0], "delta", None)
+                    if delta is not None:
+                        reasoning = getattr(delta, "reasoning_content", None)
+                        if reasoning:
+                            reasoning_chunks.append(str(reasoning))
 
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning:
-                reasoning_chunks.append(str(reasoning))
+                        content = getattr(delta, "content", None)
+                        if content is not None:
+                            content_chunks.append(str(content))
 
-            content = getattr(delta, "content", None)
-            if content is not None:
-                content_chunks.append(str(content))
+                if self.config.job_timeout_seconds is not None:
+                    elapsed_seconds = perf_counter() - stream_start
+                    if elapsed_seconds > self.config.job_timeout_seconds:
+                        stream_complete = False
+                        stream_error = (
+                            "JobTimeout: generation exceeded "
+                            f"{self.config.job_timeout_seconds} seconds"
+                        )
+                        partial_output = True
+                        timed_out_by_job_limit = True
+                        break
+        except Exception as exc:
+            stream_complete = False
+            stream_error = f"{type(exc).__name__}: {exc}"
+            partial_output = True
 
         return {
             "raw_text": "".join(content_chunks).strip(),
@@ -196,6 +220,10 @@ class NvidiaAPIAdapter:
                 "completion_tokens": None,
                 "total_tokens": None,
             },
+            "stream_complete": stream_complete,
+            "stream_error": stream_error,
+            "partial_output": partial_output,
+            "timed_out_by_job_limit": timed_out_by_job_limit,
         }
 
     def _generate_response(self, client, messages: list[dict[str, str]]) -> dict[str, Any]:
@@ -218,6 +246,10 @@ class NvidiaAPIAdapter:
             "raw_text": raw_text,
             "reasoning_text": "",
             "usage": self._extract_usage(response),
+            "stream_complete": True,
+            "stream_error": None,
+            "partial_output": False,
+            "timed_out_by_job_limit": False,
         }
 
     def generate(self, messages: list[dict[str, str]]) -> dict[str, Any]:
@@ -232,8 +264,12 @@ class NvidiaAPIAdapter:
         latency_s = perf_counter() - start_time
 
         notes: list[str] = []
-        if generation["reasoning_text"]:
+        if generation.get("reasoning_text"):
             notes.append("reasoning_content captured separately from raw_text.")
+        if generation.get("partial_output"):
+            notes.append("stream interrupted; raw_text contains partial output.")
+        if generation.get("timed_out_by_job_limit"):
+            notes.append("generation stopped by job timeout.")
 
         return {
             "model_id": self.config.model_id,
@@ -242,4 +278,8 @@ class NvidiaAPIAdapter:
             "latency_s": latency_s,
             "notes": notes,
             "reasoning_text": generation["reasoning_text"],
+            "stream_complete": generation.get("stream_complete"),
+            "stream_error": generation.get("stream_error"),
+            "partial_output": generation.get("partial_output", False),
+            "timed_out_by_job_limit": generation.get("timed_out_by_job_limit", False),
         }

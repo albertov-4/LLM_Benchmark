@@ -24,6 +24,7 @@ Useful registry fields:
 - `model_path`: local `.gguf` file for llama.cpp
 - `device_map`, `torch_dtype`, `trust_remote_code`, `use_chat_template`, `add_generation_prompt`: Hugging Face loading and prompting options
 - `timeout_seconds`: adapter call timeout
+- `job_timeout_seconds`: optional total generation-attempt timeout for streaming adapters
 
 Operational notes:
 - `--adapter` selects the matching registry automatically.
@@ -31,6 +32,7 @@ Operational notes:
 - Alternative registries can keep entries disabled by default to avoid accidental heavy runs.
 - For local/HPC Hugging Face runs, `weights_path` can be replaced with a prepared local model directory.
 - For NVIDIA API runs, set the variable or local secret referenced by `api_key_env`.
+- For NVIDIA streaming runs, partial output is preserved when the stream is interrupted after text has already been received.
 - For llama.cpp, replace `model_path: REPLACE_WITH_LOCAL_GGUF_FILE` with a real local `.gguf` path.
 
 Examples:

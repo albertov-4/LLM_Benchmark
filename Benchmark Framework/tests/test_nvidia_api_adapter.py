@@ -74,9 +74,37 @@ class _FakeCompletions:
         return _FakeCompletion()
 
 
+class _FailingStream:
+    def __iter__(self):
+        yield _FakeStreamChunk(content="(move ")
+        yield _FakeStreamChunk(reasoning_content="partial reasoning ")
+        raise RuntimeError("incomplete chunked read")
+
+
+class _TimeoutStream:
+    def __iter__(self):
+        yield _FakeStreamChunk(content="(move ")
+        yield _FakeStreamChunk(content="a b)")
+
+
+class _FailingStreamCompletions:
+    def __init__(self, stream):
+        self.stream = stream
+        self.last_kwargs = None
+
+    def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        return self.stream
+
+
 class _FakeChat:
     def __init__(self):
         self.completions = _FakeCompletions()
+
+
+class _CustomChat:
+    def __init__(self, stream):
+        self.completions = _FailingStreamCompletions(stream)
 
 
 class _FakeResponses:
@@ -96,6 +124,16 @@ class _FakeOpenAI:
         self.chat = _FakeChat()
         self.responses = _FakeResponses()
         _FakeOpenAI.last_instance = self
+
+
+class _CustomOpenAI:
+    last_instance = None
+
+    def __init__(self, stream, **kwargs):
+        self.kwargs = kwargs
+        self.chat = _CustomChat(stream)
+        self.responses = _FakeResponses()
+        _CustomOpenAI.last_instance = self
 
 
 class NvidiaAPIAdapterTest(unittest.TestCase):
@@ -173,7 +211,80 @@ class NvidiaAPIAdapterTest(unittest.TestCase):
 
         self.assertEqual(result["raw_text"], "(move a b)")
         self.assertEqual(result["reasoning_text"], "think")
+        self.assertTrue(result["stream_complete"])
+        self.assertIsNone(result["stream_error"])
+        self.assertFalse(result["partial_output"])
+        self.assertFalse(result["timed_out_by_job_limit"])
         self.assertIn("reasoning_content captured", result["notes"][0])
+
+    def test_streaming_chat_returns_partial_output_when_stream_fails(self) -> None:
+        module = self.nvidia_module
+        old_api_key = os.environ.get("NVIDIA_API_KEY")
+        os.environ["NVIDIA_API_KEY"] = "test-key"
+
+        class TestAdapter(module.NvidiaAPIAdapter):
+            def _load_openai_client_class(self):
+                return lambda **kwargs: _CustomOpenAI(_FailingStream(), **kwargs)
+
+        try:
+            adapter = TestAdapter(
+                module.NvidiaAPIConfig(
+                    model_id="nvidia_partial_stream_test",
+                    api_model_name="vendor/model",
+                    stream=True,
+                )
+            )
+            result = adapter.generate([{"role": "user", "content": "Solve."}])
+        finally:
+            if old_api_key is None:
+                os.environ.pop("NVIDIA_API_KEY", None)
+            else:
+                os.environ["NVIDIA_API_KEY"] = old_api_key
+
+        self.assertEqual(result["raw_text"], "(move")
+        self.assertEqual(result["reasoning_text"], "partial reasoning")
+        self.assertFalse(result["stream_complete"])
+        self.assertIn("RuntimeError: incomplete chunked read", result["stream_error"])
+        self.assertTrue(result["partial_output"])
+        self.assertFalse(result["timed_out_by_job_limit"])
+        self.assertIn("stream interrupted", " ".join(result["notes"]))
+
+    def test_streaming_chat_stops_on_job_timeout_with_partial_output(self) -> None:
+        module = self.nvidia_module
+        old_api_key = os.environ.get("NVIDIA_API_KEY")
+        old_perf_counter = module.perf_counter
+        os.environ["NVIDIA_API_KEY"] = "test-key"
+
+        timings = iter([0.0, 0.0, 2.0, 2.1])
+        module.perf_counter = lambda: next(timings)
+
+        class TestAdapter(module.NvidiaAPIAdapter):
+            def _load_openai_client_class(self):
+                return lambda **kwargs: _CustomOpenAI(_TimeoutStream(), **kwargs)
+
+        try:
+            adapter = TestAdapter(
+                module.NvidiaAPIConfig(
+                    model_id="nvidia_job_timeout_test",
+                    api_model_name="vendor/model",
+                    stream=True,
+                    job_timeout_seconds=1,
+                )
+            )
+            result = adapter.generate([{"role": "user", "content": "Solve."}])
+        finally:
+            module.perf_counter = old_perf_counter
+            if old_api_key is None:
+                os.environ.pop("NVIDIA_API_KEY", None)
+            else:
+                os.environ["NVIDIA_API_KEY"] = old_api_key
+
+        self.assertEqual(result["raw_text"], "(move")
+        self.assertFalse(result["stream_complete"])
+        self.assertEqual(result["stream_error"], "JobTimeout: generation exceeded 1 seconds")
+        self.assertTrue(result["partial_output"])
+        self.assertTrue(result["timed_out_by_job_limit"])
+        self.assertIn("generation stopped by job timeout.", result["notes"])
 
     def test_responses_api_mode_uses_responses_client(self) -> None:
         module = self.nvidia_module

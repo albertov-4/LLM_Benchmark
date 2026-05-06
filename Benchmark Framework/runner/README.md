@@ -31,9 +31,9 @@ Single-run flow:
 - metrics are computed from the normalized final result
 
 Saved artifacts:
-- `raw`: messages sent to the model, generation payloads and raw text
-- `parsed`: parsed plans and parser-level issues
-- `scored`: validation results, repair feedback, metrics and artifact paths
+- `raw`: messages sent to the model and generation payloads, stored per attempt
+- `parsed`: parsed plans and parser-level issues, stored per attempt
+- `scored`: metrics, artifact paths, validation results and repair feedback, stored per attempt
 - streaming adapters can mark generation payloads with `partial_output`, `stream_complete`, `stream_error` and `timed_out_by_job_limit`
 
 Suite flow:

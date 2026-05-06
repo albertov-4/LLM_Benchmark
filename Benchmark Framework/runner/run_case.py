@@ -145,12 +145,13 @@ def _build_raw_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep only prompt and model-generation data for raw artifacts."""
     raw_attempts: list[dict[str, Any]] = []
     for attempt in attempts:
+        generation = dict(attempt.get("generation", {}))
+        generation.pop("model_id", None)
         raw_attempts.append(
             {
                 "iteration": attempt.get("iteration"),
                 "messages": attempt.get("messages", []),
-                "generation": attempt.get("generation", {}),
-                "raw_output": attempt.get("raw_output"),
+                "generation": generation,
             }
         )
     return raw_attempts
@@ -616,8 +617,6 @@ def run_case(
             "task_family": task_spec.task_family,
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
-            "raw_output": case_payload["raw_output"],
-            "raw_generations": case_payload["raw_generations"],
             "attempts": _build_raw_attempts(case_payload["attempts"]),
         }
         parsed_payload = {
@@ -628,7 +627,6 @@ def run_case(
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
             "raw_output_path": str(raw_path),
-            "parsed_plan": case_payload["parsed_plan"],
             "attempts": _build_parsed_attempts(case_payload["attempts"]),
         }
 
@@ -657,12 +655,22 @@ def run_case(
     )
 
     if output_root is not None and scored_output_path is not None:
-        scored_payload = asdict(result_record)
-        scored_payload["raw_output"] = None
-        scored_payload["parsed_plan"] = None
-        scored_payload["raw_output_path"] = raw_output_path
-        scored_payload["parsed_output_path"] = parsed_output_path
-        scored_payload["attempts"] = _build_scored_attempts(case_payload["attempts"])
+        scored_payload = {
+            "model_id": result_record.model_id,
+            "task_id": result_record.task_id,
+            "protocol_id": result_record.protocol_id,
+            "task_family": result_record.task_family,
+            "tier": result_record.tier,
+            "instance_id": result_record.instance_id,
+            "solved": result_record.solved,
+            "iterations_used": result_record.iterations_used,
+            "max_iterations": result_record.max_iterations,
+            "stopped_by_iteration_limit": result_record.stopped_by_iteration_limit,
+            "metrics": result_record.metrics,
+            "raw_output_path": raw_output_path,
+            "parsed_output_path": parsed_output_path,
+            "attempts": _build_scored_attempts(case_payload["attempts"]),
+        }
         _write_json_artifact(Path(scored_output_path), scored_payload)
 
     return result_record

@@ -142,6 +142,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Timeout used by the real validator.",
     )
     parser.add_argument(
+        "--preflight-tasks",
+        action="store_true",
+        help="Check task domain/problem files with VAL before launching model jobs.",
+    )
+    parser.add_argument(
         "--stop-on-error",
         action="store_true",
         help="Abort the suite immediately when one job raises an orchestration error.",
@@ -190,6 +195,7 @@ def main() -> int:
         use_real_validator=args.use_real_validator,
         validator_command=args.validator_command,
         validator_timeout_seconds=args.validator_timeout_seconds,
+        preflight_tasks=args.preflight_tasks,
         stop_on_error=args.stop_on_error,
     )
 

@@ -317,6 +317,79 @@ class RunSuiteSmokeTest(unittest.TestCase):
         self.assertIn("scored_output_path", result["suite_results"][0])
         self.assertEqual(result["orchestration_errors"], [])
 
+    def test_run_suite_preflight_uses_real_validator_before_jobs(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        validate_command = _resolve_validate_command(framework_root)
+        if validate_command is None:
+            self.skipTest("Validate executable not found for preflight integration test.")
+
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_preflight_real_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_suite_preflight_adapter_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+
+        def adapter_factory(model_entry, protocol_config):
+            return mock_adapter_module.MockAdapter(
+                scripted_outputs=["(move)"],
+                model_id=str(model_entry.get("model_id", "mock_model")),
+            )
+
+        fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+        result = run_suite_module.run_suite(
+            tasks_root=fixtures_root / "tasks",
+            protocols_root=fixtures_root / "protocols",
+            model_registry_path=fixtures_root / "models" / "model_registry.yaml",
+            adapter_factory=adapter_factory,
+            use_real_validator=True,
+            validator_command=validate_command,
+            preflight_tasks=True,
+        )
+
+        self.assertEqual(len(result["preflight_results"]), 1)
+        self.assertTrue(result["preflight_results"][0]["ok"])
+        self.assertEqual(result["preflight_results"][0]["status"], "ok")
+        self.assertEqual(len(result["suite_results"]), 1)
+        self.assertEqual(result["orchestration_errors"], [])
+
+    def test_run_suite_preflight_failure_stops_before_model_jobs(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_preflight_unavailable_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_preflight_unavailable_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        adapter_calls = []
+
+        def adapter_factory(model_entry, protocol_config):
+            adapter_calls.append(model_entry)
+            raise AssertionError("Adapter should not be built after preflight failure.")
+
+        fixtures_root = framework_root / "tests" / "fixtures" / "benchmark_suite"
+        result = run_suite_module.run_suite(
+            tasks_root=fixtures_root / "tasks",
+            protocols_root=fixtures_root / "protocols",
+            model_registry_path=fixtures_root / "models" / "model_registry.yaml",
+            adapter_factory=adapter_factory,
+            validator_factory=mock_validator_module.build_mock_validator_for_suite,
+            validator_command="definitely-missing-validate-command",
+            preflight_tasks=True,
+        )
+
+        self.assertEqual(adapter_calls, [])
+        self.assertEqual(len(result["preflight_results"]), 1)
+        self.assertFalse(result["preflight_results"][0]["ok"])
+        self.assertEqual(result["preflight_results"][0]["status"], "validator_unavailable")
+        self.assertEqual(result["suite_results"], [])
+        self.assertEqual(result["orchestration_errors"][0]["error_type"], "validator_unavailable")
+
     def test_adapter_override_applies_to_enabled_models(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_suite_module = _load_module(

@@ -710,6 +710,86 @@ def build_validator(
     return _UnavailableValidator()
 
 
+def run_task_preflights(
+    *,
+    framework_root: Path,
+    task_cases: list[DiscoveredTaskCase],
+    validator_command: str | Path | None = None,
+    validator_timeout_seconds: int = 30,
+    validator_working_directory: str | Path | None = None,
+    validator_extra_args: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Run VAL domain/problem checks before model execution."""
+    preflight_module = _load_framework_module(
+        "benchmark_framework_preflight_module",
+        "evaluators/preflight.py",
+    )
+    resolved_command = _resolve_validate_command(
+        framework_root=framework_root,
+        validator_command=validator_command,
+    )
+
+    if resolved_command is None:
+        return [
+            {
+                "task_family": task_case.task_family,
+                "tier": task_case.tier,
+                "instance_id": task_case.instance_id,
+                "domain_file": str(task_case.domain_file),
+                "problem_file": str(task_case.problem_file),
+                "ok": False,
+                "status": "validator_unavailable",
+                "return_code": None,
+                "validation_time_ms": None,
+                "raw_validator_output": None,
+                "error_message": (
+                    "Unable to resolve the VAL validator executable. "
+                    "Pass `validator_command=...` or add `Validate` to PATH."
+                ),
+                "details": {
+                    "validator_command": str(validator_command) if validator_command is not None else None,
+                },
+            }
+            for task_case in task_cases
+        ]
+
+    results: list[dict[str, Any]] = []
+    for task_case in task_cases:
+        result = preflight_module.run_val_domain_problem_preflight(
+            validator_command=resolved_command,
+            domain_file=task_case.domain_file,
+            problem_file=task_case.problem_file,
+            task_family=task_case.task_family,
+            tier=task_case.tier,
+            instance_id=task_case.instance_id,
+            timeout_seconds=validator_timeout_seconds,
+            working_directory=validator_working_directory,
+            extra_args=validator_extra_args,
+        )
+        results.append(result.to_dict())
+    return results
+
+
+def _build_preflight_error_payloads(preflight_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Translate failed preflight checks into suite orchestration errors."""
+    error_payloads: list[dict[str, Any]] = []
+    for result in preflight_results:
+        if bool(result.get("ok", False)):
+            continue
+        error_payloads.append(
+            {
+                "model_id": None,
+                "protocol_id": None,
+                "task_family": result.get("task_family"),
+                "tier": result.get("tier"),
+                "instance_id": result.get("instance_id"),
+                "error_type": result.get("status", "preflight_failed"),
+                "error_message": result.get("error_message") or "Task preflight failed.",
+            }
+        )
+    return error_payloads
+
+
 def _new_aggregate_bucket() -> dict[str, Any]:
     """Create one aggregation bucket."""
     return {
@@ -805,6 +885,7 @@ def run_suite(
     validator_keep_temp_files: bool = False,
     validator_working_directory: str | Path | None = None,
     validator_extra_args: list[str] | None = None,
+    preflight_tasks: bool = False,
     stop_on_error: bool = False,
 ) -> dict[str, Any]:
     """Run a full benchmark campaign.
@@ -869,6 +950,32 @@ def run_suite(
     else:
         protocol_ids = discovered_protocol_ids
     run_matrix = build_run_matrix(task_cases, model_ids, protocol_ids)
+    preflight_results: list[dict[str, Any]] = []
+    orchestration_errors: list[dict[str, Any]] = []
+
+    if preflight_tasks:
+        preflight_results = run_task_preflights(
+            framework_root=framework_root,
+            task_cases=task_cases,
+            validator_command=validator_command,
+            validator_timeout_seconds=validator_timeout_seconds,
+            validator_working_directory=validator_working_directory,
+            validator_extra_args=validator_extra_args,
+        )
+        preflight_errors = _build_preflight_error_payloads(preflight_results)
+        if preflight_errors:
+            orchestration_errors.extend(preflight_errors)
+            return {
+                "summary": summarize_suite_inputs(task_cases, model_ids, protocol_ids),
+                "task_cases": [asdict(task_case) for task_case in task_cases],
+                "protocol_ids": protocol_ids,
+                "model_ids": model_ids,
+                "run_matrix": [asdict(job) for job in run_matrix],
+                "preflight_results": preflight_results,
+                "suite_results": [],
+                "aggregate_results": aggregate_suite_results([]),
+                "orchestration_errors": orchestration_errors,
+            }
 
     model_lookup = {
         str(entry["model_id"]): entry
@@ -882,7 +989,6 @@ def run_suite(
     )
 
     suite_results: list[dict[str, Any]] = []
-    orchestration_errors: list[dict[str, Any]] = []
 
     total_jobs = len(run_matrix)
     for job_index, job in enumerate(run_matrix, start=1):
@@ -967,6 +1073,7 @@ def run_suite(
         "protocol_ids": protocol_ids,
         "model_ids": model_ids,
         "run_matrix": [asdict(job) for job in run_matrix],
+        "preflight_results": preflight_results,
         "suite_results": [_build_suite_result_summary(result) for result in suite_results],
         "aggregate_results": aggregate_suite_results(suite_results),
         "orchestration_errors": orchestration_errors,

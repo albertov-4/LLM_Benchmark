@@ -70,6 +70,18 @@ class RunBenchmarkCLITest(unittest.TestCase):
             framework_root / "outputs",
         )
 
+    def test_preflight_tasks_flag_defaults_to_false_and_can_be_enabled(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        module = _load_module(
+            "benchmark_framework_test_run_benchmark_preflight_flag",
+            framework_root / "run_benchmark.py",
+        )
+
+        parser = module._build_parser()
+
+        self.assertFalse(parser.parse_args([]).preflight_tasks)
+        self.assertTrue(parser.parse_args(["--preflight-tasks"]).preflight_tasks)
+
 
 if __name__ == "__main__":
     unittest.main()

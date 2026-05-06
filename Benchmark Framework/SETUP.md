@@ -131,6 +131,13 @@ Per limitare il test a una famiglia, difficolta o istanza:
 python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator
 ```
 
+Per controllare prima che i file PDDL dei task siano leggibili da `VAL`, senza
+avviare i job dei modelli se un dominio/problema fallisce:
+
+```powershell
+python "Benchmark Framework/run_benchmark.py" --preflight-tasks --use-real-validator
+```
+
 Se `Validate` non e nel `PATH`:
 
 ```powershell

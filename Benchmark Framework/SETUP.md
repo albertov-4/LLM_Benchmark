@@ -1,10 +1,10 @@
 # Setup
 
-Questo file descrive il setup minimo per far partire il benchmark su un altro PC.
+This file describes the minimum setup required to run the benchmark on another machine.
 
-## 1. Ambiente Python
+## 1. Python Environment
 
-Dalla root di `LLM_Benchmark`:
+From the `LLM_Benchmark` repository root:
 
 ```powershell
 python -m venv .venv
@@ -12,168 +12,163 @@ python -m venv .venv
 pip install -r "Benchmark Framework/requirements.txt"
 ```
 
-Verifica rapida:
+Quick check:
 
 ```powershell
 python -c "import torch, transformers, accelerate, openai; print(torch.__version__); print(transformers.__version__)"
 ```
 
-## 2. Validator esterno `VAL`
+## 2. External `VAL` Validator
 
-`VAL` non e una dipendenza Python del progetto. Va installato a parte.
+`VAL` is not a Python dependency. It must be installed separately.
 
-Due opzioni:
+Two options are supported:
+- add the folder containing `Validate.exe` to `PATH`
+- pass the full executable path to the launcher with `--validator-command`
 
-- aggiungere al `PATH` la cartella che contiene `Validate.exe`
-- oppure passare il path completo al launcher con `--validator-command`
-
-Verifica:
+Check whether `VAL` is available:
 
 ```powershell
 Validate -h
 ```
 
-oppure:
+Or use the full executable path:
 
 ```powershell
-& "C:\percorso\completo\Validate.exe" -h
+& "C:\full\path\to\Validate.exe" -h
 ```
 
 ## 3. Hugging Face
 
-Il benchmark puo scaricare modelli dalla Hub di Hugging Face.
+The benchmark can download models from the Hugging Face Hub.
 
-Opzionale ma consigliato:
+Optional but recommended:
 
 ```powershell
-$env:HF_TOKEN="il_tuo_token"
+$env:HF_TOKEN="your_token"
 ```
 
-Senza token il benchmark puo comunque partire, ma con rate limit piu bassi.
+Without a token, the benchmark can still run, but Hub rate limits may be lower.
 
-Prima di un run reale e consigliato preparare i modelli:
+Before a real run, prepare the selected models:
 
 ```powershell
 python "Benchmark Framework/scripts/prepare_models.py" --models-dir models_cache
 ```
 
-Su HPC/Leonardo prepara i modelli in una fase separata e usa path locali nel registry.
+`models_cache` is a local preparation/cache directory and should not be versioned.
 
-## 4. Registry dei modelli
+On HPC systems such as Leonardo, prepare models in a separate stage and use local paths in the registry during benchmark jobs.
 
-Prima del run:
+## 4. Model Registry
 
-- il default del launcher usa `models/model_registry_nvidia.yaml`
-- lascia `enabled: true` solo sui modelli che vuoi davvero lanciare
-- su macchine deboli preferisci modelli piccoli
-- se non hai `accelerate` o non vuoi usare la GPU, imposta `device_map: none`
-- per cambiare backend usa `--adapter`, per esempio `hf_local`, `nvidia_api`, `ollama` o `llama_cpp_cli`
-- per usare un file custom usa `--model-registry-path`; se lo passi insieme a `--adapter`, vince il path manuale
+Before running the benchmark:
+- the launcher default uses `models/model_registry_nvidia.yaml`
+- keep `enabled: true` only on models that should actually run
+- prefer small models on limited hardware
+- if `accelerate` is unavailable or GPU placement is not needed, set `device_map: none`
+- use `--adapter` to select a backend such as `hf_local`, `nvidia_api`, `ollama` or `llama_cpp_cli`
+- use `--model-registry-path` for a custom registry file; when both `--adapter` and `--model-registry-path` are provided, the explicit path takes precedence
 
-Per Ollama:
+For Ollama:
+- install Ollama separately
+- start the Ollama service
+- download a model, for example `ollama pull qwen2.5:0.5b`
+- enable a registry entry with `adapter: ollama`
 
-- installa Ollama separatamente
-- avvia il servizio Ollama
-- scarica un modello, per esempio `ollama pull qwen2.5:0.5b`
-- abilita nel registry una voce con `adapter: ollama`
+For NVIDIA API models, use environment variables or a local secrets file ignored by Git.
 
-Per NVIDIA API puoi usare variabili d'ambiente oppure un file locale ignorato da Git.
-
-Opzione variabile d'ambiente:
+Environment variable option:
 
 ```powershell
-$env:NVIDIA_PHI_API_KEY="la_tua_chiave"
+$env:NVIDIA_PHI_API_KEY="your_key"
 ```
 
-Opzione file locale:
+Local secrets file option:
 
 ```powershell
 Copy-Item "Benchmark Framework/secrets.local.example.json" "Benchmark Framework/secrets.local.json"
 ```
 
-Poi inserisci le chiavi in `Benchmark Framework/secrets.local.json`. Il file reale e ignorato da Git.
+Then add the keys to `Benchmark Framework/secrets.local.json`. The real local secrets file is ignored by Git.
 
-Esempi ragionevoli per test locali:
-
+Reasonable local test models:
 - `TinyLlama/TinyLlama-1.1B-Chat-v1.0`
 - `Qwen/Qwen2.5-0.5B-Instruct`
 - `HuggingFaceTB/SmolLM2-360M-Instruct`
 
-## 5. Primo run
+## 5. First Run
 
-Dalla root della repo:
+From the repository root:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-command "Validate"
 ```
 
-Per limitare il test a un protocollo:
+Run only one protocol:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator
 ```
 
-Per usare Hugging Face locale:
+Use local Hugging Face models:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --adapter hf_local --protocol-id direct_plan --use-real-validator
 ```
 
-Per limitare il test a un solo modello:
+Run only one model:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --model-id nvidia_gemma_4_31b_it --use-real-validator
 ```
 
-Per limitare il test a una famiglia, difficolta o istanza:
+Run only one task family, tier or instance:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator
 ```
 
-Per controllare prima che i file PDDL dei task siano leggibili da `VAL`, senza
-avviare i job dei modelli se un dominio/problema fallisce:
+Check that task PDDL files are readable by `VAL` before launching model jobs:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --preflight-tasks --use-real-validator
 ```
 
-Se `Validate` non e nel `PATH`:
+If `Validate` is not in `PATH`:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-command "C:\percorso\completo\Validate.exe"
+python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-command "C:\full\path\to\Validate.exe"
 ```
 
-## 6. Output salvati
+## 6. Saved Outputs
 
-Il benchmark salva:
+The benchmark saves:
+- one timestamped folder under each output area: `raw/`, `parsed/` and `scored/`
+- final suite JSON in `Benchmark Framework/outputs/scored/<timestamp>/suite_result.json`
+- raw model output per job in `Benchmark Framework/outputs/raw/<timestamp>/...`
+- parsed plan output per job in `Benchmark Framework/outputs/parsed/<timestamp>/...`
+- scored validation output per job in `Benchmark Framework/outputs/scored/<timestamp>/...`
+- iteration details in `attempts`, including prompts/messages and feedback
 
-- una cartella timestampata dentro `Benchmark Framework/outputs/raw/`, `parsed/` e `scored/`
-- JSON finale della suite in `Benchmark Framework/outputs/scored/<timestamp>/suite_result.json`
-- output raw per job in `Benchmark Framework/outputs/raw/<timestamp>/...`
-- output parsed per job in `Benchmark Framework/outputs/parsed/<timestamp>/...`
-- output scored per job in `Benchmark Framework/outputs/scored/<timestamp>/...`
-- dettaglio delle iterazioni in `attempts`, inclusi prompt/messaggi e feedback
-
-Per pulire gli output generati mantenendo cartelle e `.gitkeep`:
+To clear generated outputs while preserving folders and `.gitkeep` files:
 
 ```powershell
 python "Benchmark Framework/clear_outputs.py"
 ```
 
-## 7. Problemi comuni
+## 7. Common Issues
 
-### Errore su `device_map: auto`
+### `device_map: auto` Error
 
-Se vedi un errore che dice che serve `accelerate`:
+If an error says that `accelerate` is required:
+- install `accelerate`
+- or set `device_map: none` in the registry entry being used
 
-- installa `accelerate`
-- oppure imposta `device_map: none` nel registry del modello che stai usando
+### Hugging Face Symlink Warning on Windows
 
-### Warning su symlink di Hugging Face su Windows
+This does not block the benchmark. It only means the local cache may use more disk space.
 
-Non blocca il benchmark. Significa solo che la cache usera piu spazio disco.
+### Benchmark Too Heavy
 
-### Benchmark troppo pesante
-
-Riduci il numero di modelli attivi, usa `--model-id` oppure usa `--protocol-id` per ridurre la matrice dei job.
+Reduce the number of enabled models, use `--model-id`, or use `--protocol-id` to reduce the job matrix.

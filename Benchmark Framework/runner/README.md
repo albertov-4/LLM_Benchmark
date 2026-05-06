@@ -1,95 +1,49 @@
 # Runner
 
-Questa cartella contiene gli entry point logici per eseguire il benchmark.
+This folder contains the execution logic for the benchmark.
 
-File previsti:
-- `run_case.py`: esecuzione di un singolo task con un singolo modello e protocollo
-- `run_suite.py`: esecuzione di una suite completa
+Main files:
+- `run_case.py`: runs one model on one task with one protocol
+- `run_suite.py`: builds and runs the full benchmark matrix
 
-Responsabilita del runner:
-- scoprire i task dalla struttura delle cartelle
-- caricare protocollo e modello
-- caricare prompt di sistema, dominio, esempi e feedback in base al protocollo
-- invocare adapter, parser e validator
-- salvare raw output, parsed output e score
+Responsibilities:
+- discover task instances from the folder structure
+- load protocols, model registry entries and prompt files
+- create the selected model adapter and validator
+- execute the generation, parsing, validation and repair loop
+- save `raw`, `parsed` and `scored` artifacts
 
-Struttura generale:
-- `run_case.py` rappresenta l'unita minima del benchmark: un modello, un protocollo, un task
-- `run_suite.py` costruisce e orchestra una campagna completa a partire da task, modelli e protocolli disponibili
-
-Struttura di `run_suite.py`:
-- scopre task, protocolli e modelli a partire dalla struttura del framework
-- trasforma i task scoperti in `TaskSpec` e i protocolli caricati in `ProtocolSpec`
-- carica il bundle di prompt da `prompts/` in base alla famiglia del task e ai flag del protocollo
-- costruisce un job per ogni combinazione modello x protocollo x task
-- per ogni job crea adapter e validator e delega l'esecuzione concreta a `run_case.py`
-- raccoglie i `ResultRecord` normalizzati e produce un'aggregazione finale della suite
-- puo usare sia validator mock sia un validator reale `VAL`, senza cambiare la logica di orchestrazione
-
-Scoperta dei task:
-- i task non vengono letti da un indice centrale
-- la fonte di verita e la gerarchia del benchmark:
+Task discovery:
+- tasks are discovered from the directory hierarchy
+- the expected layout is:
   - `tasks/<task_family>/domain/domain.pddl`
   - `tasks/<task_family>/easy/*.pddl`
   - `tasks/<task_family>/medium/*.pddl`
   - `tasks/<task_family>/hard/*.pddl`
 
-Struttura di `ResultRecord`:
-- `ResultRecord` descrive l'esito completo di un singolo run
-- contiene l'identita del run, l'esito globale, l'output prodotto dal modello e i riferimenti agli artefatti salvati
+Single-run flow:
+- `run_case.py` reads the domain and problem files
+- it builds chat-style messages from the protocol and prompt bundle
+- the adapter generates raw model text
+- the parser extracts candidate PDDL actions
+- the validator checks the candidate plan
+- iterative protocols add validator feedback and retry until success or budget exhaustion
+- metrics are computed from the normalized final result
 
-Campi principali di `ResultRecord`:
-- `model_id`: modello usato nel run
-- `task_id`: identificatore stabile del task concreto, costruito da famiglia, difficolta e istanza
-- `protocol_id`: protocollo usato per interrogare il modello
-- `task_family`, `tier`, `instance_id`: componenti del task utili per filtrare, raggruppare e analizzare i risultati
-- `solved`: indica se il task e stato risolto con almeno un piano valido
-- `iterations_used`: numero di tentativi effettivamente eseguiti
-- `max_iterations`: massimo numero di tentativi consentiti dal protocollo
-- `stopped_by_iteration_limit`: indica se il run si e fermato per esaurimento del budget di iterazioni
-- `raw_output`: ultimo output grezzo prodotto dal modello
-- `parsed_plan`: versione strutturata del piano estratta dall'output, se disponibile
-- `validation_result`: esito finale della validazione del piano
-- `metrics`: metriche derivate dal run, pronte per confronto e analisi
-- `raw_output_path`, `parsed_output_path`, `scored_output_path`: percorsi degli artefatti eventualmente salvati su disco
+Saved artifacts:
+- `raw`: messages sent to the model, generation payloads and raw text
+- `parsed`: parsed plans and parser-level issues
+- `scored`: validation results, repair feedback, metrics and artifact paths
 
-Separazione delle responsabilita:
-- `TaskSpec` descrive cosa bisogna risolvere
-- `ProtocolSpec` descrive come il modello deve essere interrogato
-- `ResultRecord` descrive cosa e successo alla fine del run
+Suite flow:
+- `run_suite.py` builds the model x protocol x task matrix
+- progress is printed as `START`, `DONE` or `ERROR`
+- `--model-id`, `--protocol-id`, `--task-family`, `--tier` and `--instance-id` restrict the matrix
+- `--adapter` selects the matching model registry in the CLI
+- `suite_results` stays compact and points to per-job artifact files
 
-Flusso di un run:
-- `run_case.py` carica dominio e problema dal task selezionato
-- costruisce i messaggi da inviare al modello in base al protocollo, al prompt di sistema e al prompt della famiglia di task
-- passa l'output grezzo del modello al parser condiviso
-- se il parser non trova un piano valido, il run produce un errore di parsing e genera feedback per il tentativo successivo
-- se il parser estrae un piano, il validator controlla il piano sul dominio e sull'istanza
-- se la validazione fallisce, il runner costruisce feedback di repair e avvia una nuova iterazione fino al limite previsto dal protocollo
-- al termine del loop, `metrics.py` trasforma il risultato normalizzato del run in metriche confrontabili
-- se riceve un `output_root`, salva tre artefatti per-job:
-  - `raw`: messaggi inviati al modello, payload di generazione e testo grezzo
-  - `parsed`: piano estratto dal parser e problemi di formato
-  - `scored`: validazione, feedback di repair, metriche e path degli artefatti
-
-Flusso di una suite:
-- `run_suite.py` parte dalla discovery dei task e costruisce la matrice completa dei job
-- durante l'esecuzione stampa a terminale una riga `START`, `DONE` o `ERROR` per ogni job
-- per ogni job carica il protocollo richiesto e recupera la configurazione del modello dal registry
-- nella CLI `run_benchmark.py`, `--adapter` seleziona automaticamente il registry coerente
-- internamente `run_suite.py` mantiene anche `adapter_override` per test e usi avanzati
-- se passi `--model-id`, viene eseguito solo quel modello usando l'adapter dichiarato nel YAML
-- se passi `--protocol-id`, viene eseguito solo quel protocollo
-- se passi `--task-family`, `--tier` o `--instance-id`, la matrice viene limitata ai task corrispondenti
-- se il protocollo richiede esempi o feedback esterno, li carica dai file nella cartella `prompts/`
-- la documentazione dei protocolli vive in `protocols/README.md`
-- se un adapter non puo essere inizializzato, restituisce un adapter non disponibile con payload normalizzato
-- se riceve `use_real_validator=True`, costruisce automaticamente un `VALValidatorAdapter`
-- se non riceve un validator reale, usa un validator di fallback che segnala l'assenza del componente
-- dopo l'esecuzione dei singoli run, aggrega i risultati per modello, protocollo e livello di difficolta
-- `suite_results` resta compatto: contiene esito, metriche e path agli artefatti; i dettagli completi restano nei file `raw`, `parsed` e `scored`
-
-Ordine di selezione del validator:
-- se passi `validator_factory`, `run_suite.py` usa quella
-- altrimenti, se passi `validator`, usa l'istanza fornita
-- altrimenti, se passi `use_real_validator=True`, prova a costruire un validator reale `VAL`
-- se nessuna di queste opzioni e disponibile, usa `_UnavailableValidator`
+Validator selection:
+- an explicit `validator_factory` has priority
+- otherwise an explicit `validator` instance is used
+- otherwise `use_real_validator=True` creates a `VALValidatorAdapter`
+- if no real validator is configured, `_UnavailableValidator` returns a normalized validator error

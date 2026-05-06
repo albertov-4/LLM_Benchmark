@@ -1,12 +1,14 @@
 # Analysis Notebooks
 
-Qui vanno i notebook dedicati a:
-- confronto tra modelli
-- analisi per livello di difficolta
-- studio delle curve di decadimento da `easy` a `hard`
-- analisi del repair iterativo
+This folder is intended for notebooks that inspect benchmark outputs.
 
-Consiglio:
-- lavorare sempre sui file in `outputs/scored/<timestamp>/`
-- usare i file in `outputs/raw/<timestamp>/` solo per debug o analisi qualitative
-- confrontare run diversi partendo dalle rispettive cartelle timestampate in `outputs/scored/`
+Typical analyses:
+- model comparisons
+- performance by difficulty tier
+- degradation from `easy` to `hard`
+- iterative repair behavior
+
+Recommended inputs:
+- use `outputs/scored/<timestamp>/` for quantitative analysis
+- use `outputs/raw/<timestamp>/` for debugging or qualitative inspection
+- compare different runs through their timestamped output folders

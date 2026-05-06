@@ -1,39 +1,32 @@
 # Tests
 
-Questa cartella contiene il supporto minimo per verificare il framework senza
-dipendere da modelli o validator reali.
+This folder contains lightweight tests for the benchmark framework.
 
-Struttura:
-- `mocks/`: adapter e validator finti ma controllabili
-- `fixtures/`: piccoli task e file di configurazione usati nei test
-- `test_hf_local.py`: test dell'adapter locale HF senza dipendere da modelli reali
-- `test_llama_cpp_cli_adapter.py`: test dell'adapter llama.cpp CLI senza eseguire llama.cpp
-- `test_nvidia_api_adapter.py`: test dell'adapter NVIDIA API senza chiamate remote
-- `test_ollama_adapter.py`: test dell'adapter Ollama senza richiedere un server Ollama acceso
-- `test_prepare_models.py`: test dello script di preparazione modelli senza download reali
-- `test_parser.py`: test mirati del parser condiviso
-- `test_run_case.py`: smoke test della pipeline di un singolo run
-- `test_run_suite.py`: smoke test dell'orchestrazione della suite
-- `test_real_validator.py`: integrazione del validator reale `VAL` sul task toy
-- `test_clear_outputs.py`: verifica che la pulizia output preservi `.gitkeep`
-- `run_mock_suite.py`: entry point manuale per lanciare la suite con i mock
+Structure:
+- `mocks/`: controllable mock adapters and validators
+- `fixtures/`: small tasks and configuration files used by tests
+- `test_hf_local.py`: local Hugging Face adapter tests without loading real models
+- `test_llama_cpp_cli_adapter.py`: llama.cpp CLI adapter tests without executing llama.cpp
+- `test_nvidia_api_adapter.py`: NVIDIA API adapter tests without remote API calls
+- `test_ollama_adapter.py`: Ollama adapter tests without requiring a running Ollama server
+- `test_prepare_models.py`: model preparation tests without real downloads
+- `test_parser.py`: focused tests for the shared parser
+- `test_run_case.py`: single-run pipeline tests
+- `test_run_suite.py`: suite orchestration tests
+- `test_real_validator.py`: optional integration test for the real `VAL` validator on the toy fixture
+- `test_clear_outputs.py`: output cleanup tests
+- `run_mock_suite.py`: manual entry point for running a small mock suite
 
-Obiettivo:
-- provare il flusso `generate -> parse -> validate -> metrics`
-- verificare che `run_suite.py` riesca a orchestrare piu componenti insieme
-- mantenere i test indipendenti da GPU, API esterne e tool di validazione reali
+Goals:
+- verify the `generate -> parse -> validate -> metrics` flow
+- verify that `run_suite.py` can orchestrate multiple components together
+- keep tests independent from GPUs, external APIs and large model downloads
 
-Comandi utili:
-- `python "Benchmark Framework/tests/test_hf_local.py"`
-- `python "Benchmark Framework/tests/test_llama_cpp_cli_adapter.py"`
-- `python "Benchmark Framework/tests/test_nvidia_api_adapter.py"`
-- `python "Benchmark Framework/tests/test_ollama_adapter.py"`
-- `python "Benchmark Framework/tests/test_prepare_models.py"`
-- `python "Benchmark Framework/tests/test_parser.py"`
-- `python "Benchmark Framework/tests/test_run_case.py"`
-- `python "Benchmark Framework/tests/test_run_suite.py"`
-- `python "Benchmark Framework/tests/test_real_validator.py"`
-- `python "Benchmark Framework/tests/test_clear_outputs.py"`
-- `python "Benchmark Framework/tests/run_mock_suite.py"`
-- `test_run_case.py` verifica anche la persistenza di `raw/parsed/scored` su una cartella temporanea
+Useful commands:
 - `python -m unittest discover -s "Benchmark Framework/tests" -p "test_*.py"`
+- `python "Benchmark Framework/tests/run_mock_suite.py"`
+- `python "Benchmark Framework/tests/test_real_validator.py"`
+
+Artifact tests:
+- `test_run_case.py` checks that raw, parsed and scored artifacts are persisted in a temporary output directory
+- tests should avoid relying on the real benchmark task families unless a task-specific behavior is being tested explicitly

@@ -29,6 +29,8 @@ python "Benchmark Framework/run_benchmark.py" --use-real-validator
 
 If `weights_path` in the registry is a Hugging Face repo id, the preparation
 script downloads it into `Benchmark Framework/models_cache`.
+This directory is a local cache/preparation directory and should not be
+committed to the repository.
 
 ## Leonardo/HPC preparation stage
 

@@ -1,11 +1,11 @@
 # Optional Metadata
 
-Questa cartella e opzionale.
+This folder is optional.
 
-Puoi usarla in futuro per:
-- csv di supporto
-- mapping di split sperimentali
-- note su baseline simboliche
-- metadata quantitativi sulle istanze
+It can be used for:
+- support CSV files
+- experimental split mappings
+- symbolic baseline notes
+- quantitative metadata about instances
 
-Il benchmark di base non dipende da questa cartella.
+The core benchmark does not depend on this folder.

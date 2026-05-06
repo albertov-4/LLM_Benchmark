@@ -1,21 +1,19 @@
 # Model Adapters
 
-Gli adapter servono a dare a tutti i modelli la stessa interfaccia logica.
+Adapters give every model backend the same benchmark interface.
 
-Interfaccia minima attesa:
+Expected interface:
 - input: `generate(messages: list[dict[str, str]])`
-- output: dizionario normalizzato con `model_id`, `raw_text`, `usage`, `latency_s` e `notes`
-- metadati opzionali: risposta provider, reasoning separato, token usage e parametri di generazione
+- output: a normalized dictionary with `model_id`, `raw_text`, `usage`, `latency_s` and `notes`
+- optional metadata can include provider response details, separate reasoning text, token usage and generation parameters
 
-Adapter previsti:
-- `hf_local.py`: modelli locali Hugging Face
-- `ollama.py`: modelli locali serviti da Ollama via HTTP API
-- `llama_cpp_cli.py`: modelli GGUF locali eseguiti tramite binario llama.cpp
-- `nvidia_api.py`: modelli remoti NVIDIA via client OpenAI-compatible
+Supported adapters:
+- `hf_local.py`: local Hugging Face models
+- `ollama.py`: local models served through the Ollama HTTP API
+- `llama_cpp_cli.py`: local GGUF models executed through the llama.cpp command line interface
+- `nvidia_api.py`: remote NVIDIA models through an OpenAI-compatible client
 
-Nota:
-- il flow reale del framework supporta `hf_local.py`, `ollama.py`, `llama_cpp_cli.py` e `nvidia_api.py`
-
-Regola:
-- il runner non deve conoscere i dettagli del provider
-- il confronto fra modelli deve passare sempre dalla stessa interfaccia comune
+Rules:
+- the runner should not depend on provider-specific response formats
+- model comparisons should always go through the common adapter interface
+- adapter-specific setup belongs in the model registry and adapter configuration, not in the runner

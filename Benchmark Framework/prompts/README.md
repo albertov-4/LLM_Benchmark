@@ -1,121 +1,119 @@
 # Prompts
 
-Questa cartella contiene i testi che il benchmark usa per costruire i messaggi
-inviati ai modelli.
+This folder contains the text files used to build model messages.
 
-I prompt non scelgono il modello, il protocollo o il task. Servono solo a
-definire **come** il task viene presentato alla LLM.
+Prompts do not select the model, protocol or task. They only define how a task
+is presented to the model.
 
-## Struttura
+## Structure
 
 ```text
 prompts/
 |-- system.txt
-|-- farmland.txt
+|-- <task_family>.txt
 |-- feedback.txt
 |-- examples/
-    |-- farmland.txt
+    |-- <task_family>.txt
 ```
 
 ## `system.txt`
 
-Prompt globale del benchmark.
+Global benchmark prompt.
 
-Viene inserito come messaggio `system` quando il protocollo ha:
+It is included as a `system` message when the protocol has:
 
 ```yaml
 prompting:
   use_system_prompt: true
 ```
 
-Serve a fissare regole comuni per tutti i domini:
+It defines rules shared across domains:
 
-- usare solo azioni definite nel dominio
-- usare solo oggetti presenti nel problema
-- non inventare predicati, oggetti o fluenti numerici
-- produrre azioni PDDL groundate
-- rispettare precondizioni, effetti e goal finale
+- use only actions defined in the domain
+- use only objects present in the problem
+- do not invent predicates, objects or numeric fluents
+- produce grounded PDDL actions
+- respect preconditions, effects and the final goal
 
-Questo file deve restare generale. Non deve contenere dettagli specifici di un
-singolo dominio come `farmland`.
+This file should stay general and should not contain task-family-specific
+details.
 
 ## `<task_family>.txt`
 
-Prompt specifico del dominio.
+Task-family-specific prompt.
 
-Esempio:
+Example:
 
 ```text
-prompts/farmland.txt
+prompts/<task_family>.txt
 ```
 
-Viene caricato quando il protocollo ha:
+It is loaded when the protocol has:
 
 ```yaml
 prompting:
   include_domain_prompt: true
 ```
 
-Il file e obbligatorio. Se manca `prompts/<task_family>.txt`, il benchmark si
-ferma con un errore esplicito.
+This file is required. If `prompts/<task_family>.txt` is missing, the benchmark
+fails before calling the model.
 
-Non esiste fallback automatico a `default.txt`. Questa scelta evita benchmark
-ambigui in cui un dominio viene testato con un prompt generico invece che con
-istruzioni dominio-specifiche.
+There is no automatic fallback to `default.txt`. This prevents ambiguous runs
+where a task family is evaluated with a generic prompt instead of its own
+domain-specific instructions.
 
-Il prompt del dominio dovrebbe spiegare:
+The prompt should explain:
 
-- significato generale del dominio
-- vincoli importanti
-- azioni disponibili
-- errori tipici da evitare
-- formato atteso, se ci sono particolarita del dominio
+- the domain semantics
+- important constraints
+- available actions
+- common mistakes to avoid
+- expected formatting, when domain-specific formatting matters
 
 ## `examples/<task_family>.txt`
 
-Esempi opzionali per una specifica famiglia di task.
+Optional examples for one task family.
 
-Esempio:
+Example:
 
 ```text
-prompts/examples/farmland.txt
+prompts/examples/<task_family>.txt
 ```
 
-Viene caricato solo se il protocollo ha:
+It is loaded only when the protocol has:
 
 ```yaml
 prompting:
   include_examples: true
 ```
 
-Gli esempi servono a chiarire il formato delle azioni e gli errori da evitare.
-Non devono essere soluzioni delle istanze del benchmark.
+Examples clarify action formatting and common mistakes. They should not solve
+benchmark instances.
 
 ## `feedback.txt`
 
-Prompt usato nel protocollo di repair.
+Prompt used by repair protocols.
 
-Viene inserito nel messaggio di feedback quando il protocollo ha:
+It is included in feedback messages when the protocol has:
 
 ```yaml
 prompting:
   include_external_feedback: true
 ```
 
-Il runner combina questo testo con l'errore prodotto dal validator. Il modello
-riceve quindi:
+The runner combines this text with validator output. The model receives:
 
-- regole generali di repair
-- stato della validazione
-- tipo di errore
-- eventuale step fallito
-- eventuale azione fallita
-- messaggio del validator
+- general repair rules
+- validation status
+- error type
+- failed step, when available
+- failed action, when available
+- validator feedback
 
-Il punto importante e che il modello deve restituire un piano completo corretto,
-non solo una patch o la singola azione fallita.
+The model should return a complete corrected plan, not only a patch or the
+single failed action.
 
-## Flow Dei Protocolli
+## Protocol Flow
 
 `direct_plan`
 
@@ -126,7 +124,7 @@ system.txt
 + problema PDDL
 ```
 
-Il modello deve produrre direttamente il piano finale.
+The model should produce the final plan directly.
 
 `direct_plan_with_rationale`
 
@@ -138,13 +136,12 @@ system.txt
 + problema PDDL
 ```
 
-Il modello puo produrre un breve rationale se il protocollo non richiede output
-plan-only. Il piano deve comunque essere estraibile come sequenza di azioni
-PDDL.
+The model may produce a short rationale if the protocol does not require
+plan-only output. The final plan must still be extractable as PDDL actions.
 
 `iterative_repair`
 
-Primo tentativo:
+First attempt:
 
 ```text
 system.txt
@@ -154,32 +151,32 @@ system.txt
 + problema PDDL
 ```
 
-Tentativi successivi:
+Later attempts:
 
 ```text
-messaggi precedenti
+previous messages
 + feedback.txt
-+ feedback del validator
++ validator feedback
 ```
 
-Ogni iterazione viene salvata negli output dentro il campo `attempts`, inclusi
-i messaggi passati al modello.
+Each iteration is saved in the output `attempts` field, including the messages
+sent to the model.
 
-## Quando Aggiungi Un Nuovo Dominio
+## Adding A New Task Family
 
-Per aggiungere un nuovo task family, per esempio `logistics`, crea almeno:
+To add a new task family, create at least:
 
 ```text
-tasks/logistics/domain/domain.pddl
-tasks/logistics/easy/<istanza>.pddl
-prompts/logistics.txt
+tasks/<task_family>/domain/domain.pddl
+tasks/<task_family>/easy/<instance_id>.pddl
+prompts/<task_family>.txt
 ```
 
-Se vuoi usare esempi nel protocollo, aggiungi anche:
+If the protocol uses examples, also add:
 
 ```text
-prompts/examples/logistics.txt
+prompts/examples/<task_family>.txt
 ```
 
-Senza `prompts/logistics.txt`, ogni protocollo con `include_domain_prompt: true`
-fallira prima di interrogare il modello.
+Without `prompts/<task_family>.txt`, every protocol with
+`include_domain_prompt: true` will fail before querying the model.

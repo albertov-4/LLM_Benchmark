@@ -1,66 +1,65 @@
 # Protocols
 
-Questa cartella definisce i protocolli sperimentali usati dal benchmark.
+This folder defines the experimental protocols used by the benchmark.
 
-Un protocollo descrive **come** interrogare il modello, non **quale** task
-risolvere e non **quale** modello usare. La matrice finale viene costruita da:
+A protocol describes how the model is queried. It does not select the task or
+the model. The final matrix is built from:
 
 ```text
-modelli selezionati x protocolli selezionati x task scoperti
+selected models x selected protocols x discovered tasks
 ```
 
-Per lanciare un solo protocollo:
+Run one protocol:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator
 ```
 
-Per combinare protocollo e filtro task:
+Combine protocol and task filters:
 
 ```powershell
 python "Benchmark Framework/run_benchmark.py" --protocol-id iterative_repair --task-family <task_family> --tier <tier> --use-real-validator
 ```
 
-## Protocolli Disponibili
+## Available Protocols
 
 `direct_plan.yaml`
 
-Il modello riceve dominio, problema e istruzioni di formato. Deve produrre
-direttamente il piano finale, senza reasoning esplicito e senza repair.
+The model receives the domain, problem and formatting instructions. It should
+produce the final plan directly, without explicit reasoning or repair.
 
-Serve a misurare:
-- validita al primo tentativo
-- rispetto del formato richiesto
-- capacita di planning senza aiuti esterni
+Measures:
+- first-attempt validity
+- output-format compliance
+- planning without external feedback
 
 `direct_plan_with_rationale.yaml`
 
-Il modello puo produrre reasoning testuale, ma deve comunque rendere estraibile
-un piano finale. Il parser cerca le azioni PDDL dentro l'output del modello.
+The model may produce textual reasoning, but the final plan must remain
+extractable. The parser extracts PDDL actions from the model output.
 
-Serve a misurare:
-- se il reasoning migliora la qualita del piano
-- se il reasoning resta coerente con le azioni finali
-- quanto rumore testuale introduce rispetto al formato plan-only
+Measures:
+- whether rationale improves plan quality
+- whether rationale stays consistent with final actions
+- how much extra text is introduced compared with plan-only output
 
 `iterative_repair.yaml`
 
-Il modello genera un piano, il validator lo controlla e, se fallisce, il runner
-costruisce un feedback da reinserire nel tentativo successivo.
+The model generates a plan, the validator checks it and, if validation fails,
+the runner adds feedback to the next attempt.
 
-Serve a misurare:
-- se il modello sa correggersi dopo feedback esterno
-- quante iterazioni servono per arrivare a un piano valido
-- quali errori persistono anche dopo repair
+Measures:
+- whether the model can self-correct after external feedback
+- how many iterations are needed to reach a valid plan
+- which errors persist after repair
 
-## Campi YAML
+## YAML Fields
 
 `protocol_id`
 
-Identificatore stabile del protocollo. Deve corrispondere al nome logico usato
-nel runner e nei risultati.
+Stable protocol identifier used by the runner and in the output files.
 
-Esempio:
+Example:
 
 ```yaml
 protocol_id: iterative_repair
@@ -68,84 +67,84 @@ protocol_id: iterative_repair
 
 `description`
 
-Descrizione leggibile del protocollo. Non influenza direttamente l'esecuzione,
-ma serve a documentare l'obiettivo sperimentale.
+Human-readable description. It documents the experimental intent but does not
+directly affect execution.
 
 `prompting`
 
-Controlla quali parti vengono incluse nel prompt.
+Controls which prompt components are included.
 
-Campi principali:
-- `use_system_prompt`: include `prompts/system.txt`
-- `include_domain_prompt`: include il prompt specifico della famiglia di task, per esempio `prompts/farmland.txt`
-- se `include_domain_prompt: true`, il file `prompts/<task_family>.txt` e obbligatorio; il framework non usa `prompts/default.txt` come fallback automatico
-- `include_examples`: include esempi se disponibili
-- `include_chain_of_thought`: aggiunge istruzioni di rationale quando il protocollo non e plan-only; se il protocollo e plan-only, il modello puo ragionare internamente ma deve restituire solo azioni
-- `include_external_feedback`: abilita feedback del validator nei tentativi successivi
+Main fields:
+- `use_system_prompt`: includes `prompts/system.txt`
+- `include_domain_prompt`: includes `prompts/<task_family>.txt`
+- if `include_domain_prompt: true`, `prompts/<task_family>.txt` is required; `prompts/default.txt` is not used as an automatic fallback
+- `include_examples`: includes examples when available
+- `include_chain_of_thought`: allows rationale instructions for non-plan-only protocols; plan-only protocols still require action-only output
+- `include_external_feedback`: enables validator feedback in later attempts
 
 `generation`
 
-Descrive le impostazioni di generazione da passare agli adapter quando supportate.
+Describes generation settings passed to adapters when supported.
 
-Campi principali:
-- `mode`: etichetta descrittiva, per esempio `deterministic`, `semi_deterministic`, `repair_loop`
-- `temperature`: controlla quanto il modello genera in modo variabile
-- `top_k`: limita il sampling ai token candidati principali, se supportato
-- `max_tokens`: massimo numero di token generabili
+Main fields:
+- `mode`: descriptive label, such as `deterministic`, `semi_deterministic` or `repair_loop`
+- `temperature`: controls sampling variability
+- `top_k`: limits sampling to top token candidates when supported
+- `max_tokens`: maximum number of generated tokens
 
-Nota: non tutti gli adapter usano tutti i campi nello stesso modo. Il runner
-passa i parametri comuni agli adapter quando sono supportati.
+Not every adapter uses every field in the same way. The runner passes common
+parameters where supported.
 
 `evaluation`
 
-Controlla il loop di valutazione.
+Controls the evaluation loop.
 
-Campi principali:
-- `max_iterations`: massimo numero di tentativi per task
-- `require_final_plan_only`: se `true`, il prompt richiede solo azioni PDDL nel formato finale
+Main fields:
+- `max_iterations`: maximum number of attempts per task
+- `require_final_plan_only`: when `true`, the final output should contain only PDDL actions
 
-In `direct_plan` e `direct_plan_with_rationale`, `max_iterations` e normalmente
-`1`. In `iterative_repair`, `max_iterations` puo essere maggiore di `1`.
+In `direct_plan` and `direct_plan_with_rationale`, `max_iterations` is usually
+`1`. In `iterative_repair`, it can be greater than `1`.
 
 `primary_questions`
 
-Lista di domande sperimentali associate al protocollo. Serve per ricordare cosa
-si vuole misurare quando si analizzano i risultati.
+Experimental questions associated with the protocol. They document what should
+be analyzed after the run.
 
-## Iterative Repair In Pratica
+## Iterative Repair Flow
 
-Il loop di repair funziona cosi:
+The repair loop works as follows:
 
-1. Il runner costruisce il prompt iniziale con dominio, problema e istruzioni.
-2. Il modello genera un piano candidato.
-3. Il parser estrae azioni PDDL dal testo generato.
-4. Se il parser non trova azioni, viene creato un errore di parsing.
-5. Se ci sono azioni, `VAL` valida il piano sul dominio e sul problema.
-6. Se il piano e valido, il run termina con `solved: true`.
-7. Se il piano non e valido, il runner crea un feedback sintetico.
-8. Il feedback viene aggiunto al prompt successivo.
-9. Il ciclo continua fino a piano valido o `max_iterations`.
+1. The runner builds the initial prompt with domain, problem and instructions.
+2. The model generates a candidate plan.
+3. The parser extracts PDDL actions from the generated text.
+4. If no actions are found, a parse error is created.
+5. If actions are found, `VAL` validates the plan against the domain and problem.
+6. If the plan is valid, the run ends with `solved: true`.
+7. If the plan is invalid, the runner creates feedback.
+8. The feedback is added to the next prompt.
+9. The loop continues until a valid plan is found or `max_iterations` is reached.
 
-Il feedback testuale di base vive in:
+The base feedback text lives in:
 
 ```text
 Benchmark Framework/prompts/feedback.txt
 ```
 
-## Output E Analisi
+## Output And Analysis
 
-Nei risultati finali trovi:
-- `solved`: se il task e stato risolto
-- `iterations_used`: quanti tentativi sono stati usati
-- `max_iterations`: budget massimo del protocollo
-- `stopped_by_iteration_limit`: se il run si e fermato per limite di iterazioni
-- `validation_result`: esito finale della validazione
-- `metrics`: metriche derivate, per esempio `repair_success` e `iterations_to_valid`
+Final results include:
+- `solved`: whether the task was solved
+- `iterations_used`: number of attempts used
+- `max_iterations`: protocol iteration budget
+- `stopped_by_iteration_limit`: whether the run stopped because the budget was exhausted
+- `validation_result`: final validation result
+- `metrics`: derived metrics such as `repair_success` and `iterations_to_valid`
 
-Gli output per-job sono separati per livello:
-- `raw`: contiene `messages`, payload `generation`, `raw_output` e `raw_generations`
-- `parsed`: contiene `parsed_plan` per ogni tentativo
-- `scored`: contiene `validation_result`, `feedback_to_next_iteration`, metriche finali e path degli artefatti
+Per-job outputs are separated by level:
+- `raw`: contains `messages`, `generation`, `raw_output` and `raw_generations`
+- `parsed`: contains `parsed_plan` for each attempt
+- `scored`: contains `validation_result`, `feedback_to_next_iteration`, final metrics and artifact paths
 
-Il campo `attempts` esiste in tutti e tre i livelli, ma con contenuto diverso.
-Questo evita di duplicare tutte le informazioni in ogni file.
+The `attempts` field exists in all three levels, but with different content.
+This avoids duplicating every detail in every file.

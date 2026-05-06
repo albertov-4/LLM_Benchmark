@@ -1,19 +1,18 @@
 # Prompt Examples
 
-Questa cartella contiene esempi opzionali caricati dai protocolli che usano
-`include_examples: true`.
+This folder contains optional examples loaded by protocols that set `include_examples: true`.
 
-Convenzione:
-- `examples/<task_family>.txt`
-- il contenuto viene aggiunto dopo `prompts/<task_family>.txt`
-- gli esempi devono chiarire formato e vincoli, non risolvere le istanze del benchmark
-- se un file di esempi manca, il benchmark continua senza esempi
+Convention:
+- examples are stored as `examples/<task_family>.txt`
+- example content is appended after `prompts/<task_family>.txt`
+- examples should clarify expected format and constraints
+- examples should not solve benchmark instances
+- if an examples file is missing, the benchmark continues without examples
 
-Esempio:
+Example path:
 
 ```text
-prompts/examples/farmland.txt
+prompts/examples/<task_family>.txt
 ```
 
-Nota: il prompt dominio-specifico principale resta obbligatorio quando il
-protocollo ha `include_domain_prompt: true`. Gli esempi invece sono opzionali.
+The main task-family prompt remains required when a protocol has `include_domain_prompt: true`. Examples are optional.

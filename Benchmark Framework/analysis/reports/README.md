@@ -1,12 +1,14 @@
 # Reports
 
-Questa cartella e pensata per i report esportati:
-- tabelle finali
-- grafici consolidati
-- report PDF
-- sintesi comparative per modello o protocollo
+This folder is intended for exported reports.
 
-Output consigliati:
-- un report per modello
-- un report per protocollo
-- un report comparativo finale
+Typical outputs:
+- final tables
+- consolidated plots
+- PDF reports
+- comparative summaries by model or protocol
+
+Recommended organization:
+- one report per model
+- one report per protocol
+- one final comparative report

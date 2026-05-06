@@ -1,10 +1,11 @@
-# Template Task Family
+# Task Family Template
 
-Usa questa cartella come modello quando vuoi creare un nuovo dominio da zero.
+Use this folder as a starting point when creating a new planning domain.
 
 Checklist:
-- rinomina `_template_domain` con il nome del task
-- aggiungi `domain/domain.pddl`
-- crea istanze `.pddl` in `easy`, `medium`, `hard`
-- aggiorna questo README con la semantica del dominio
-- mantieni una convenzione di naming coerente per le istanze
+- copy `_template_domain` and rename it to the new task-family name
+- add `domain/domain.pddl`
+- create `.pddl` instances in `easy`, `medium` and `hard`
+- write one task-family README at the top of the copied folder
+- document the domain semantics and the difficulty split in that README
+- keep instance naming consistent across tiers

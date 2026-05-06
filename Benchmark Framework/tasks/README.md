@@ -1,30 +1,37 @@
 # Tasks
 
-Questa cartella contiene la definizione del benchmark a livello di task.
+This folder contains the benchmark task definitions.
 
-Ogni famiglia di task dovrebbe avere:
-- una cartella dedicata, per esempio `<task_family>/`
-- una sottocartella `domain/` con `domain.pddl`
-- tre sottocartelle: `easy`, `medium`, `hard`
-- istanze `.pddl` direttamente dentro i tier di difficolta
+Each task family should contain:
+- one folder named after the task family, for example `<task_family>/`
+- `domain/domain.pddl`
+- three difficulty folders: `easy`, `medium` and `hard`
+- `.pddl` instances directly inside each difficulty folder
+- one task-family README explaining the domain and the difficulty split
 
-Convenzione consigliata:
+Recommended layout:
 
 ```text
 tasks/
 `-- <task_family>/
+    |-- README.md
     |-- domain/
     |   `-- domain.pddl
     |-- easy/
+    |   `-- <instance_id>.pddl
     |-- medium/
+    |   `-- <instance_id>.pddl
     `-- hard/
+        `-- <instance_id>.pddl
 ```
 
-Regola pratica:
-- la difficolta non va decisa solo "a occhio", ma spiegata nel `README.md` della famiglia
-- la scoperta dei task puo essere fatta direttamente dalla struttura delle cartelle
+Task-family README:
+- describe the planning domain in general terms
+- explain what changes across `easy`, `medium` and `hard`
+- document relevant assumptions about objects, predicates, actions and numeric constraints
+- avoid placing additional README files inside `domain/`, `easy/`, `medium` or `hard`
 
-Nota:
-- una cartella `metadata/` puo esistere per csv o indici futuri, ma e opzionale
-- le famiglie concrete del benchmark vengono scoperte direttamente dalla
-  struttura delle cartelle
+Discovery rules:
+- the runner discovers task cases from the folder structure
+- folders starting with `_` are templates or support folders and are not benchmark task families
+- `metadata/` is optional and can contain support files, split definitions or analysis metadata

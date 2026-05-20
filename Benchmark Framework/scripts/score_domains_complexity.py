@@ -622,7 +622,7 @@ def topology_features(problem: ProblemModel) -> tuple[int, int, float, float]:
     node_count = len(nodes)
     edge_count = len(edges)
     possible_edges = node_count * (node_count - 1)
-    density = edge_count / possible_edges if possible_edges else 0.0
+    density = min(1.0, edge_count / possible_edges) if possible_edges > 0 else 0.0
     topology_score = math.log1p(node_count) + math.log1p(edge_count) + density
     return node_count, edge_count, density, topology_score
 
@@ -743,22 +743,45 @@ def write_json(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def discover_domain_dirs(domains_dir: Path) -> list[Path]:
+    if not domains_dir.exists():
+        return []
     return sorted(
         path
         for path in domains_dir.iterdir()
-        if path.is_dir() and (path / "domain.pddl").exists()
+        if path.is_dir() and (
+            (path / "domain.pddl").exists() or 
+            (path / "domain" / "domain.pddl").exists()
+        )
     )
 
 
 def score_domains(domains_dir: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for domain_dir in discover_domain_dirs(domains_dir):
-        domain = parse_domain(domain_dir / "domain.pddl")
-        instances_dir = domain_dir / "instances"
-        if not instances_dir.exists():
+        # Cerca il file di dominio sia nella root che nella sottocartella 'domain'
+        domain_pddl_path = domain_dir / "domain.pddl"
+        if not domain_pddl_path.exists():
+            domain_pddl_path = domain_dir / "domain" / "domain.pddl"
+        
+        if not domain_pddl_path.exists():
             continue
+            
+        domain = parse_domain(domain_pddl_path)
 
-        for instance_path in sorted(instances_dir.glob("*.pddl")):
+        all_instance_paths: list[Path] = []
+        
+        # Caso 1: Cartella 'instances' standard
+        instances_dir = domain_dir / "instances"
+        if instances_dir.exists():
+            all_instance_paths.extend(sorted(instances_dir.glob("*.pddl")))
+        
+        # Caso 2: Sottocartelle divise per tier (easy, medium, hard)
+        for subdir_name in ["easy", "medium", "hard"]:
+            subdir = domain_dir / subdir_name
+            if subdir.exists():
+                all_instance_paths.extend(sorted(subdir.glob("*.pddl")))
+
+        for instance_path in all_instance_paths:
             rows.append(score_instance(domain_dir.name, instance_path, domain))
 
     normalize_scores(rows)
@@ -793,7 +816,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    
+    domains_path = args.domains_dir.resolve()
+    print(f"Sto cercando i domini in: {domains_path}")
+    
+    if not domains_path.exists():
+        print(f"ERRORE: La cartella dei domini non esiste: {domains_path}")
+        return
+
     rows = score_domains(args.domains_dir)
+    if not rows:
+        print(f"ATTENZIONE: Nessun dominio PDDL valido trovato in {domains_path}")
+        print("Assicurati che le sottocartelle contengano un file 'domain.pddl' o 'domain/domain.pddl'.")
+        return
+
     summaries = summarize_domains(rows)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -803,7 +839,7 @@ def main() -> None:
     write_json(args.output_dir / "domain_summary.json", summaries)
 
     print(f"Scored {len(rows)} instances from {args.domains_dir}")
-    print(f"Wrote reports to {args.output_dir}")
+    print(f"Report generati con successo in: {args.output_dir.resolve()}")
 
 
 if __name__ == "__main__":

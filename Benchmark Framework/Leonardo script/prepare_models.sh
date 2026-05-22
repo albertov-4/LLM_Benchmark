@@ -23,7 +23,7 @@ module purge
 module load python/3.11.7
 
 VENV_ACTIVATED=0
-for VENV_DIR in "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
+for VENV_DIR in "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
     if [ -f "${VENV_DIR}/bin/activate" ]; then
         # shellcheck disable=SC1091
         source "${VENV_DIR}/bin/activate"
@@ -35,7 +35,7 @@ done
 
 if [ "${VENV_ACTIVATED}" != "1" ]; then
     echo "ERROR: no Python venv found."
-    echo "Expected one of: project_venv, venv, .venv, .venv-new."
+    echo "Expected one of: our_env, project_venv, venv, .venv, .venv-new."
     exit 1
 fi
 
@@ -90,4 +90,3 @@ printf ' %q' "${CMD[@]}"
 printf '\n'
 
 "${CMD[@]}"
-

@@ -22,7 +22,7 @@ cd "${REPO_ROOT}"
 module purge
 module load python/3.11.7
 
-for VENV_DIR in "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
+for VENV_DIR in "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
     if [ -f "${VENV_DIR}/bin/activate" ]; then
         # shellcheck disable=SC1091
         source "${VENV_DIR}/bin/activate"

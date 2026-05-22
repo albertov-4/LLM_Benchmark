@@ -36,8 +36,7 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
 
-MODEL_ID="${MODEL_ID:-hf_llama_3_1_nemotron_nano_4b_v1_1}"
-RUN_ALL_ENABLED_MODELS="${RUN_ALL_ENABLED_MODELS:-0}"
+MODEL_ID="${MODEL_ID:-}"
 PROTOCOL_ID="${PROTOCOL_ID:-}"
 TASK_FAMILY="${TASK_FAMILY:-}"
 TIER="${TIER:-}"
@@ -76,7 +75,7 @@ CMD=(
     --run-id "${RUN_ID}"
 )
 
-if [ "${RUN_ALL_ENABLED_MODELS}" != "1" ]; then
+if [ -n "${MODEL_ID}" ]; then
     CMD+=(--model-id "${MODEL_ID}")
 fi
 
@@ -101,4 +100,3 @@ printf ' %q' "${CMD[@]}"
 printf '\n'
 
 "${CMD[@]}"
-

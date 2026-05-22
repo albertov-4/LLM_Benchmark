@@ -36,7 +36,7 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
 
-MODEL_ID="${MODEL_ID:-hf_llama_3_1_nemotron_nano_4b_v1_1}"
+MODEL_ID="${MODEL_ID:-hf_gemma_4_31b_it}"
 PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
 TASK_FAMILY="${TASK_FAMILY:-farmland}"
 TIER="${TIER:-easy}"
@@ -86,4 +86,3 @@ printf ' %q' "${CMD[@]}"
 printf '\n'
 
 "${CMD[@]}"
-

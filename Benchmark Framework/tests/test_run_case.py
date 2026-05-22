@@ -16,6 +16,41 @@ def _load_module(module_name: str, path: Path):
     return module
 
 
+class PrefixLengthValidator:
+    """Validator test double that accepts a specific action-prefix length."""
+
+    def __init__(self, valid_prefix_length: int | None = None) -> None:
+        self.valid_prefix_length = valid_prefix_length
+        self.seen_plan_texts: list[str] = []
+
+    def validate(self, domain_file: str, problem_file: str, plan_text: str) -> dict[str, object]:
+        self.seen_plan_texts.append(plan_text)
+        actions = [line.strip() for line in plan_text.splitlines() if line.strip()]
+        plan_length = len(actions)
+        valid = self.valid_prefix_length is not None and plan_length == self.valid_prefix_length
+        return {
+            "valid": valid,
+            "status": "valid" if valid else "invalid",
+            "error_type": None if valid else "invalid_precondition",
+            "feedback_text": (
+                "Plan validated successfully."
+                if valid
+                else "Prefix did not validate."
+            ),
+            "failed_step": None if valid else plan_length,
+            "failed_action": None if valid or not actions else actions[-1],
+            "goal_satisfied": True if valid else False,
+            "plan_length": plan_length,
+            "validation_time_ms": 1,
+            "raw_validator_output": f"mock-prefix-length-{plan_length}",
+            "details": {
+                "domain_file": domain_file,
+                "problem_file": problem_file,
+                "validator_kind": "prefix_length_mock",
+            },
+        }
+
+
 class RunCaseSmokeTest(unittest.TestCase):
     def _build_task_and_protocol(self, run_case_module, max_iterations: int = 1):
         tmp_dir = tempfile.TemporaryDirectory()
@@ -215,6 +250,102 @@ class RunCaseSmokeTest(unittest.TestCase):
         self.assertEqual(result.metrics["validity_at_k"], False)
         self.assertEqual(result.metrics["error_type"], "syntax_error")
 
+    def test_run_case_solves_when_action_prefix_validates(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_prefix_valid_module",
+            framework_root / "runner" / "run_case.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_mock_adapter_prefix_valid_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+
+        adapter = mock_adapter_module.MockAdapter(
+            scripted_outputs=[
+                "\n".join(
+                    [
+                        "(move a b)",
+                        "(move b c)",
+                        "(move c d)",
+                        "(move d e)",
+                    ]
+                )
+            ]
+        )
+        validator = PrefixLengthValidator(valid_prefix_length=2)
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=adapter,
+            validator=validator,
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        first_attempt = result.attempts[0]
+        self.assertTrue(result.solved)
+        self.assertEqual(result.validation_result["plan_length"], 2)
+        self.assertEqual(result.metrics["plan_length"], 2)
+        self.assertEqual(first_attempt["first_valid_prefix_length"], 2)
+        self.assertEqual(first_attempt["extra_actions_after_first_valid"], 2)
+        self.assertFalse(first_attempt["final_plan_valid"])
+        self.assertNotIn("prefix_validation_results", first_attempt)
+        self.assertEqual(len(validator.seen_plan_texts), 4)
+        self.assertEqual(
+            first_attempt["first_valid_plan_text"],
+            "(move a b)\n(move b c)",
+        )
+
+    def test_run_case_uses_full_plan_result_when_no_prefix_validates(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_prefix_invalid_module",
+            framework_root / "runner" / "run_case.py",
+        )
+        mock_adapter_module = _load_module(
+            "benchmark_framework_test_mock_adapter_prefix_invalid_module",
+            framework_root / "tests" / "mocks" / "mock_adapter.py",
+        )
+
+        adapter = mock_adapter_module.MockAdapter(
+            scripted_outputs=[
+                "\n".join(
+                    [
+                        "(move a b)",
+                        "(move b c)",
+                        "(move c d)",
+                    ]
+                )
+            ]
+        )
+        validator = PrefixLengthValidator(valid_prefix_length=None)
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        protocol_spec.include_external_feedback = True
+
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=adapter,
+            validator=validator,
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+            feedback_prompt="USE FEEDBACK.",
+        )
+
+        first_attempt = result.attempts[0]
+        self.assertFalse(result.solved)
+        self.assertEqual(result.validation_result["plan_length"], 3)
+        self.assertEqual(result.validation_result["error_type"], "invalid_precondition")
+        self.assertEqual(first_attempt["first_valid_prefix_length"], None)
+        self.assertEqual(first_attempt["first_valid_plan_text"], None)
+        self.assertEqual(first_attempt["extra_actions_after_first_valid"], None)
+        self.assertFalse(first_attempt["final_plan_valid"])
+        self.assertNotIn("prefix_validation_results", first_attempt)
+        self.assertEqual(len(validator.seen_plan_texts), 3)
+        self.assertIn("USE FEEDBACK.", first_attempt["feedback_to_next_iteration"])
+        self.assertIn("invalid_precondition", first_attempt["feedback_to_next_iteration"])
+
     def test_run_case_persists_raw_parsed_and_scored_outputs(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_case_module = _load_module(
@@ -290,6 +421,11 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertNotIn("scored_output_path", scored_payload)
             self.assertEqual(scored_payload["attempts"][0]["iteration"], 1)
             self.assertEqual(scored_payload["attempts"][0]["validation_result"]["valid"], True)
+            self.assertNotIn("prefix_validation_results", scored_payload["attempts"][0])
+            self.assertEqual(scored_payload["attempts"][0]["first_valid_prefix_length"], 1)
+            self.assertEqual(scored_payload["attempts"][0]["first_valid_plan_text"], "(move a b)")
+            self.assertEqual(scored_payload["attempts"][0]["final_plan_valid"], True)
+            self.assertEqual(scored_payload["attempts"][0]["extra_actions_after_first_valid"], 0)
             self.assertNotIn("messages", scored_payload["attempts"][0])
 
 

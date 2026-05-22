@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=benchmark_test
-#SBATCH --account=IscrC_VisLLMs
+#SBATCH --account=try26_varini
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=02:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=256G
 #SBATCH --output=benchmark_test_%j.out
 #SBATCH --error=benchmark_test_%j.err
 

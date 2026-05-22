@@ -1,6 +1,7 @@
 """Unit tests for the local Hugging Face adapter."""
 
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -153,6 +154,51 @@ class HFLocalAdapterTest(unittest.TestCase):
         )
 
         self.assertEqual(adapter._resolve_model_source(), "C:/models/local-weights")
+
+    def test_resolve_model_source_prefers_prepared_models_cache_for_hf_repo(self) -> None:
+        module = self.hf_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "models_cache"
+            prepared_model = cache_dir / "nvidia__Llama-3.1-Nemotron-Nano-4B-v1.1"
+            prepared_model.mkdir(parents=True)
+            (prepared_model / "config.json").write_text("{}", encoding="utf-8")
+
+            class TestAdapter(module.HFLocalAdapter):
+                def _models_cache_dir(self):
+                    return cache_dir
+
+            adapter = TestAdapter(
+                module.HFLocalConfig(
+                    model_id="hf_nemotron",
+                    weights_path="nvidia/Llama-3.1-Nemotron-Nano-4B-v1.1",
+                )
+            )
+
+            self.assertEqual(adapter._resolve_model_source(), str(prepared_model.resolve()))
+
+    def test_resolve_model_source_falls_back_to_hf_repo_when_cache_is_missing(self) -> None:
+        module = self.hf_module
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "models_cache"
+            cache_dir.mkdir()
+
+            class TestAdapter(module.HFLocalAdapter):
+                def _models_cache_dir(self):
+                    return cache_dir
+
+            adapter = TestAdapter(
+                module.HFLocalConfig(
+                    model_id="hf_nemotron",
+                    weights_path="nvidia/Llama-3.1-Nemotron-Nano-4B-v1.1",
+                )
+            )
+
+            self.assertEqual(
+                adapter._resolve_model_source(),
+                "nvidia/Llama-3.1-Nemotron-Nano-4B-v1.1",
+            )
 
 
 if __name__ == "__main__":

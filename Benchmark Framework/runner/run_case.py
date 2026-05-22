@@ -179,6 +179,10 @@ def _build_scored_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any
             {
                 "iteration": attempt.get("iteration"),
                 "validation_result": attempt.get("validation_result"),
+                "first_valid_prefix_length": attempt.get("first_valid_prefix_length"),
+                "first_valid_plan_text": attempt.get("first_valid_plan_text"),
+                "final_plan_valid": attempt.get("final_plan_valid"),
+                "extra_actions_after_first_valid": attempt.get("extra_actions_after_first_valid"),
                 "feedback_to_next_iteration": attempt.get("feedback_to_next_iteration"),
             }
         )
@@ -275,6 +279,68 @@ def _run_validator(
         "validation_time_ms": None,
         "raw_validator_output": None,
         "details": {},
+    }
+
+
+def _validate_action_prefixes(
+    validator,
+    task_spec: TaskSpec,
+    actions: list[str],
+) -> dict[str, Any]:
+    """Validate every non-empty action prefix and summarize the outcome."""
+    first_valid_prefix: dict[str, Any] | None = None
+    final_prefix: dict[str, Any] | None = None
+
+    for prefix_length in range(1, len(actions) + 1):
+        prefix_actions = actions[:prefix_length]
+        plan_text = "\n".join(prefix_actions)
+        validation_result = _run_validator(validator, task_spec, plan_text)
+        prefix_record = {
+            "prefix_length": prefix_length,
+            "actions": prefix_actions,
+            "plan_text": plan_text,
+            "validation_result": validation_result,
+            "valid": bool(validation_result.get("valid", False)),
+            "goal_satisfied": validation_result.get("goal_satisfied"),
+            "error_type": validation_result.get("error_type"),
+            "raw_validator_output": validation_result.get("raw_validator_output"),
+        }
+        final_prefix = prefix_record
+
+        if first_valid_prefix is None and prefix_record["valid"]:
+            first_valid_prefix = prefix_record
+
+    first_valid_prefix_length = (
+        int(first_valid_prefix["prefix_length"])
+        if first_valid_prefix is not None
+        else None
+    )
+    first_valid_plan_text = (
+        str(first_valid_prefix["plan_text"])
+        if first_valid_prefix is not None
+        else None
+    )
+    final_validation_result = (
+        final_prefix["validation_result"]
+        if final_prefix is not None
+        else None
+    )
+    synthetic_validation_result = (
+        first_valid_prefix["validation_result"]
+        if first_valid_prefix is not None
+        else final_validation_result
+    )
+
+    return {
+        "validation_result": synthetic_validation_result,
+        "first_valid_prefix_length": first_valid_prefix_length,
+        "first_valid_plan_text": first_valid_plan_text,
+        "final_plan_valid": bool(final_prefix["valid"]) if final_prefix is not None else False,
+        "extra_actions_after_first_valid": (
+            len(actions) - first_valid_prefix_length
+            if first_valid_prefix_length is not None
+            else None
+        ),
     }
 
 
@@ -486,6 +552,10 @@ def run_generation_loop(
             "raw_output": raw_text,
             "parsed_plan": parsed_plan,
             "validation_result": None,
+            "first_valid_prefix_length": None,
+            "first_valid_plan_text": None,
+            "final_plan_valid": False,
+            "extra_actions_after_first_valid": None,
             "feedback_to_next_iteration": None,
         }
 
@@ -506,19 +576,30 @@ def run_generation_loop(
             attempts.append(attempt_record)
             continue
 
-        plan_text = "\n".join(action for action in actions if isinstance(action, str))
+        normalized_actions = [action for action in actions if isinstance(action, str)]
         print(
             f"[VALIDATE START] model={model_label} protocol={protocol_spec.protocol_id} "
-            f"task={task_label} iteration={iteration}",
+            f"task={task_label} iteration={iteration} prefixes={len(normalized_actions)}",
             flush=True,
         )
-        validation_result = _run_validator(validator, task_spec, plan_text)
+        prefix_validation_summary = _validate_action_prefixes(
+            validator=validator,
+            task_spec=task_spec,
+            actions=normalized_actions,
+        )
+        validation_result = prefix_validation_summary["validation_result"]
         last_validation_result = validation_result
         attempt_record["validation_result"] = validation_result
+        attempt_record["first_valid_prefix_length"] = prefix_validation_summary["first_valid_prefix_length"]
+        attempt_record["first_valid_plan_text"] = prefix_validation_summary["first_valid_plan_text"]
+        attempt_record["final_plan_valid"] = prefix_validation_summary["final_plan_valid"]
+        attempt_record["extra_actions_after_first_valid"] = prefix_validation_summary["extra_actions_after_first_valid"]
         print(
             f"[VALIDATE DONE] model={model_label} protocol={protocol_spec.protocol_id} "
             f"task={task_label} iteration={iteration} "
             f"valid={bool(validation_result.get('valid', False))} "
+            f"first_valid_prefix={prefix_validation_summary['first_valid_prefix_length']} "
+            f"final_plan_valid={prefix_validation_summary['final_plan_valid']} "
             f"error={validation_result.get('error_type')}",
             flush=True,
         )

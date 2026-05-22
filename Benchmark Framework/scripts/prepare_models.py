@@ -351,7 +351,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare enabled benchmark models.")
     parser.add_argument(
         "--model-registry-path",
-        default="models/model_registry_nvidia.yaml",
+        default="models/model_registry_hf.yaml",
         help="Model registry path relative to Benchmark Framework unless absolute.",
     )
     parser.add_argument(

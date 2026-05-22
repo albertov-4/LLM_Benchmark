@@ -16,22 +16,38 @@ def _load_module(module_name: str, path: Path):
 
 
 def _resolve_validate_command(framework_root: Path) -> str | None:
-    """Resolve the real VAL executable from PATH or common local build paths."""
+    """Resolve the real VAL executable.
+
+    Search order:
+      1. System PATH  (allows overriding with a custom build)
+      2. Bundled binaries in utils/  (platform-aware, ships with the repo)
+      3. Legacy external VAL build paths  (fallback for manual builds)
+    """
     path_command = shutil.which("Validate")
     if path_command:
         return path_command
 
-    workspace_root = framework_root.parent
-    candidate_paths = [
-        workspace_root / "VAL" / "build" / "win64" / "mingw" / "Debug" / "bin" / "Validate.exe",
-        workspace_root / "VAL" / "build" / "win64" / "mingw" / "Debug" / "install" / "bin" / "Validate.exe",
-        workspace_root / "VAL" / "build" / "win64" / "mingw" / "Release" / "bin" / "Validate.exe",
-        workspace_root.parent / "VAL" / "build" / "win64" / "mingw" / "Debug" / "bin" / "Validate.exe",
-        workspace_root.parent / "VAL" / "build" / "win64" / "mingw" / "Debug" / "install" / "bin" / "Validate.exe",
-        workspace_root.parent / "VAL" / "build" / "win64" / "mingw" / "Release" / "bin" / "Validate.exe",
-    ]
+    # Bundled binaries committed to the repo under Benchmark Framework/utils/
+    for bundled in (
+        framework_root / "utils" / "win64"   / "bin" / "Validate.exe",
+        framework_root / "utils" / "linux64" / "bin" / "Validate",
+    ):
+        if bundled.exists():
+            return str(bundled)
 
-    for candidate in candidate_paths:
+    # Legacy fallback: external VAL build cloned next to the project
+    workspace_root = framework_root.parent
+    legacy_candidates = [
+        workspace_root / "VAL" / "build" / "win64" / "mingw" / "Debug" / "bin" / "Validate.exe",
+        workspace_root / "VAL" / "build" / "win64" / "mingw" / "Release" / "bin" / "Validate.exe",
+        workspace_root / "VAL" / "build" / "linux" / "Release" / "bin" / "Validate",
+        workspace_root / "VAL" / "build" / "linux" / "Debug" / "bin" / "Validate",
+        workspace_root.parent / "VAL" / "build" / "win64" / "mingw" / "Debug" / "bin" / "Validate.exe",
+        workspace_root.parent / "VAL" / "build" / "win64" / "mingw" / "Release" / "bin" / "Validate.exe",
+        workspace_root.parent / "VAL" / "build" / "linux" / "Release" / "bin" / "Validate",
+        workspace_root.parent / "VAL" / "build" / "linux" / "Debug" / "bin" / "Validate",
+    ]
+    for candidate in legacy_candidates:
         if candidate.exists():
             return str(candidate)
 

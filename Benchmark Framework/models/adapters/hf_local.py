@@ -1,17 +1,35 @@
 """Local Hugging Face adapter for benchmark runs.
 
 This adapter accepts either a local model directory or a Hugging Face repo id.
-For HPC runs, prepare models first and point `weights_path` to local files; the
-standard `HF_HUB_OFFLINE` and `TRANSFORMERS_OFFLINE` environment variables are
-honored by the underlying Hugging Face libraries.
+For HPC runs, prepare models first with `scripts/prepare_models.py`; when
+`weights_path` is a Hugging Face repo id, the adapter checks `models_cache`
+before falling back to the Hub. The standard `HF_HUB_OFFLINE` and
+`TRANSFORMERS_OFFLINE` environment variables are honored by the underlying
+Hugging Face libraries.
 """
 
+import re
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from time import perf_counter
 from collections.abc import Iterable
 from typing import Any
+
+
+HF_REPO_ID_PATTERN = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+)
+
+
+def looks_like_hf_repo_id(value: str) -> bool:
+    """Return whether a value has the shape of a Hugging Face repo id."""
+    text = value.strip()
+    if not text or "\\" in text or text.startswith(("/", ".")):
+        return False
+    if ":" in text or " " in text:
+        return False
+    return HF_REPO_ID_PATTERN.match(text) is not None
 
 
 @dataclass(slots=True)
@@ -50,15 +68,66 @@ class HFLocalAdapter:
 
         return torch, AutoModelForCausalLM, AutoTokenizer
 
+    def _framework_root(self) -> Path:
+        """Return the Benchmark Framework root directory."""
+        return Path(__file__).resolve().parents[2]
+
+    def _models_cache_dir(self) -> Path:
+        """Return the project-managed prepared model cache directory."""
+        return self._framework_root() / "models_cache"
+
+    def _candidate_local_paths(self, path_text: str) -> list[Path]:
+        """Return plausible local paths for a registry path value."""
+        raw_path = Path(path_text).expanduser()
+        if raw_path.is_absolute():
+            return [raw_path]
+
+        return [
+            Path.cwd() / raw_path,
+            self._framework_root() / raw_path,
+        ]
+
+    def _existing_local_model_path(self, path_text: str) -> Path | None:
+        """Return an existing local model path for a registry path, if any."""
+        if not path_text.strip():
+            return None
+
+        for candidate in self._candidate_local_paths(path_text):
+            if candidate.exists() and candidate.is_dir():
+                return candidate.resolve()
+        return None
+
+    def _prepared_model_path_for_repo(self, repo_id: str) -> Path:
+        """Return the models_cache directory used by prepare_models.py."""
+        return self._models_cache_dir() / repo_id.replace("/", "__")
+
+    def _existing_prepared_model_path(self, repo_id: str) -> Path | None:
+        """Return a prepared models_cache path for a repo id, if present."""
+        candidate = self._prepared_model_path_for_repo(repo_id)
+        if candidate.exists() and candidate.is_dir() and any(candidate.iterdir()):
+            return candidate.resolve()
+        return None
+
     def _resolve_model_source(self) -> str:
-        """Return the local path or repo id passed to `from_pretrained(...)`."""
-        weights_path = self.config.weights_path.strip()
-        if weights_path:
-            candidate = Path(weights_path)
-            if candidate.exists():
-                return str(candidate)
-            return weights_path
-        return self.config.model_id
+        """Return the local path or repo id passed to `from_pretrained(...)`.
+
+        Resolution order:
+        1. explicit existing local path from `weights_path` or `model_id`
+        2. prepared `models_cache/<namespace>__<repo>` for HF repo ids
+        3. original repo id/path, allowing Hugging Face to download or use its cache
+        """
+        model_source = self.config.weights_path.strip() or self.config.model_id.strip()
+
+        local_path = self._existing_local_model_path(model_source)
+        if local_path is not None:
+            return str(local_path)
+
+        if looks_like_hf_repo_id(model_source):
+            prepared_path = self._existing_prepared_model_path(model_source)
+            if prepared_path is not None:
+                return str(prepared_path)
+
+        return model_source
 
     def _resolve_torch_dtype(self, torch_module):
         """Translate the config string into a torch dtype when possible."""

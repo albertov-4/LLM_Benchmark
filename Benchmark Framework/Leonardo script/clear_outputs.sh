@@ -1,14 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=clear_outputs
+#SBATCH --job-name=benchmark_test
 #SBATCH --account=try26_varini
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=00:15:00
+#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=2G
-#SBATCH --output=clear_outputs_%j.out
-#SBATCH --error=clear_outputs_%j.err
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=500G
+#SBATCH --output=benchmark_test_%j.out
+#SBATCH --error=benchmark_test_%j.err
 
 set -euo pipefail
 

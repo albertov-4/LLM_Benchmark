@@ -1,15 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=benchmark_hf
-#SBATCH --account=IscrC_VisLLMs
+#SBATCH --job-name=benchmark_test
+#SBATCH --account=try26_varini
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=24:00:00
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
-#SBATCH --output=benchmark_hf_%j.out
-#SBATCH --error=benchmark_hf_%j.err
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=256G#SBATCH --mem=500G#SBATCH --output=benchmark_test_%j.out
+#SBATCH --error=benchmark_test_%j.err
 
 set -euo pipefail
 

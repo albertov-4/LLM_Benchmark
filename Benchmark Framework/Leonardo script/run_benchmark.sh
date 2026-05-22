@@ -37,7 +37,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 mkdir -p "${HF_HOME}"
 
 MODEL_ID="${MODEL_ID:-}"
-PROTOCOL_ID="${PROTOCOL_ID:-}"
+PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 TASK_FAMILY="${TASK_FAMILY:-}"
 TIER="${TIER:-}"
 INSTANCE_ID="${INSTANCE_ID:-}"

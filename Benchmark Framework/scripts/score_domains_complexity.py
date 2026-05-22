@@ -663,27 +663,12 @@ def score_instance(domain_name: str, instance_path: Path, domain: DomainModel) -
         "topology_edges": topology_edges,
         "topology_density": round(topology_density, 6),
         "raw_score": raw_score,
-        "score_0_100": 0.0,
     }
 
 
-def normalize_scores(rows: list[dict[str, Any]]) -> None:
-    rows_by_domain: dict[str, list[dict[str, Any]]] = defaultdict(list)
+def round_instance_scores(rows: list[dict[str, Any]]) -> None:
     for row in rows:
-        rows_by_domain[row["domain"]].append(row)
-
-    for domain_rows in rows_by_domain.values():
-        raw_scores = [row["raw_score"] for row in domain_rows]
-        min_score = min(raw_scores)
-        max_score = max(raw_scores)
-        span = max_score - min_score
-        for row in domain_rows:
-            if span == 0:
-                row["score_0_100"] = 0.0
-            else:
-                row["score_0_100"] = 100 * (row["raw_score"] - min_score) / span
-            row["raw_score"] = round(row["raw_score"], 6)
-            row["score_0_100"] = round(row["score_0_100"], 6)
+        row["raw_score"] = round(row["raw_score"], 6)
 
 
 def summarize_domains(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -694,16 +679,11 @@ def summarize_domains(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summaries = []
     for domain_name in sorted(rows_by_domain):
         domain_rows = rows_by_domain[domain_name]
-        scores = [float(row["score_0_100"]) for row in domain_rows]
         raw_scores = [float(row["raw_score"]) for row in domain_rows]
         summaries.append(
             {
                 "domain": domain_name,
                 "instances": len(domain_rows),
-                "min_score": round(min(scores), 6),
-                "median_score": round(median(scores), 6),
-                "mean_score": round(mean(scores), 6),
-                "max_score": round(max(scores), 6),
                 "total_raw_score": round(sum(raw_scores), 6),
                 "min_raw_score": round(min(raw_scores), 6),
                 "median_raw_score": round(median(raw_scores), 6),
@@ -784,7 +764,7 @@ def score_domains(domains_dir: Path) -> list[dict[str, Any]]:
         for instance_path in all_instance_paths:
             rows.append(score_instance(domain_dir.name, instance_path, domain))
 
-    normalize_scores(rows)
+    round_instance_scores(rows)
     return rows
 
 

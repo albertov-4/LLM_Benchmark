@@ -66,8 +66,10 @@ class _FakeTokenizer:
 
     def __init__(self):
         self.last_prompt = ""
+        self.last_chat_template_kwargs = {}
 
-    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+        self.last_chat_template_kwargs = dict(kwargs)
         self.last_prompt = "\n".join(f"{message['role']}::{message['content']}" for message in messages)
         if add_generation_prompt:
             self.last_prompt += "\nassistant::"
@@ -83,6 +85,17 @@ class _FakeTokenizer:
     def decode(self, tokens, skip_special_tokens=True):
         self.last_decoded = list(tokens)
         return "(move car1 j1 j2)\n(move car1 j2 j3)"
+
+
+class _RejectingKwargsTokenizer(_FakeTokenizer):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+        if kwargs:
+            raise TypeError("unsupported chat template kwargs")
+        return super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+        )
 
 
 class _FakeModel:
@@ -143,6 +156,65 @@ class HFLocalAdapterTest(unittest.TestCase):
         self.assertEqual(result["notes"], [])
         self.assertIn("max_new_tokens", adapter.model.last_generate_kwargs)
         self.assertFalse(adapter.model.last_generate_kwargs["do_sample"])
+
+    def test_generate_uses_top_p_and_thinking_chat_template_kwargs(self) -> None:
+        module = self.hf_module
+
+        class TestAdapter(module.HFLocalAdapter):
+            def _load_backend(self):
+                return _FakeTorch, object, object
+
+            def load_model(self):
+                self.model = _FakeModel()
+                self.tokenizer = _FakeTokenizer()
+
+        adapter = TestAdapter(
+            module.HFLocalConfig(
+                model_id="test-model",
+                weights_path="test-source",
+                temperature=0.1,
+                top_k=10,
+                top_p=0.95,
+                max_tokens=128,
+                thinking_key="enable_thinking",
+                thinking_enabled=False,
+            )
+        )
+
+        adapter.generate([{"role": "user", "content": "Solve the problem."}])
+
+        self.assertTrue(adapter.model.last_generate_kwargs["do_sample"])
+        self.assertEqual(adapter.model.last_generate_kwargs["temperature"], 0.1)
+        self.assertEqual(adapter.model.last_generate_kwargs["top_p"], 0.95)
+        self.assertEqual(
+            adapter.tokenizer.last_chat_template_kwargs,
+            {"enable_thinking": False},
+        )
+
+    def test_chat_template_retries_without_thinking_kwargs_when_unsupported(self) -> None:
+        module = self.hf_module
+
+        class TestAdapter(module.HFLocalAdapter):
+            def _load_backend(self):
+                return _FakeTorch, object, object
+
+            def load_model(self):
+                self.model = _FakeModel()
+                self.tokenizer = _RejectingKwargsTokenizer()
+
+        adapter = TestAdapter(
+            module.HFLocalConfig(
+                model_id="test-model",
+                weights_path="test-source",
+                thinking_key="enable_thinking",
+                thinking_enabled=False,
+            )
+        )
+
+        result = adapter.generate([{"role": "user", "content": "Solve the problem."}])
+
+        self.assertEqual(result["raw_text"], "(move car1 j1 j2)\n(move car1 j2 j3)")
+        self.assertEqual(adapter.tokenizer.last_chat_template_kwargs, {})
 
     def test_resolve_model_source_prefers_weights_path(self) -> None:
         module = self.hf_module

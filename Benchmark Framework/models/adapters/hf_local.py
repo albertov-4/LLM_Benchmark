@@ -38,12 +38,15 @@ class HFLocalConfig:
     weights_path: str = ""
     temperature: float = 0.0
     top_k: int | None = 10
+    top_p: float | None = None
     max_tokens: int = 4096
     device_map: str | None = "auto"
     torch_dtype: str | None = "auto"
     trust_remote_code: bool = False
     use_chat_template: bool = True
     add_generation_prompt: bool = True
+    thinking_key: str = ""
+    thinking_enabled: bool = False
 
 
 class HFLocalAdapter:
@@ -155,14 +158,28 @@ class HFLocalAdapter:
             and self.tokenizer is not None
             and hasattr(self.tokenizer, "apply_chat_template")
         ):
+            chat_template_kwargs: dict[str, Any] = {}
+            thinking_key = self.config.thinking_key.strip()
+            if thinking_key:
+                chat_template_kwargs[thinking_key] = self.config.thinking_enabled
+
             try:
                 return self.tokenizer.apply_chat_template(
                     messages,
                     tokenize=False,
                     add_generation_prompt=self.config.add_generation_prompt,
+                    **chat_template_kwargs,
                 )
             except Exception:
-                pass
+                if chat_template_kwargs:
+                    try:
+                        return self.tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=self.config.add_generation_prompt,
+                        )
+                    except Exception:
+                        pass
 
         rendered_lines: list[str] = []
         for message in messages:
@@ -324,6 +341,8 @@ class HFLocalAdapter:
             generation_kwargs["temperature"] = self.config.temperature
             if self.config.top_k is not None:
                 generation_kwargs["top_k"] = self.config.top_k
+            if self.config.top_p is not None:
+                generation_kwargs["top_p"] = self.config.top_p
 
         torch_module, _, _ = self._load_backend()
         start_time = perf_counter()

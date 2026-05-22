@@ -531,18 +531,24 @@ def build_model_adapter(
             top_k = generation_config.get("top_k", 10)
             if top_k is None:
                 top_k = 10
+            top_p = model_entry.get("top_p", generation_config.get("top_p"))
+            if top_p in {"", "none", "null"}:
+                top_p = None
 
             hf_config = hf_module.HFLocalConfig(
                 model_id=model_id,
                 weights_path=str(model_entry.get("weights_path", "")),
-                temperature=float(generation_config.get("temperature", 0.0) or 0.0),
+                temperature=float(model_entry.get("temperature", generation_config.get("temperature", 0.0)) or 0.0),
                 top_k=int(top_k),
-                max_tokens=int(generation_config.get("max_tokens", 4096) or 4096),
+                top_p=float(top_p) if top_p is not None else None,
+                max_tokens=int(model_entry.get("max_tokens", generation_config.get("max_tokens", 4096)) or 4096),
                 device_map=None if model_entry.get("device_map") in {None, "", "none"} else str(model_entry.get("device_map", "auto")),
                 torch_dtype=None if model_entry.get("torch_dtype") in {None, ""} else str(model_entry.get("torch_dtype", "auto")),
                 trust_remote_code=bool(model_entry.get("trust_remote_code", False)),
                 use_chat_template=bool(model_entry.get("use_chat_template", True)),
                 add_generation_prompt=bool(model_entry.get("add_generation_prompt", True)),
+                thinking_key=str(model_entry.get("thinking_key", "") or ""),
+                thinking_enabled=bool(model_entry.get("thinking_enabled", False)),
             )
             return hf_module.HFLocalAdapter(hf_config)
         except Exception:

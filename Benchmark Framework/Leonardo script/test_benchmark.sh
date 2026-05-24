@@ -22,14 +22,26 @@ cd "${REPO_ROOT}"
 module purge
 module load python/3.11.7
 
-for VENV_DIR in "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
+VENV_ACTIVATED=0
+for CANDIDATE_VENV_DIR in "${PYTHON_VENV:-}" "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
+    if [ -z "${CANDIDATE_VENV_DIR}" ]; then
+        continue
+    fi
+    VENV_DIR="${CANDIDATE_VENV_DIR}"
     if [ -f "${VENV_DIR}/bin/activate" ]; then
         # shellcheck disable=SC1091
         source "${VENV_DIR}/bin/activate"
         echo "Activated venv: ${VENV_DIR}"
+        VENV_ACTIVATED=1
         break
     fi
 done
+
+if [ "${VENV_ACTIVATED}" != "1" ]; then
+    echo "ERROR: no Python venv found."
+    echo "Set PYTHON_VENV=/absolute/path/to/your/venv or create one of: our_env, project_venv, venv, .venv, .venv-new."
+    exit 1
+fi
 
 export HF_HOME="${HF_HOME:-${SCRATCH:-${REPO_ROOT}}/hf_cache}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"

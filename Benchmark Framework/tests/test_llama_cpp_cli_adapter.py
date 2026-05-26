@@ -83,7 +83,42 @@ class LlamaCppCLIAdapterTest(unittest.TestCase):
         self.assertIn("-t", command)
         self.assertEqual(result["model_id"], "llama_cpp_test")
         self.assertEqual(result["raw_text"], "(move a b)")
+        self.assertEqual(result["reasoning_text"], "")
         self.assertIsNone(result["usage"]["total_tokens"])
+
+    def test_generate_extracts_inline_thinking_tags(self) -> None:
+        module = self.llama_cpp_module
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            executable_path = root / "llama-cli.exe"
+            model_path = root / "model.gguf"
+            executable_path.write_text("", encoding="utf-8")
+            model_path.write_text("", encoding="utf-8")
+
+            original_run = module.subprocess.run
+
+            def fake_run(command, capture_output, text, timeout, check):
+                prompt = command[command.index("-p") + 1]
+                return _FakeCompletedProcess(
+                    stdout=f"{prompt}\n<think>choose valid move</think>\n(move a b)"
+                )
+
+            module.subprocess.run = fake_run
+            try:
+                adapter = module.LlamaCppCLIAdapter(
+                    module.LlamaCppCLIConfig(
+                        model_id="llama_cpp_test",
+                        executable_path=str(executable_path),
+                        model_path=str(model_path),
+                    )
+                )
+                result = adapter.generate([{"role": "user", "content": "Solve."}])
+            finally:
+                module.subprocess.run = original_run
+
+        self.assertEqual(result["raw_text"], "(move a b)")
+        self.assertEqual(result["reasoning_text"], "choose valid move")
+        self.assertIn("inline reasoning extracted", result["notes"][0])
 
     def test_missing_model_path_fails_clearly(self) -> None:
         module = self.llama_cpp_module

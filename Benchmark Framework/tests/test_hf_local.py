@@ -150,6 +150,7 @@ class HFLocalAdapterTest(unittest.TestCase):
 
         self.assertEqual(result["model_id"], "test-model")
         self.assertEqual(result["raw_text"], "(move car1 j1 j2)\n(move car1 j2 j3)")
+        self.assertEqual(result["reasoning_text"], "")
         self.assertEqual(result["usage"]["prompt_tokens"], 3)
         self.assertEqual(result["usage"]["completion_tokens"], 2)
         self.assertEqual(result["usage"]["total_tokens"], 5)
@@ -214,7 +215,31 @@ class HFLocalAdapterTest(unittest.TestCase):
         result = adapter.generate([{"role": "user", "content": "Solve the problem."}])
 
         self.assertEqual(result["raw_text"], "(move car1 j1 j2)\n(move car1 j2 j3)")
+        self.assertEqual(result["reasoning_text"], "")
         self.assertEqual(adapter.tokenizer.last_chat_template_kwargs, {})
+
+    def test_generate_extracts_inline_thinking_tags(self) -> None:
+        module = self.hf_module
+
+        class ThinkingTokenizer(_FakeTokenizer):
+            def decode(self, tokens, skip_special_tokens=True):
+                return "<think>verify adjacency</think>\n(move car1 j1 j2)"
+
+        class TestAdapter(module.HFLocalAdapter):
+            def _load_backend(self):
+                return _FakeTorch, object, object
+
+            def load_model(self):
+                self.model = _FakeModel()
+                self.tokenizer = ThinkingTokenizer()
+
+        adapter = TestAdapter(module.HFLocalConfig(model_id="test-model"))
+
+        result = adapter.generate([{"role": "user", "content": "Solve the problem."}])
+
+        self.assertEqual(result["raw_text"], "(move car1 j1 j2)")
+        self.assertEqual(result["reasoning_text"], "verify adjacency")
+        self.assertIn("inline reasoning extracted", result["notes"][0])
 
     def test_resolve_model_source_prefers_weights_path(self) -> None:
         module = self.hf_module

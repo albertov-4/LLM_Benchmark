@@ -64,10 +64,34 @@ class OllamaAdapterTest(unittest.TestCase):
         self.assertFalse(adapter.last_payload["stream"])
         self.assertEqual(result["model_id"], "ollama_test")
         self.assertEqual(result["raw_text"], "(move car1 j1 j2)")
+        self.assertEqual(result["reasoning_text"], "")
         self.assertEqual(result["usage"]["prompt_tokens"], 12)
         self.assertEqual(result["usage"]["completion_tokens"], 5)
         self.assertEqual(result["usage"]["total_tokens"], 17)
         self.assertEqual(result["notes"], [])
+
+    def test_generate_captures_provider_thinking_separately(self) -> None:
+        module = self.ollama_module
+
+        class TestAdapter(module.OllamaAdapter):
+            def _post_chat(self, payload):
+                return {
+                    "model": "thinking-model",
+                    "message": {
+                        "role": "assistant",
+                        "thinking": "check numeric preconditions",
+                        "content": "(move car1 j1 j2)",
+                    },
+                    "done": True,
+                }
+
+        adapter = TestAdapter(module.OllamaConfig(model_id="ollama_thinking_test"))
+
+        result = adapter.generate([{"role": "user", "content": "Solve the problem."}])
+
+        self.assertEqual(result["raw_text"], "(move car1 j1 j2)")
+        self.assertEqual(result["reasoning_text"], "check numeric preconditions")
+        self.assertIn("provider reasoning captured", result["notes"][0])
 
     def test_model_id_is_fallback_model_name(self) -> None:
         module = self.ollama_module

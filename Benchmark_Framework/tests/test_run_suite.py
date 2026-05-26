@@ -63,6 +63,8 @@ class RunSuiteSmokeTest(unittest.TestCase):
 
         self.assertEqual(result["summary"]["num_jobs"], 1)
         self.assertEqual(len(result["suite_results"]), 1)
+        self.assertIn("generation_time_seconds", result["suite_results"][0])
+        self.assertGreaterEqual(result["suite_results"][0]["generation_time_seconds"], 0.0)
         self.assertEqual(result["aggregate_results"]["overall"]["num_solved"], 1)
         self.assertEqual(result["aggregate_results"]["by_model"]["mock_model"]["solve_rate"], 1.0)
 

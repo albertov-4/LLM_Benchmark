@@ -194,6 +194,7 @@ def _build_suite_result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "iterations_used": result.get("iterations_used"),
         "max_iterations": result.get("max_iterations"),
         "stopped_by_iteration_limit": result.get("stopped_by_iteration_limit"),
+        "generation_time_seconds": result.get("generation_time_seconds"),
         "metrics": result.get("metrics", {}),
         "raw_output_path": result.get("raw_output_path"),
         "parsed_output_path": result.get("parsed_output_path"),

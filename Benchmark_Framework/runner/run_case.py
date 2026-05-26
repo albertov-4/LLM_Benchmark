@@ -50,6 +50,7 @@ class ResultRecord:
     iterations_used: int
     max_iterations: int
     stopped_by_iteration_limit: bool
+    generation_time_seconds: float = 0.0
     raw_output: str | None = None
     parsed_plan: dict[str, Any] | None = None
     validation_result: dict[str, Any] | None = None
@@ -65,6 +66,7 @@ class CasePayload(TypedDict):
     iterations_used: int
     max_iterations: int
     stopped_by_iteration_limit: bool
+    generation_time_seconds: float
     raw_output: str | None
     parsed_plan: dict[str, Any] | None
     validation_result: dict[str, Any] | None
@@ -151,6 +153,7 @@ def _build_raw_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         raw_attempts.append(
             {
                 "iteration": attempt.get("iteration"),
+                "generation_time_seconds": attempt.get("generation_time_seconds"),
                 "messages": attempt.get("messages", []),
                 "generation": generation,
             }
@@ -165,6 +168,7 @@ def _build_parsed_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any
         parsed_attempts.append(
             {
                 "iteration": attempt.get("iteration"),
+                "generation_time_seconds": attempt.get("generation_time_seconds"),
                 "parsed_plan": attempt.get("parsed_plan"),
             }
         )
@@ -178,6 +182,7 @@ def _build_scored_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any
         scored_attempts.append(
             {
                 "iteration": attempt.get("iteration"),
+                "generation_time_seconds": attempt.get("generation_time_seconds"),
                 "validation_result": attempt.get("validation_result"),
                 "first_valid_prefix_length": attempt.get("first_valid_prefix_length"),
                 "first_valid_plan_text": attempt.get("first_valid_plan_text"),
@@ -490,6 +495,7 @@ def run_generation_loop(
     attempts: list[dict[str, Any]] = []
     last_parsed_plan: dict[str, Any] | None = None
     last_validation_result: dict[str, Any] | None = None
+    total_generation_time_seconds = 0.0
     model_label = model_id or getattr(adapter, "model_id", "unknown-model")
     task_label = f"{task_spec.task_family}/{task_spec.tier}/{task_spec.instance_id}"
 
@@ -523,6 +529,10 @@ def run_generation_loop(
         generation_elapsed = perf_counter() - generation_start
         if not isinstance(generation, dict):
             generation = {"raw_text": str(generation)}
+        else:
+            generation = dict(generation)
+        generation["generation_time_seconds"] = generation_elapsed
+        total_generation_time_seconds += generation_elapsed
         raw_text_preview = generation.get("raw_text", "")
         raw_text_length = len(raw_text_preview) if isinstance(raw_text_preview, str) else len(str(raw_text_preview))
         print(
@@ -547,6 +557,7 @@ def run_generation_loop(
         )
         attempt_record: dict[str, Any] = {
             "iteration": iteration,
+            "generation_time_seconds": generation_elapsed,
             "messages": messages,
             "generation": generation,
             "raw_output": raw_text,
@@ -611,6 +622,7 @@ def run_generation_loop(
                 "iterations_used": iteration,
                 "max_iterations": protocol_spec.max_iterations,
                 "stopped_by_iteration_limit": False,
+                "generation_time_seconds": total_generation_time_seconds,
                 "raw_output": raw_text,
                 "parsed_plan": parsed_plan,
                 "validation_result": validation_result,
@@ -634,6 +646,7 @@ def run_generation_loop(
         "iterations_used": len(raw_generations),
         "max_iterations": protocol_spec.max_iterations,
         "stopped_by_iteration_limit": len(raw_generations) >= protocol_spec.max_iterations,
+        "generation_time_seconds": total_generation_time_seconds,
         "raw_output": final_raw_output,
         "parsed_plan": last_parsed_plan,
         "validation_result": last_validation_result,
@@ -650,6 +663,7 @@ def build_result_record(
     solved: bool,
     iterations_used: int,
     stopped_by_iteration_limit: bool,
+    generation_time_seconds: float = 0.0,
     raw_output: str | None = None,
     parsed_plan: dict[str, Any] | None = None,
     validation_result: dict[str, Any] | None = None,
@@ -671,6 +685,7 @@ def build_result_record(
         iterations_used=iterations_used,
         max_iterations=protocol_spec.max_iterations,
         stopped_by_iteration_limit=stopped_by_iteration_limit,
+        generation_time_seconds=generation_time_seconds,
         raw_output=raw_output,
         parsed_plan=parsed_plan,
         validation_result=validation_result,
@@ -752,6 +767,7 @@ def run_case(
             "task_family": task_spec.task_family,
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
+            "generation_time_seconds": case_payload["generation_time_seconds"],
             "attempts": _build_raw_attempts(case_payload["attempts"]),
         }
         parsed_payload = {
@@ -761,6 +777,7 @@ def run_case(
             "task_family": task_spec.task_family,
             "tier": task_spec.tier,
             "instance_id": task_spec.instance_id,
+            "generation_time_seconds": case_payload["generation_time_seconds"],
             "raw_output_path": str(raw_path),
             "attempts": _build_parsed_attempts(case_payload["attempts"]),
         }
@@ -779,6 +796,7 @@ def run_case(
         solved=case_payload["solved"],
         iterations_used=case_payload["iterations_used"],
         stopped_by_iteration_limit=case_payload["stopped_by_iteration_limit"],
+        generation_time_seconds=case_payload["generation_time_seconds"],
         raw_output=case_payload["raw_output"],
         parsed_plan=case_payload["parsed_plan"],
         validation_result=case_payload["validation_result"],
@@ -801,6 +819,7 @@ def run_case(
             "iterations_used": result_record.iterations_used,
             "max_iterations": result_record.max_iterations,
             "stopped_by_iteration_limit": result_record.stopped_by_iteration_limit,
+            "generation_time_seconds": result_record.generation_time_seconds,
             "metrics": result_record.metrics,
             "raw_output_path": raw_output_path,
             "parsed_output_path": parsed_output_path,

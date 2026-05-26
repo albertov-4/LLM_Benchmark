@@ -251,6 +251,64 @@ class RunCaseSmokeTest(unittest.TestCase):
         self.assertEqual(result.metrics["validity_at_k"], False)
         self.assertEqual(result.metrics["error_type"], "syntax_error")
 
+    def test_run_case_persists_completed_attempts_when_later_generation_fails(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_generation_error_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class FailingSecondGenerationAdapter:
+            def __init__(self):
+                self.call_count = 0
+
+            def generate(self, messages):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {
+                        "model_id": "mock_model",
+                        "raw_text": "(move wrong target)",
+                        "usage": {},
+                        "latency_s": 0.0,
+                    }
+                raise TimeoutError("Request timed out.")
+
+        adapter = FailingSecondGenerationAdapter()
+        validator = PrefixLengthValidator(valid_prefix_length=None)
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=3)
+        protocol_spec.include_external_feedback = True
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            result = run_case_module.run_case(
+                model_id="mock_model",
+                adapter=adapter,
+                validator=validator,
+                task_spec=task_spec,
+                protocol_spec=protocol_spec,
+                output_root=tmp_dir,
+                run_id="test-generation-error",
+            )
+
+            self.assertFalse(result.solved)
+            self.assertEqual(result.iterations_used, 2)
+            self.assertFalse(result.stopped_by_iteration_limit)
+            self.assertEqual(result.validation_result["status"], "generation_error")
+            self.assertEqual(result.validation_result["error_type"], "TimeoutError")
+            self.assertEqual(result.metrics["error_type"], "TimeoutError")
+
+            raw_payload = json.loads(Path(result.raw_output_path or "").read_text(encoding="utf-8"))
+            parsed_payload = json.loads(Path(result.parsed_output_path or "").read_text(encoding="utf-8"))
+            scored_payload = json.loads(Path(result.scored_output_path or "").read_text(encoding="utf-8"))
+
+            self.assertEqual(len(raw_payload["attempts"]), 2)
+            self.assertEqual(raw_payload["attempts"][0]["generation"]["raw_text"], "(move wrong target)")
+            self.assertEqual(raw_payload["attempts"][1]["generation"]["raw_text"], "")
+            self.assertIn("TimeoutError", raw_payload["attempts"][1]["generation"]["stream_error"])
+            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["actions"], ["(move wrong target)"])
+            self.assertIsNone(parsed_payload["attempts"][1]["parsed_plan"])
+            self.assertEqual(scored_payload["attempts"][1]["validation_result"]["status"], "generation_error")
+            self.assertEqual(scored_payload["attempts"][1]["validation_result"]["error_type"], "TimeoutError")
+
     def test_run_case_solves_when_action_prefix_validates(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_case_module = _load_module(

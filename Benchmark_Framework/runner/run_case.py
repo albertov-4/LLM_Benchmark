@@ -241,6 +241,34 @@ def _build_parse_failure_result(
     }
 
 
+def _build_generation_failure_result(
+    exc: Exception,
+    iteration: int,
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    """Create a validation-style result for a failed generation call."""
+    return {
+        "valid": False,
+        "status": "generation_error",
+        "error_type": type(exc).__name__,
+        "feedback_text": (
+            "The model generation call failed before returning a complete response."
+        ),
+        "failed_step": None,
+        "failed_action": None,
+        "goal_satisfied": None,
+        "plan_length": 0,
+        "validation_time_ms": None,
+        "raw_validator_output": None,
+        "details": {
+            "exception_type": type(exc).__name__,
+            "exception_message": str(exc),
+            "iteration": iteration,
+            "generation_time_seconds": elapsed_seconds,
+        },
+    }
+
+
 def _run_validator(
     validator,
     task_spec: TaskSpec,
@@ -519,13 +547,66 @@ def run_generation_loop(
             generation = adapter.generate(messages)
         except Exception as exc:
             elapsed_seconds = perf_counter() - generation_start
+            total_generation_time_seconds += elapsed_seconds
             print(
                 f"[GEN ERROR] model={model_label} protocol={protocol_spec.protocol_id} "
                 f"task={task_label} iteration={iteration} elapsed={elapsed_seconds:.1f}s "
                 f"{type(exc).__name__}: {exc}",
                 flush=True,
             )
-            raise
+            validation_result = _build_generation_failure_result(
+                exc=exc,
+                iteration=iteration,
+                elapsed_seconds=elapsed_seconds,
+            )
+            last_validation_result = validation_result
+            failed_generation = {
+                "raw_text": "",
+                "reasoning_text": "",
+                "usage": {
+                    "prompt_tokens": None,
+                    "completion_tokens": None,
+                    "total_tokens": None,
+                },
+                "latency_s": elapsed_seconds,
+                "generation_time_seconds": elapsed_seconds,
+                "notes": ["generation call raised before returning output."],
+                "stream_complete": False,
+                "stream_error": f"{type(exc).__name__}: {exc}",
+                "partial_output": False,
+            }
+            attempts.append(
+                {
+                    "iteration": iteration,
+                    "generation_time_seconds": elapsed_seconds,
+                    "messages": messages,
+                    "generation": failed_generation,
+                    "raw_output": "",
+                    "parsed_plan": None,
+                    "validation_result": validation_result,
+                    "first_valid_prefix_length": None,
+                    "first_valid_plan_text": None,
+                    "final_plan_valid": False,
+                    "extra_actions_after_first_valid": None,
+                    "feedback_to_next_iteration": None,
+                }
+            )
+            final_raw_output = None
+            if raw_generations:
+                final_raw_output = raw_generations[-1].get("raw_text")
+            return {
+                "solved": False,
+                "iterations_used": len(attempts),
+                "max_iterations": protocol_spec.max_iterations,
+                "stopped_by_iteration_limit": False,
+                "generation_time_seconds": total_generation_time_seconds,
+                "raw_output": final_raw_output,
+                "parsed_plan": last_parsed_plan,
+                "validation_result": last_validation_result,
+                "metrics": {},
+                "raw_generations": raw_generations,
+                "attempts": attempts,
+            }
         generation_elapsed = perf_counter() - generation_start
         if not isinstance(generation, dict):
             generation = {"raw_text": str(generation)}

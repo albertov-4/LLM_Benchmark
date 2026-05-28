@@ -2,12 +2,12 @@
 #SBATCH --job-name=benchmark_test
 #SBATCH --account=try26_varini
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=24:00:00
+#SBATCH --time=1:00:00
 #SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=500G
+#SBATCH --mem=0
 #SBATCH --output=benchmark_test_%j.out
 #SBATCH --error=benchmark_test_%j.err
 

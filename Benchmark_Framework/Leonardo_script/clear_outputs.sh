@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=500G
+#SBATCH --mem=0
 #SBATCH --output=benchmark_test_%j.out
 #SBATCH --error=benchmark_test_%j.err
 

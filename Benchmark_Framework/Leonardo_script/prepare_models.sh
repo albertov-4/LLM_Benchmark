@@ -50,7 +50,7 @@ mkdir -p "${FRAMEWORK_DIR}/models_cache"
 
 MODEL_REGISTRY_PATH="${MODEL_REGISTRY_PATH:-models/model_registry_hf.yaml}"
 MODELS_DIR="${MODELS_DIR:-models_cache}"
-MODEL_ID="${MODEL_ID:-hf_llama_3_3_70b_instruct}"
+MODEL_ID="${MODEL_ID:-hf_gpt_oss_120b}"
 DRY_RUN="${DRY_RUN:-0}"
 OFFLINE="${OFFLINE:-0}"
 

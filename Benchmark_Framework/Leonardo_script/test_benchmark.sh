@@ -50,7 +50,7 @@ mkdir -p "${HF_HOME}"
 
 MODEL_ID="${MODEL_ID:-hf_gemma_4_31b_it}"
 PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
-TASK_FAMILY="${TASK_FAMILY:-farmland}"
+TASK_FAMILY="${TASK_FAMILY:-fo-sailing}"
 TIER="${TIER:-easy}"
 INSTANCE_ID="${INSTANCE_ID:-pfile1}"
 VALIDATOR_COMMAND="${VALIDATOR_COMMAND:-Validate}"

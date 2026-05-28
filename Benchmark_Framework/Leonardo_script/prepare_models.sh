@@ -50,7 +50,7 @@ mkdir -p "${FRAMEWORK_DIR}/models_cache"
 
 MODEL_REGISTRY_PATH="${MODEL_REGISTRY_PATH:-models/model_registry_hf.yaml}"
 MODELS_DIR="${MODELS_DIR:-models_cache}"
-MODEL_ID="${MODEL_ID:hf_nemotron_3_nano_30b_a3b}"
+MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
 DRY_RUN="${DRY_RUN:-0}"
 OFFLINE="${OFFLINE:-0}"
 

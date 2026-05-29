@@ -176,6 +176,8 @@ def _resolve_validate_command(
 
     workspace_root = framework_root.parent
     candidate_paths = [
+        framework_root / "utils" / "win64" / "bin" / "Validate.exe",
+        framework_root / "utils" / "linux64" / "bin" / "Validate",
         workspace_root / "VAL" / "build" / "win64" / "mingw" / "Debug" / "bin" / "Validate.exe",
         workspace_root / "VAL" / "build" / "win64" / "mingw" / "Debug" / "install" / "bin" / "Validate.exe",
         workspace_root / "VAL" / "build" / "win64" / "mingw" / "Release" / "bin" / "Validate.exe",

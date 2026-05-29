@@ -39,6 +39,22 @@ def _resolve_validate_command(framework_root: Path) -> str | None:
 
 
 class RunSuiteSmokeTest(unittest.TestCase):
+    def test_run_suite_resolves_bundled_validator(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_bundled_validator_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+
+        bundled_validator = framework_root / "utils" / "win64" / "bin" / "Validate.exe"
+        if not bundled_validator.exists():
+            self.skipTest("Bundled Windows Validate executable not found.")
+
+        resolved_command = run_suite_module._resolve_validate_command(framework_root)
+
+        self.assertIsNotNone(resolved_command)
+        self.assertTrue(Path(resolved_command).exists())
+
     def test_run_suite_aggregates_mock_results(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_suite_module = _load_module(

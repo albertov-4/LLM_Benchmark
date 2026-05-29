@@ -36,6 +36,7 @@ cd "${REPO_ROOT}"
 
 module purge
 module load python/3.11.7
+module load cuda/12.1 2>/dev/null || module load cuda 2>/dev/null || true
 
 VENV_ACTIVATED=0
 for CANDIDATE_VENV_DIR in "${PYTHON_VENV:-}" "${VIRTUAL_ENV:-}" "${REPO_ROOT}/../our_env" "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
@@ -102,7 +103,24 @@ elif ! command -v "${VALIDATOR_COMMAND}" >/dev/null 2>&1; then
     exit 1
 fi
 
-python -c "import torch, transformers; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'gpus', torch.cuda.device_count()); print('transformers', transformers.__version__)"
+python - <<'PY'
+import os
+import sys
+
+import torch
+import transformers
+
+print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_available", torch.cuda.is_available(), "gpus", torch.cuda.device_count())
+print("transformers", transformers.__version__)
+print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"))
+
+if not torch.cuda.is_available():
+    print("ERROR: PyTorch cannot initialize CUDA on this node.", file=sys.stderr)
+    print("Your torch build must match Leonardo's CUDA/driver stack. Reinstall torch in our_env with a CUDA 12.1 wheel, for example:", file=sys.stderr)
+    print("  pip uninstall -y torch torchvision torchaudio", file=sys.stderr)
+    print("  pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio", file=sys.stderr)
+    sys.exit(1)
+PY
 
 CMD=(
     python "${FRAMEWORK_DIR}/run_benchmark.py"

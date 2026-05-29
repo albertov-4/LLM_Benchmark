@@ -1,20 +1,14 @@
 # Tasks
 
-This folder contains the benchmark task definitions.
+This folder contains the PDDL task families used by the benchmark. The runner
+discovers task cases from the directory layout, so folder names and file
+placement are part of the benchmark interface.
 
-Each task family should contain:
-- one folder named after the task family, for example `<task_family>/`
-- `domain/domain.pddl`
-- three difficulty folders: `easy`, `medium` and `hard`
-- `.pddl` instances directly inside each difficulty folder
-- one task-family README explaining the domain and the difficulty split
-
-Recommended layout:
+## Required Layout
 
 ```text
 tasks/
 `-- <task_family>/
-    |-- README.md
     |-- domain/
     |   `-- domain.pddl
     |-- easy/
@@ -25,13 +19,54 @@ tasks/
         `-- <instance_id>.pddl
 ```
 
-Task-family README:
-- describe the planning domain in general terms
-- explain what changes across `easy`, `medium` and `hard`
-- document relevant assumptions about objects, predicates, actions and numeric constraints
-- avoid placing additional README files inside `domain/`, `easy/`, `medium` or `hard`
+Each task family must provide one domain file and at least one problem instance
+in one difficulty folder. The current benchmark uses all three tiers.
 
-Discovery rules:
-- the runner discovers task cases from the folder structure
-- folders starting with `_` are templates or support folders and are not benchmark task families
-- `metadata/` is optional and can contain support files, split definitions or analysis metadata
+## Current Inventory
+
+| Task family | Easy | Medium | Hard |
+| --- | ---: | ---: | ---: |
+| `block-grouping` | 7 | 7 | 6 |
+| `expedition` | 7 | 7 | 6 |
+| `fo-counters` | 7 | 7 | 6 |
+| `fo-sailing` | 7 | 7 | 6 |
+| `rover` | 7 | 7 | 6 |
+| `settlersnumeric` | 7 | 7 | 6 |
+
+The instance ids are the `.pddl` file stems, such as `pfile1`.
+
+## Discovery Rules
+
+- `tasks/<task_family>/domain/domain.pddl` is used for every instance in the
+  family.
+- `easy`, `medium`, and `hard` folders are scanned for `*.pddl` files.
+- Folders starting with `_` are treated as templates or support folders.
+- `metadata/` is optional support data and is not treated as a task family.
+- Additional README files inside `domain/`, `easy/`, `medium/`, or `hard/` are
+  not needed for runner behavior.
+
+## Adding A Task Family
+
+1. Copy `_template_domain` or create a new folder under `tasks/`.
+2. Add `domain/domain.pddl`.
+3. Add problem files under `easy`, `medium`, and `hard`.
+4. Add `prompts/<task_family>.txt`.
+5. Add `prompts/examples/<task_family>.txt` if protocols with examples should
+   use examples for the family.
+6. Run a preflight check before model jobs:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --task-family <task_family> --preflight-tasks --use-real-validator
+```
+
+## Metadata And Complexity Reports
+
+`metadata/` may contain split definitions, notes, or support files for analysis.
+The core runner does not depend on it.
+
+Domain complexity summaries are generated separately under
+`domains_complexity/` by:
+
+```powershell
+python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir Benchmark_Framework/domains_complexity
+```

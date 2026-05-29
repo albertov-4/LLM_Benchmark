@@ -1,88 +1,100 @@
 # Setup
 
-This file describes the minimum setup required to run the benchmark on another machine.
+This guide covers the minimum setup needed to run `Benchmark_Framework` on a
+local machine or on an HPC system such as Leonardo.
 
-## 1. Python Environment
+## Python Environment
 
 From the `LLM_Benchmark` repository root:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r "Benchmark Framework/requirements.txt"
+pip install -r Benchmark_Framework/requirements.txt
 ```
 
-Quick check:
+Quick dependency check:
 
 ```powershell
 python -c "import torch, transformers, accelerate, openai; print(torch.__version__); print(transformers.__version__)"
 ```
 
-## 2. External `VAL` Validator
+## VAL Validator
 
-`VAL` is not a Python dependency. It must be installed separately.
+`VAL` is an external PDDL validator, not a Python dependency. The benchmark can
+use it in three ways:
 
-Two options are supported:
-- add the folder containing `Validate.exe` to `PATH`
-- pass the full executable path to the launcher with `--validator-command`
+- Put `Validate` or `Validate.exe` on `PATH`.
+- Pass a full executable path with `--validator-command`.
+- Pass one of the bundled platform utilities under `utils/linux64/bin/` or
+  `utils/win64/bin/` with `--validator-command` when it works on the target
+  machine.
 
-Check whether `VAL` is available:
+Check whether VAL is available:
 
 ```powershell
 Validate -h
 ```
 
-Or use the full executable path:
+Or use a full path:
 
 ```powershell
 & "C:\full\path\to\Validate.exe" -h
 ```
 
-## 3. Hugging Face
+## Model Registries
 
-The benchmark can download models from the Hugging Face Hub.
+The launcher defaults to `models/model_registry_nvidia.yaml`. You can select a
+backend registry with `--adapter` or provide a registry path explicitly:
 
-Optional but recommended:
+```powershell
+python Benchmark_Framework/run_benchmark.py --adapter hf_local --protocol-id direct_plan --use-real-validator
+python Benchmark_Framework/run_benchmark.py --model-registry-path models/model_registry_ollama.yaml --model-id <model_id>
+```
+
+Supported registry families:
+
+- `nvidia_api`: remote NVIDIA API models.
+- `hf_local`: local Hugging Face Transformers models.
+- `ollama`: models served by a local Ollama process.
+- `llama_cpp_cli`: local GGUF models executed through llama.cpp.
+
+Before a run, keep `enabled: true` only on models that should participate when
+no `--model-id` filter is provided.
+
+## Hugging Face Models
+
+Local Hugging Face runs can load a model from a Hub repo id, a prepared
+`models_cache` entry, or an explicit local path in `weights_path`.
+
+Optional token:
 
 ```powershell
 $env:HF_TOKEN="your_token"
 ```
 
-Without a token, the benchmark can still run, but Hub rate limits may be lower.
-
-Before a real run, prepare the selected models:
+Prepare enabled Hugging Face models:
 
 ```powershell
-python "Benchmark Framework/scripts/prepare_models.py" --models-dir models_cache
+python Benchmark_Framework/scripts/prepare_models.py --models-dir models_cache
 ```
 
-`models_cache` is a local preparation/cache directory and should not be versioned.
+Useful preparation modes:
 
-On HPC systems such as Leonardo, prepare models in a separate stage and use local paths in the registry during benchmark jobs.
+```powershell
+python Benchmark_Framework/scripts/prepare_models.py --model-id hf_gemma_4_31b_it
+python Benchmark_Framework/scripts/prepare_models.py --dry-run
+python Benchmark_Framework/scripts/prepare_models.py --offline
+```
 
-## 4. Model Registry
+`models_cache` is a local preparation/cache directory and should not be
+versioned. On HPC systems, prepare models before GPU benchmark jobs and point
+registry `weights_path` values to the prepared local directories.
 
-Before running the benchmark:
-- the launcher default uses `models/model_registry_nvidia.yaml`
-- keep `enabled: true` only on models that should actually run
-- prefer small models on limited hardware
-- if `accelerate` is unavailable or GPU placement is not needed, set `device_map: none`
-- use `--adapter` to select a backend such as `hf_local`, `nvidia_api`, `ollama` or `llama_cpp_cli`
-- use `--model-registry-path` for a custom registry file; when both `--adapter` and `--model-registry-path` are provided, the explicit path takes precedence
+## NVIDIA API Models
 
-For Ollama:
-- install Ollama separately
-- start the Ollama service
-- download a model, for example `ollama pull qwen2.5:0.5b`
-- enable a registry entry with `adapter: ollama`
-
-For NVIDIA API models, use environment variables or a local secrets file ignored by Git.
-
-For streaming NVIDIA models:
-- `timeout_seconds` controls the API/client timeout
-- `job_timeout_seconds` optionally limits the total streaming attempt duration
-- if a stream is interrupted after text has been received, the benchmark keeps the partial output and marks it in the saved generation payload
-- set `debug_stream: true` on one registry entry to print streaming progress diagnostics
+For NVIDIA API models, set the environment variable referenced by `api_key_env`
+or use a local secrets file ignored by Git.
 
 Environment variable option:
 
@@ -93,88 +105,89 @@ $env:NVIDIA_PHI_API_KEY="your_key"
 Local secrets file option:
 
 ```powershell
-Copy-Item "Benchmark Framework/secrets.local.example.json" "Benchmark Framework/secrets.local.json"
+Copy-Item Benchmark_Framework/secrets.local.example.json Benchmark_Framework/secrets.local.json
 ```
 
-Then add the keys to `Benchmark Framework/secrets.local.json`. The real local secrets file is ignored by Git.
+Then add the keys to `Benchmark_Framework/secrets.local.json`.
 
-Reasonable local test models:
-- `TinyLlama/TinyLlama-1.1B-Chat-v1.0`
-- `Qwen/Qwen2.5-0.5B-Instruct`
-- `HuggingFaceTB/SmolLM2-360M-Instruct`
+Streaming entries can use:
 
-## 5. First Run
+- `stream`: enables streamed responses.
+- `timeout_seconds`: API/client timeout.
+- `job_timeout_seconds`: optional total attempt timeout for streamed runs.
+- `debug_stream`: prints streaming diagnostics.
 
-From the repository root:
+If a stream is interrupted after text has been received, the adapter returns the
+partial text and records `partial_output`, `stream_complete`, `stream_error`,
+and `timed_out_by_job_limit` in the generation payload.
+
+## First Runs
+
+Run the default registry:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-command "Validate"
+python Benchmark_Framework/run_benchmark.py --use-real-validator --validator-command Validate
 ```
 
-Run only one protocol:
+Run one protocol:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator
+python Benchmark_Framework/run_benchmark.py --protocol-id direct_plan --use-real-validator
 ```
 
-Use local Hugging Face models:
+Run one model:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --adapter hf_local --protocol-id direct_plan --use-real-validator
+python Benchmark_Framework/run_benchmark.py --model-id nvidia_gemma_4_31b_it --use-real-validator
 ```
 
-Run only one model:
+Run one task family, tier, and instance:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --model-id nvidia_gemma_4_31b_it --use-real-validator
+python Benchmark_Framework/run_benchmark.py --task-family fo-sailing --tier easy --instance-id pfile1 --use-real-validator
 ```
 
-Run only one task family, tier or instance:
+Check all selected task domain/problem files with VAL before launching model
+jobs:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator
+python Benchmark_Framework/run_benchmark.py --preflight-tasks --use-real-validator
 ```
 
-Check that task PDDL files are readable by `VAL` before launching model jobs:
+If `Validate` is not on `PATH`:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --preflight-tasks --use-real-validator
+python Benchmark_Framework/run_benchmark.py --use-real-validator --validator-command "C:\full\path\to\Validate.exe"
 ```
 
-If `Validate` is not in `PATH`:
+## Saved Outputs
+
+Each run writes one folder per `run_id` under each output area:
+
+```text
+Benchmark_Framework/outputs/raw/<run_id>/...
+Benchmark_Framework/outputs/parsed/<run_id>/...
+Benchmark_Framework/outputs/scored/<run_id>/...
+Benchmark_Framework/outputs/scored/<run_id>/suite_result.json
+```
+
+`raw` contains messages and generation payloads, `parsed` contains extracted
+plans and parser issues, and `scored` contains validation results, repair
+feedback, metrics, and artifact paths.
+
+Clear generated outputs while preserving the folder structure:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --use-real-validator --validator-command "C:\full\path\to\Validate.exe"
+python Benchmark_Framework/clear_outputs.py
 ```
 
-## 6. Saved Outputs
+## Common Issues
 
-The benchmark saves:
-- one timestamped folder under each output area: `raw/`, `parsed/` and `scored/`
-- final suite JSON in `Benchmark Framework/outputs/scored/<timestamp>/suite_result.json`
-- raw model output per job in `Benchmark Framework/outputs/raw/<timestamp>/...`
-- parsed plan output per job in `Benchmark Framework/outputs/parsed/<timestamp>/...`
-- scored validation output per job in `Benchmark Framework/outputs/scored/<timestamp>/...`
-- iteration details in `attempts`, including prompts/messages and feedback
+`device_map: auto` requires `accelerate`. Install `accelerate` or set
+`device_map: none` for the selected registry entry.
 
-To clear generated outputs while preserving folders and `.gitkeep` files:
+Hugging Face symlink warnings on Windows do not block the benchmark. They only
+mean the local cache may use more disk space.
 
-```powershell
-python "Benchmark Framework/clear_outputs.py"
-```
-
-## 7. Common Issues
-
-### `device_map: auto` Error
-
-If an error says that `accelerate` is required:
-- install `accelerate`
-- or set `device_map: none` in the registry entry being used
-
-### Hugging Face Symlink Warning on Windows
-
-This does not block the benchmark. It only means the local cache may use more disk space.
-
-### Benchmark Too Heavy
-
-Reduce the number of enabled models, use `--model-id`, or use `--protocol-id` to reduce the job matrix.
+If a benchmark run is too heavy, reduce enabled models, use `--model-id`, filter
+the task matrix, or run only one protocol.

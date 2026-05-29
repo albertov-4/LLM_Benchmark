@@ -1,100 +1,187 @@
 # Benchmark Framework
 
-This folder contains a framework for comparing multiple LLMs on the same
-planning tasks with consistent protocols and metrics.
+`Benchmark_Framework` evaluates language models on PDDL planning tasks with a
+single execution pipeline: build a prompt, generate a plan, parse the model
+output, validate the candidate plan with VAL, and save comparable artifacts.
 
-Goals:
-- compare different models on the same task base
-- separate tasks, protocols, models and evaluation
-- define three difficulty tiers: `easy`, `medium`, `hard`
-- save outputs and metrics in comparable formats
-- avoid runtime dependency on repositories inside `References/`
-- support real runs with NVIDIA API, local Hugging Face, Ollama, llama.cpp and `VAL`
+The framework is organized so that task definitions, prompting protocols,
+model backends, parsing, validation, metrics, and analysis stay separate. This
+makes it possible to compare different models and protocols on the same task
+matrix without changing the evaluation logic.
 
-Structure:
+## What Is Included
 
 ```text
-Benchmark Framework/
-|-- tasks/
-|-- protocols/
-|-- models/
-|-- prompts/
-|-- runner/
-|-- evaluators/
-|-- outputs/
-|-- analysis/
-`-- config/
+Benchmark_Framework/
+|-- analysis/             notebooks and report artifacts
+|-- config/               benchmark and compute defaults
+|-- docs/                 operational notes
+|-- domains_complexity/   generated complexity summaries
+|-- evaluators/           parser, VAL adapter, metrics, error taxonomy
+|-- Leonardo_script/      SLURM scripts for Leonardo/HPC runs
+|-- models/               model registries and backend adapters
+|-- prompts/              system, task-family, example, and repair prompts
+|-- protocols/            direct and iterative repair protocol YAML files
+|-- runner/               suite and single-case orchestration
+|-- scripts/              model preparation and complexity scoring utilities
+|-- tasks/                PDDL domains and benchmark instances
+|-- tests/                unit and integration-style tests
+|-- utils/                bundled VAL binaries for Linux and Windows
+|-- clear_outputs.py
+`-- run_benchmark.py
 ```
 
-Design principles:
-- tasks are independent from models
-- prompting protocols are independent from tasks
-- every model uses an adapter with a common interface
-- parsing, validation and metrics are shared across all models
-- raw outputs and evaluated outputs are separated
-- folder hierarchy and naming conventions are the source of truth
-- manifests are optional
+## Current Benchmark Matrix
 
-Recommended structure for each task family:
+The repository currently contains six task families:
+
+| Task family | Easy | Medium | Hard |
+| --- | ---: | ---: | ---: |
+| `block-grouping` | 7 | 7 | 6 |
+| `expedition` | 7 | 7 | 6 |
+| `fo-counters` | 7 | 7 | 6 |
+| `fo-sailing` | 7 | 7 | 6 |
+| `rover` | 7 | 7 | 6 |
+| `settlersnumeric` | 7 | 7 | 6 |
+
+Tasks are discovered from:
 
 ```text
-tasks/
-`-- <task_family>/
-    |-- README.md
-    |-- domain/
-    |   `-- domain.pddl
-    |-- easy/
-    |   |-- instance-01.pddl
-    |   `-- instance-02.pddl
-    |-- medium/
-    |   `-- ...
-    `-- hard/
-        `-- ...
+tasks/<task_family>/domain/domain.pddl
+tasks/<task_family>/<easy|medium|hard>/*.pddl
 ```
 
-How to use this structure:
-1. Create a task family under `tasks/`.
-2. Add `domain/domain.pddl`.
-3. Put `.pddl` instances inside `easy`, `medium` and `hard`.
-4. Register models in `models/model_registry_*.yaml`.
-5. Choose a protocol from `protocols/`.
-6. Run the benchmark with `run_benchmark.py`.
-7. Inspect raw outputs in the timestamped run folder.
-8. Inspect parsed outputs and metrics in the matching timestamped folders.
+Folders starting with `_` and the optional `tasks/metadata/` folder are not
+treated as benchmark task families.
 
-Key folders:
-- `tasks/`: benchmark task definitions
-- `protocols/`: protocol definitions
-- `models/`: model registries and adapters
-- `prompts/`: shared prompt files
-- `evaluators/`: parser, validator, metrics and error taxonomy
-- `runner/`: benchmark orchestration
-- `analysis/`: notebooks and final reports
+## Supported Model Backends
 
-Notes:
-- each task family must have a PDDL domain and at least one instance in one tier
-- manifests or index files can be added later, but they are not required
+Model definitions live in registry files under `models/`:
 
-Recommended entry points:
-- run with the default registry: `python "Benchmark Framework/run_benchmark.py" --use-real-validator`
-- clear generated outputs: `python "Benchmark Framework/clear_outputs.py"`
-- select a backend registry: `python "Benchmark Framework/run_benchmark.py" --adapter hf_local --protocol-id direct_plan --use-real-validator`
-- run one model: `python "Benchmark Framework/run_benchmark.py" --model-id <model_id> --use-real-validator`
-- run one protocol: `python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator`
-- filter one task family, tier or instance: `python "Benchmark Framework/run_benchmark.py" --task-family <task_family> --tier <tier> --instance-id <instance_id> --use-real-validator`
-- use a custom registry: `python "Benchmark Framework/run_benchmark.py" --model-registry-path "models/model_registry_ollama.yaml" --model-id <model_id>`
-- the launcher creates timestamped folders inside `raw`, `parsed` and `scored`
-- the suite summary is saved to `outputs/scored/<timestamp>/suite_result.json`
-- execution prints one `START`, `DONE` or `ERROR` line per job
-- per-job artifacts are saved at:
-  - `outputs/raw/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
-  - `outputs/parsed/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
-  - `outputs/scored/<timestamp>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json`
-- `raw` stores messages, generation payloads and model text
-- `parsed` stores parser output and format issues
-- `scored` stores validation results, repair feedback, metrics and artifact paths
+- `model_registry_nvidia.yaml`: NVIDIA API through an OpenAI-compatible client.
+- `model_registry_hf.yaml`: local Hugging Face Transformers models.
+- `model_registry_ollama.yaml`: local Ollama server models.
+- `model_registry_llama_cpp.yaml`: local GGUF models through llama.cpp CLI.
 
-Quick setup:
-- Python dependencies: [requirements.txt](requirements.txt)
-- environment and validator setup: [SETUP.md](SETUP.md)
-- protocol explanation: [protocols/README.md](protocols/README.md)
+Every backend is wrapped by an adapter exposing the same `generate(messages)`
+contract. The runner stores adapter output in a normalized shape so metrics and
+analysis do not depend on provider-specific response formats.
+
+## Protocols
+
+Protocols live in `protocols/` and control prompting and evaluation behavior:
+
+- `direct_plan`: one attempt, plan-only output.
+- `direct_plan_with_rationale`: one attempt, rationale allowed before the final
+  extractable plan.
+- `iterative_repair`: repeated attempts with validator feedback until a valid
+  plan is found or the iteration budget is exhausted.
+
+The final suite matrix is:
+
+```text
+selected models x selected protocols x selected task cases
+```
+
+## Setup
+
+Install Python dependencies from the repository root:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r Benchmark_Framework/requirements.txt
+```
+
+The real validator is VAL. It can be found on `PATH` or passed explicitly with
+`--validator-command`, including a path to one of the bundled platform
+executables under `utils/`. See [SETUP.md](SETUP.md) for local, API, and HPC
+setup details.
+
+## Running Benchmarks
+
+Run the default NVIDIA registry with the real validator:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --use-real-validator
+```
+
+Run one protocol:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --protocol-id direct_plan --use-real-validator
+```
+
+Run one model:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --model-id nvidia_gemma_4_31b_it --use-real-validator
+```
+
+Select a backend registry:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --adapter hf_local --protocol-id direct_plan --use-real-validator
+```
+
+Restrict the task matrix:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --task-family fo-sailing --tier easy --instance-id pfile1 --use-real-validator
+```
+
+Check PDDL domain/problem files before launching model jobs:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --preflight-tasks --use-real-validator
+```
+
+Use an explicit registry or run id:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --model-registry-path models/model_registry_ollama.yaml --run-id local_ollama_check
+```
+
+## Outputs
+
+Each run uses a timestamped `run_id` unless `--run-id` is provided. Per-case
+artifacts are saved under:
+
+```text
+outputs/raw/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/parsed/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/scored/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+```
+
+The suite summary is saved to:
+
+```text
+outputs/scored/<run_id>/suite_result.json
+```
+
+`raw` stores prompts and generation payloads, `parsed` stores extracted plans
+and parser issues, and `scored` stores validation results, repair feedback,
+metrics, and artifact paths. During validation the runner checks action
+prefixes, records the first valid prefix when present, and distinguishes it from
+the validity of the full generated plan.
+
+Generated outputs can be removed interactively with:
+
+```powershell
+python Benchmark_Framework/clear_outputs.py
+```
+
+## Additional Documentation
+
+- [SETUP.md](SETUP.md): environment, validator, model registry, and common run
+  setup.
+- [docs/model_preparation.md](docs/model_preparation.md): Hugging Face model
+  preparation for local and HPC runs.
+- [protocols/README.md](protocols/README.md): protocol fields and repair flow.
+- [models/README.md](models/README.md): registry fields and backend settings.
+- [runner/README.md](runner/README.md): suite discovery and execution behavior.
+- [evaluators/README.md](evaluators/README.md): parser, validator, metrics, and
+  error taxonomy.
+- [tasks/README.md](tasks/README.md): task layout and current task inventory.
+- [Leonardo_script/README.md](Leonardo_script/README.md): SLURM workflows for
+  model preparation, cache checks, benchmark tests, and full HPC runs.

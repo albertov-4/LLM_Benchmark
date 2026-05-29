@@ -1,14 +1,28 @@
 # Analysis Notebooks
 
-This folder is intended for notebooks that inspect benchmark outputs.
+This folder contains notebooks for inspecting benchmark outputs and preparing
+figures or tables.
 
-Typical analyses:
-- model comparisons
-- performance by difficulty tier
-- degradation from `easy` to `hard`
-- iterative repair behavior
+Use scored artifacts for quantitative analysis:
 
-Recommended inputs:
-- use `outputs/scored/<timestamp>/` for quantitative analysis
-- use `outputs/raw/<timestamp>/` for debugging or qualitative inspection
-- compare different runs through their timestamped output folders
+```text
+Benchmark_Framework/outputs/scored/<run_id>/
+```
+
+Use raw artifacts for prompt and model-output inspection:
+
+```text
+Benchmark_Framework/outputs/raw/<run_id>/
+```
+
+Typical analyses include:
+
+- model comparisons;
+- solve rate by protocol;
+- performance by difficulty tier;
+- degradation from `easy` to `hard`;
+- iterative repair behavior;
+- final error-type distributions.
+
+Notebooks should treat `suite_result.json` as the suite-level index and follow
+artifact paths from there when per-case details are needed.

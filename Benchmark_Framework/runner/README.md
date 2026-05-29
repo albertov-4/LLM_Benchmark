@@ -1,56 +1,92 @@
 # Runner
 
-This folder contains the execution logic for the benchmark.
+The runner contains the orchestration code for benchmark execution.
 
-Main files:
-- `run_case.py`: runs one model on one task with one protocol
-- `run_suite.py`: builds and runs the full benchmark matrix
+## Main Modules
 
-Responsibilities:
-- discover task instances from the folder structure
-- load protocols, model registry entries and prompt files
-- create the selected model adapter and validator
-- execute the generation, parsing, validation and repair loop
-- save `raw`, `parsed` and `scored` artifacts
+- `run_suite.py`: discovers tasks, loads protocols and model registry entries,
+  builds the run matrix, runs jobs, and aggregates suite results.
+- `run_case.py`: executes one model on one task instance with one protocol.
 
-Task discovery:
-- tasks are discovered from the directory hierarchy
-- the expected layout is:
-  - `tasks/<task_family>/domain/domain.pddl`
-  - `tasks/<task_family>/easy/*.pddl`
-  - `tasks/<task_family>/medium/*.pddl`
-  - `tasks/<task_family>/hard/*.pddl`
+The CLI entry point is `Benchmark_Framework/run_benchmark.py`.
 
-Single-run flow:
-- `run_case.py` reads the domain and problem files
-- it builds chat-style messages from the protocol and prompt bundle
-- the adapter generates raw model text
-- the parser extracts candidate PDDL actions
-- the validator checks the candidate plan
-- iterative protocols add validator feedback and retry until success or budget exhaustion
-- metrics are computed from the normalized final result
+## Discovery
 
-Runtime diagnostics:
-- each iteration prints `GEN START` and `GEN DONE`
-- parsing prints `PARSE DONE` with the number of extracted actions
-- validation prints `VALIDATE START`, `VALIDATE DONE` or `VALIDATE SKIP`
-- NVIDIA streaming adapters can print additional stream progress when `debug_stream: true` is set in the registry
+Tasks are discovered from the folder structure:
 
-Saved artifacts:
-- `raw`: messages sent to the model and generation payloads, stored per attempt
-- `parsed`: parsed plans and parser-level issues, stored per attempt
-- `scored`: metrics, artifact paths, validation results and repair feedback, stored per attempt
-- streaming adapters can mark generation payloads with `partial_output`, `stream_complete`, `stream_error` and `timed_out_by_job_limit`
+```text
+tasks/<task_family>/domain/domain.pddl
+tasks/<task_family>/easy/*.pddl
+tasks/<task_family>/medium/*.pddl
+tasks/<task_family>/hard/*.pddl
+```
 
-Suite flow:
-- `run_suite.py` builds the model x protocol x task matrix
-- progress is printed as `START`, `DONE` or `ERROR`
-- `--model-id`, `--protocol-id`, `--task-family`, `--tier` and `--instance-id` restrict the matrix
-- `--adapter` selects the matching model registry in the CLI
-- `suite_results` stays compact and points to per-job artifact files
+The runner skips task folders whose names start with `_` and also skips
+`tasks/metadata/`. Protocols are discovered from `protocols/*.yaml`. Model
+entries are loaded from the selected registry, and disabled entries are ignored
+unless a specific `--model-id` selects them through the registry filter.
 
-Validator selection:
-- an explicit `validator_factory` has priority
-- otherwise an explicit `validator` instance is used
-- otherwise `use_real_validator=True` creates a `VALValidatorAdapter`
-- if no real validator is configured, `_UnavailableValidator` returns a normalized validator error
+## Suite Flow
+
+`run_suite.py` builds:
+
+```text
+selected models x selected protocols x selected task cases
+```
+
+The matrix can be restricted with:
+
+- `--model-id`
+- `--protocol-id`
+- `--task-family`
+- `--tier`
+- `--instance-id`
+- `--adapter`
+- `--model-registry-path`
+
+Progress is printed as `START`, `DONE`, or `ERROR` for each job. The suite
+summary stays compact and points to per-job artifacts.
+
+## Single-Case Flow
+
+For each job, `run_case.py`:
+
+1. Reads the PDDL domain and problem.
+2. Builds chat-style messages from the selected protocol and prompt files.
+3. Calls the model adapter.
+4. Parses raw model text into candidate PDDL actions.
+5. Validates each non-empty action prefix with VAL or the configured validator.
+6. Adds validator feedback for iterative repair protocols.
+7. Computes normalized metrics.
+8. Writes `raw`, `parsed`, and `scored` artifacts when an output root is set.
+
+Prefix validation records the first valid prefix, whether the full generated
+plan is valid, and whether extra actions appeared after the first valid prefix.
+
+## Validation
+
+If `--use-real-validator` is set, the runner builds a VAL-backed validator. The
+validator command can be passed explicitly with `--validator-command`; otherwise
+the runner tries common `Validate`/`validate` names and local bundled paths.
+
+`--preflight-tasks` validates selected domain/problem pairs before model jobs
+start. If preflight fails, the suite returns orchestration errors and does not
+call model adapters.
+
+Without a real validator, the runner uses an unavailable-validator fallback that
+returns a normalized `validator_unavailable` result. This keeps tests and dry
+orchestration paths deterministic.
+
+## Artifacts
+
+For one run id:
+
+```text
+outputs/raw/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/parsed/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/scored/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+```
+
+`raw` stores prompts and generation payloads. `parsed` stores parser output and
+format issues. `scored` stores validation results, repair feedback, metrics,
+and artifact paths.

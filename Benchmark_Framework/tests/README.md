@@ -1,32 +1,53 @@
 # Tests
 
-This folder contains lightweight tests for the benchmark framework.
+The test suite checks the benchmark pipeline without requiring GPUs, external
+APIs, or large model downloads.
 
-Structure:
-- `mocks/`: controllable mock adapters and validators
-- `fixtures/`: small tasks and configuration files used by tests
-- `test_hf_local.py`: local Hugging Face adapter tests without loading real models
-- `test_llama_cpp_cli_adapter.py`: llama.cpp CLI adapter tests without executing llama.cpp
-- `test_nvidia_api_adapter.py`: NVIDIA API adapter tests without remote API calls
-- `test_ollama_adapter.py`: Ollama adapter tests without requiring a running Ollama server
-- `test_prepare_models.py`: model preparation tests without real downloads
-- `test_parser.py`: focused tests for the shared parser
-- `test_run_case.py`: single-run pipeline tests
-- `test_run_suite.py`: suite orchestration tests
-- `test_real_validator.py`: optional integration test for the real `VAL` validator on the toy fixture
-- `test_clear_outputs.py`: output cleanup tests
-- `run_mock_suite.py`: manual entry point for running a small mock suite
+## Structure
 
-Goals:
-- verify the `generate -> parse -> validate -> metrics` flow
-- verify that `run_suite.py` can orchestrate multiple components together
-- keep tests independent from GPUs, external APIs and large model downloads
+- `mocks/`: controllable model adapter and validator doubles.
+- `fixtures/`: small benchmark fixtures for runner and validator tests.
+- `test_parser.py`: parser behavior and output normalization.
+- `test_real_validator.py`: optional VAL integration test on the toy fixture.
+- `test_run_case.py`: single-case generation, parsing, validation, metrics, and
+  artifact persistence.
+- `test_run_suite.py`: task discovery, matrix orchestration, preflight behavior,
+  adapter selection, and aggregation.
+- `test_run_benchmark_cli.py`: CLI argument behavior.
+- `test_hf_local.py`: Hugging Face adapter behavior without loading real models.
+- `test_nvidia_api_adapter.py`: NVIDIA adapter behavior without remote API calls.
+- `test_ollama_adapter.py`: Ollama adapter behavior without a running server.
+- `test_llama_cpp_cli_adapter.py`: llama.cpp adapter behavior without executing
+  llama.cpp.
+- `test_prepare_models.py`: model preparation behavior without real downloads.
+- `test_clear_outputs.py`: output cleanup behavior.
+- `run_mock_suite.py`: manual smoke run with mock components.
 
-Useful commands:
-- `python -m unittest discover -s "Benchmark Framework/tests" -p "test_*.py"`
-- `python "Benchmark Framework/tests/run_mock_suite.py"`
-- `python "Benchmark Framework/tests/test_real_validator.py"`
+## Commands
 
-Artifact tests:
-- `test_run_case.py` checks that raw, parsed and scored artifacts are persisted in a temporary output directory
-- tests should avoid relying on the real benchmark task families unless a task-specific behavior is being tested explicitly
+Run the unit tests:
+
+```powershell
+python -m unittest discover -s Benchmark_Framework/tests -p "test_*.py"
+```
+
+Run the mock suite manually:
+
+```powershell
+python Benchmark_Framework/tests/run_mock_suite.py
+```
+
+Run the optional real-validator check:
+
+```powershell
+python Benchmark_Framework/tests/test_real_validator.py
+```
+
+The real-validator test skips itself when a VAL executable cannot be resolved.
+
+## Testing Goals
+
+The tests focus on the `generate -> parse -> validate -> metrics` flow,
+artifact writing, suite orchestration, and adapter normalization. Tests should
+prefer fixtures and mocks unless a behavior specifically requires the real
+benchmark task families or a real VAL executable.

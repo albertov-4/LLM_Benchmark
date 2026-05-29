@@ -3,6 +3,8 @@
 import importlib.util
 import shutil
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -508,6 +510,256 @@ class RunSuiteSmokeTest(unittest.TestCase):
 
         self.assertEqual(result["model_ids"], ["model_b"])
         self.assertEqual(captured_entries[0]["adapter"], "llama_cpp_cli")
+
+    def test_parallel_nvidia_models_run_one_sequential_lane_per_model(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_parallel_nvidia_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_parallel_nvidia_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        lock = threading.Lock()
+        active_total = 0
+        max_active_total = 0
+        active_by_model: dict[str, int] = {}
+        max_active_by_model: dict[str, int] = {}
+        sequence_by_model: dict[str, list[tuple[str, str]]] = {}
+
+        class RecordingAdapter:
+            def __init__(self, model_id: str, protocol_id: str) -> None:
+                self.model_id = model_id
+                self.protocol_id = protocol_id
+
+            def generate(self, messages):
+                nonlocal active_total, max_active_total
+                user_content = messages[-1]["content"]
+                instance_line = next(
+                    line for line in user_content.splitlines() if line.startswith("INSTANCE:")
+                )
+                instance_id = instance_line.split(":", 1)[1].strip()
+                with lock:
+                    active_total += 1
+                    max_active_total = max(max_active_total, active_total)
+                    active_by_model[self.model_id] = active_by_model.get(self.model_id, 0) + 1
+                    max_active_by_model[self.model_id] = max(
+                        max_active_by_model.get(self.model_id, 0),
+                        active_by_model[self.model_id],
+                    )
+                    sequence_by_model.setdefault(self.model_id, []).append(
+                        (self.protocol_id, instance_id)
+                    )
+                time.sleep(0.03)
+                with lock:
+                    active_total -= 1
+                    active_by_model[self.model_id] -= 1
+                return {
+                    "model_id": self.model_id,
+                    "raw_text": "(move a b)",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        def adapter_factory(model_entry, protocol_config):
+            return RecordingAdapter(
+                model_id=str(model_entry["model_id"]),
+                protocol_id=protocol_config.protocol_id,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            tasks_root = tmp_root / "tasks"
+            prompts_root = tmp_root / "prompts"
+            protocols_root = tmp_root / "protocols"
+            registry_path = tmp_root / "model_registry.yaml"
+
+            domain_root = tasks_root / "toy" / "domain"
+            tier_root = tasks_root / "toy" / "easy"
+            domain_root.mkdir(parents=True)
+            tier_root.mkdir(parents=True)
+            (domain_root / "domain.pddl").write_text("(define (domain toy))", encoding="utf-8")
+            (tier_root / "instance-01.pddl").write_text("(define (problem p1))", encoding="utf-8")
+            (tier_root / "instance-02.pddl").write_text("(define (problem p2))", encoding="utf-8")
+
+            prompts_root.mkdir()
+            (prompts_root / "toy.txt").write_text("TOY DOMAIN PROMPT", encoding="utf-8")
+            protocols_root.mkdir()
+            for protocol_id in ("alpha_plan", "beta_plan"):
+                (protocols_root / f"{protocol_id}.yaml").write_text(
+                    "\n".join(
+                        [
+                            f"protocol_id: {protocol_id}",
+                            "prompting:",
+                            "  use_system_prompt: false",
+                            "  include_domain_prompt: true",
+                            "evaluation:",
+                            "  max_iterations: 1",
+                            "  require_final_plan_only: true",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+            registry_path.write_text(
+                "\n".join(
+                    [
+                        "models:",
+                        "  - model_id: nvidia_a",
+                        "    family: test",
+                        "    adapter: nvidia_api",
+                        "    provider: nvidia_api",
+                        "    enabled: true",
+                        "  - model_id: nvidia_b",
+                        "    family: test",
+                        "    adapter: nvidia_api",
+                        "    provider: nvidia_api",
+                        "    enabled: true",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_suite_module.run_suite(
+                tasks_root=tasks_root,
+                protocols_root=protocols_root,
+                prompts_root=prompts_root,
+                model_registry_path=registry_path,
+                output_root=tmp_root / "outputs",
+                run_id="parallel-log-test",
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+                parallel_nvidia_models=True,
+                max_concurrent_nvidia_models=2,
+            )
+
+            lane_log_texts = {
+                model_id: Path(log_path).read_text(encoding="utf-8")
+                for model_id, log_path in result["nvidia_lane_log_paths"].items()
+            }
+
+        expected_sequence = [
+            ("alpha_plan", "instance-01"),
+            ("alpha_plan", "instance-02"),
+            ("beta_plan", "instance-01"),
+            ("beta_plan", "instance-02"),
+        ]
+        self.assertEqual(result["summary"]["num_jobs"], 8)
+        self.assertGreaterEqual(max_active_total, 2)
+        self.assertEqual(max_active_by_model, {"nvidia_a": 1, "nvidia_b": 1})
+        self.assertEqual(sequence_by_model["nvidia_a"], expected_sequence)
+        self.assertEqual(sequence_by_model["nvidia_b"], expected_sequence)
+        self.assertEqual(result["orchestration_errors"], [])
+        self.assertEqual(
+            set(result["nvidia_lane_log_paths"]),
+            {"nvidia_a", "nvidia_b"},
+        )
+        for model_id, log_text in lane_log_texts.items():
+            self.assertIn(f"[NVIDIA LANE START] model={model_id}", log_text)
+            self.assertIn(f"[NVIDIA LANE DONE] model={model_id}", log_text)
+            self.assertIn(f"[GEN START] model={model_id}", log_text)
+
+    def test_parallel_nvidia_flag_does_not_parallelize_non_nvidia_models(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_suite_module = _load_module(
+            "benchmark_framework_test_run_suite_parallel_non_nvidia_module",
+            framework_root / "runner" / "run_suite.py",
+        )
+        mock_validator_module = _load_module(
+            "benchmark_framework_test_suite_parallel_non_nvidia_validator_module",
+            framework_root / "tests" / "mocks" / "mock_validator.py",
+        )
+
+        lock = threading.Lock()
+        active_total = 0
+        max_active_total = 0
+
+        class SlowAdapter:
+            def __init__(self, model_id: str) -> None:
+                self.model_id = model_id
+
+            def generate(self, messages):
+                nonlocal active_total, max_active_total
+                with lock:
+                    active_total += 1
+                    max_active_total = max(max_active_total, active_total)
+                time.sleep(0.02)
+                with lock:
+                    active_total -= 1
+                return {
+                    "model_id": self.model_id,
+                    "raw_text": "(move a b)",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        def adapter_factory(model_entry, protocol_config):
+            return SlowAdapter(model_id=str(model_entry["model_id"]))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            tasks_root = tmp_root / "tasks"
+            prompts_root = tmp_root / "prompts"
+            protocols_root = tmp_root / "protocols"
+            registry_path = tmp_root / "model_registry.yaml"
+
+            domain_root = tasks_root / "toy" / "domain"
+            tier_root = tasks_root / "toy" / "easy"
+            domain_root.mkdir(parents=True)
+            tier_root.mkdir(parents=True)
+            (domain_root / "domain.pddl").write_text("(define (domain toy))", encoding="utf-8")
+            (tier_root / "instance-01.pddl").write_text("(define (problem p1))", encoding="utf-8")
+
+            prompts_root.mkdir()
+            (prompts_root / "toy.txt").write_text("TOY DOMAIN PROMPT", encoding="utf-8")
+            protocols_root.mkdir()
+            (protocols_root / "direct_plan.yaml").write_text(
+                "\n".join(
+                    [
+                        "protocol_id: direct_plan",
+                        "prompting:",
+                        "  use_system_prompt: false",
+                        "  include_domain_prompt: true",
+                        "evaluation:",
+                        "  max_iterations: 1",
+                        "  require_final_plan_only: true",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            registry_path.write_text(
+                "\n".join(
+                    [
+                        "models:",
+                        "  - model_id: local_a",
+                        "    family: test",
+                        "    adapter: hf_local",
+                        "    provider: local",
+                        "    enabled: true",
+                        "  - model_id: local_b",
+                        "    family: test",
+                        "    adapter: ollama",
+                        "    provider: local",
+                        "    enabled: true",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_suite_module.run_suite(
+                tasks_root=tasks_root,
+                protocols_root=protocols_root,
+                prompts_root=prompts_root,
+                model_registry_path=registry_path,
+                adapter_factory=adapter_factory,
+                validator_factory=mock_validator_module.build_mock_validator_for_suite,
+                parallel_nvidia_models=True,
+            )
+
+        self.assertEqual(result["summary"]["num_jobs"], 2)
+        self.assertEqual(max_active_total, 1)
+        self.assertEqual(result["orchestration_errors"], [])
 
 
 if __name__ == "__main__":

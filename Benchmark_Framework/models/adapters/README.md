@@ -59,6 +59,12 @@ For streaming runs:
 This behavior lets long API calls produce auditable artifacts even when a stream
 does not finish cleanly.
 
+NVIDIA model parallelism is handled by the suite runner, not by this adapter.
+When `run_benchmark.py` is launched with `--parallel-nvidia-models`, the runner
+starts separate per-model lanes for `nvidia_api` entries. Each lane still calls
+this adapter synchronously for one benchmark case at a time. In that mode, the
+runner can route each lane's stdout to `outputs/logs/<run_id>/<model_id>.log`.
+
 ## Adapter Boundaries
 
 Adapter-specific setup belongs in the registry entry and adapter configuration.

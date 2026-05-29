@@ -147,6 +147,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Check task domain/problem files with VAL before launching model jobs.",
     )
     parser.add_argument(
+        "--parallel-nvidia-models",
+        action="store_true",
+        help=(
+            "Run NVIDIA API models in parallel lanes. Each model lane still runs "
+            "selected protocols and task instances sequentially."
+        ),
+    )
+    parser.add_argument(
+        "--max-concurrent-nvidia-models",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of NVIDIA model lanes to run at once when "
+            "--parallel-nvidia-models is enabled. Defaults to all selected "
+            "NVIDIA models."
+        ),
+    )
+    parser.add_argument(
         "--stop-on-error",
         action="store_true",
         help="Abort the suite immediately when one job raises an orchestration error.",
@@ -196,6 +214,8 @@ def main() -> int:
         validator_command=args.validator_command,
         validator_timeout_seconds=args.validator_timeout_seconds,
         preflight_tasks=args.preflight_tasks,
+        parallel_nvidia_models=args.parallel_nvidia_models,
+        max_concurrent_nvidia_models=args.max_concurrent_nvidia_models,
         stop_on_error=args.stop_on_error,
     )
 
@@ -221,6 +241,7 @@ def main() -> int:
             "summary": serializable_result.get("summary", {}),
             "aggregate_results": serializable_result.get("aggregate_results", {}),
             "orchestration_errors": serializable_result.get("orchestration_errors", []),
+            "nvidia_lane_log_paths": serializable_result.get("nvidia_lane_log_paths", {}),
             "run_id": run_id,
             "output_root": str(output_root),
             "saved_to": str(output_path),

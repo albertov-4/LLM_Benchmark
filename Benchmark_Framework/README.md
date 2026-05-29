@@ -118,6 +118,33 @@ Run one model:
 python Benchmark_Framework/run_benchmark.py --model-id nvidia_gemma_4_31b_it --use-real-validator
 ```
 
+Run selected NVIDIA API models in parallel model lanes:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --adapter nvidia_api --parallel-nvidia-models --use-real-validator
+```
+
+Limit concurrent NVIDIA model lanes:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --adapter nvidia_api --parallel-nvidia-models --max-concurrent-nvidia-models 3 --use-real-validator
+```
+
+With `--parallel-nvidia-models`, each NVIDIA model runs its selected protocols
+and task instances sequentially inside its own lane. Different NVIDIA model
+lanes run concurrently. Non-NVIDIA adapters keep the normal sequential runner
+behavior. Detailed lane logs are written to:
+
+```text
+outputs/logs/<run_id>/<model_id>.log
+```
+
+On PowerShell, follow one model lane while the benchmark is running with:
+
+```powershell
+Get-Content -Wait Benchmark_Framework/outputs/logs/<run_id>/<model_id>.log
+```
+
 Select a backend registry:
 
 ```powershell
@@ -165,7 +192,7 @@ metrics, and artifact paths. During validation the runner checks action
 prefixes, records the first valid prefix when present, and distinguishes it from
 the validity of the full generated plan.
 
-Generated outputs can be removed interactively with:
+Generated outputs and NVIDIA lane logs can be removed interactively with:
 
 ```powershell
 python Benchmark_Framework/clear_outputs.py

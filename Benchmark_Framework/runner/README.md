@@ -47,6 +47,25 @@ The matrix can be restricted with:
 Progress is printed as `START`, `DONE`, or `ERROR` for each job. The suite
 summary stays compact and points to per-job artifacts.
 
+## NVIDIA Model Lanes
+
+The default suite execution is sequential. Passing `--parallel-nvidia-models`
+enables parallel lanes only for model entries whose adapter is `nvidia_api`.
+Each NVIDIA model gets one lane; inside that lane, the runner processes selected
+protocols in order and, for each protocol, task cases in order. This keeps every
+single model's benchmark path sequential while allowing different NVIDIA-hosted
+LLMs to wait on API calls at the same time.
+
+Use `--max-concurrent-nvidia-models N` to cap how many NVIDIA model lanes run at
+once. If the flag is omitted, the runner uses all selected NVIDIA models. Model
+entries using Hugging Face, Ollama, llama.cpp, or any other adapter remain in
+the normal sequential flow even when NVIDIA lane parallelism is enabled.
+
+When an output root is configured, detailed stdout from each NVIDIA lane is
+written to `outputs/logs/<run_id>/<model_id>.log`. The main terminal prints
+lane-level completion lines and the final suite summary, while generation,
+streaming, parsing, and validation details stay in the per-model log files.
+
 ## Single-Case Flow
 
 For each job, `run_case.py`:

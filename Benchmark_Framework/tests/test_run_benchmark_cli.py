@@ -82,6 +82,24 @@ class RunBenchmarkCLITest(unittest.TestCase):
         self.assertFalse(parser.parse_args([]).preflight_tasks)
         self.assertTrue(parser.parse_args(["--preflight-tasks"]).preflight_tasks)
 
+    def test_parallel_nvidia_flags_default_to_disabled_and_parse_limit(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        module = _load_module(
+            "benchmark_framework_test_run_benchmark_parallel_nvidia_flags",
+            framework_root / "run_benchmark.py",
+        )
+
+        parser = module._build_parser()
+        defaults = parser.parse_args([])
+        enabled = parser.parse_args(
+            ["--parallel-nvidia-models", "--max-concurrent-nvidia-models", "3"]
+        )
+
+        self.assertFalse(defaults.parallel_nvidia_models)
+        self.assertIsNone(defaults.max_concurrent_nvidia_models)
+        self.assertTrue(enabled.parallel_nvidia_models)
+        self.assertEqual(enabled.max_concurrent_nvidia_models, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

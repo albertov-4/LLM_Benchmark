@@ -352,12 +352,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model-registry-path",
         default="models/model_registry_hf.yaml",
-        help="Model registry path relative to Benchmark Framework unless absolute.",
+        help="Model registry path relative to Benchmark_Framework unless absolute.",
     )
     parser.add_argument(
         "--models-dir",
         default="models_cache",
-        help="Directory used for prepared models, relative to Benchmark Framework unless absolute.",
+        help="Directory used for prepared models, relative to Benchmark_Framework unless absolute.",
     )
     parser.add_argument(
         "--model-id",

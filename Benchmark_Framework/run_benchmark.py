@@ -1,7 +1,7 @@
 """CLI entry point for launching the benchmark suite.
 
 Example:
-    python "Benchmark Framework/run_benchmark.py" --use-real-validator
+    python Benchmark_Framework/run_benchmark.py --use-real-validator
 """
 
 from __future__ import annotations
@@ -75,13 +75,13 @@ def _resolve_output_base(output_root: str | Path, framework_root: Path) -> Path:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the LLM planning benchmark suite.")
-    parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark Framework.")
-    parser.add_argument("--protocols-root", default="protocols", help="Protocols root relative to Benchmark Framework.")
-    parser.add_argument("--prompts-root", default="prompts", help="Prompts root relative to Benchmark Framework.")
+    parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark_Framework.")
+    parser.add_argument("--protocols-root", default="protocols", help="Protocols root relative to Benchmark_Framework.")
+    parser.add_argument("--prompts-root", default="prompts", help="Prompts root relative to Benchmark_Framework.")
     parser.add_argument(
         "--model-registry-path",
         default=None,
-        help="Manual model registry path relative to Benchmark Framework. Overrides --adapter.",
+        help="Manual model registry path relative to Benchmark_Framework. Overrides --adapter.",
     )
     parser.add_argument(
         "--model-id",
@@ -118,7 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         default="outputs",
-        help="Base output directory relative to Benchmark Framework.",
+        help="Base output directory relative to Benchmark_Framework.",
     )
     parser.add_argument(
         "--run-id",

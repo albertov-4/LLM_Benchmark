@@ -5,7 +5,7 @@ Use this folder as a starting point when creating a new planning domain.
 Checklist:
 
 - copy `_template_domain` and rename it to the new task-family name;
-- add `domain/domain.pddl`;
+- replace the placeholder `domain/domain.pddl`;
 - create `.pddl` instances in `easy`, `medium`, and `hard`;
 - add `prompts/<task_family>.txt`;
 - add `prompts/examples/<task_family>.txt` if example-enabled protocols should

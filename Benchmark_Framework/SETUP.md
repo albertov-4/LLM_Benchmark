@@ -104,11 +104,16 @@ $env:NVIDIA_PHI_API_KEY="your_key"
 
 Local secrets file option:
 
-```powershell
-Copy-Item Benchmark_Framework/secrets.local.example.json Benchmark_Framework/secrets.local.json
+```json
+{
+  "NVIDIA_GEMMA_API_KEY": "your_key",
+  "NVIDIA_GPT_OSS_API_KEY": "your_key"
+}
 ```
 
-Then add the keys to `Benchmark_Framework/secrets.local.json`.
+Store that JSON object in `Benchmark_Framework/secrets.local.json`. The file is
+ignored by Git. Keys must match the `api_key_env` value used by each enabled
+entry in `models/model_registry_nvidia.yaml`.
 
 Streaming entries can use:
 

@@ -772,7 +772,7 @@ def default_paths() -> tuple[Path, Path]:
     repo_root = Path(__file__).resolve().parents[2]
     return (
         repo_root / "Planning Domains",
-        repo_root / "Benchmark Framework" / "domains_complexity",
+        repo_root / "Benchmark_Framework" / "domains_complexity",
     )
 
 

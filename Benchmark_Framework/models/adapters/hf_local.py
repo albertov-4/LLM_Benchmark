@@ -149,7 +149,7 @@ class HFLocalAdapter:
         return torch, AutoModelForCausalLM, AutoTokenizer
 
     def _framework_root(self) -> Path:
-        """Return the Benchmark Framework root directory."""
+        """Return the Benchmark_Framework root directory."""
         return Path(__file__).resolve().parents[2]
 
     def _models_cache_dir(self) -> Path:

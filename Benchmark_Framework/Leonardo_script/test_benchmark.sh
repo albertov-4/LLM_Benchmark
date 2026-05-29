@@ -68,8 +68,13 @@ PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
 TASK_FAMILY="${TASK_FAMILY:-fo-sailing}"
 TIER="${TIER:-easy}"
 INSTANCE_ID="${INSTANCE_ID:-pfile1}"
-VALIDATOR_COMMAND="${VALIDATOR_COMMAND:-Validate}"
+DEFAULT_VALIDATOR_COMMAND="${FRAMEWORK_DIR}/utils/linux64/bin/Validate"
+VALIDATOR_COMMAND="${VALIDATOR_COMMAND:-${DEFAULT_VALIDATOR_COMMAND}}"
 RUN_ID="${RUN_ID:-leonardo_test_${SLURM_JOB_ID:-manual}}"
+
+if [ -f "${DEFAULT_VALIDATOR_COMMAND}" ] && [ ! -x "${DEFAULT_VALIDATOR_COMMAND}" ]; then
+    chmod +x "${DEFAULT_VALIDATOR_COMMAND}"
+fi
 
 echo "Job id: ${SLURM_JOB_ID:-manual}"
 echo "Node: ${SLURMD_NODENAME:-local}"
@@ -85,8 +90,14 @@ else
     exit 1
 fi
 
-if ! command -v "${VALIDATOR_COMMAND}" >/dev/null 2>&1; then
-    echo "ERROR: VAL validator not found: ${VALIDATOR_COMMAND}"
+if [[ "${VALIDATOR_COMMAND}" == */* ]]; then
+    if [ ! -x "${VALIDATOR_COMMAND}" ]; then
+        echo "ERROR: VAL validator not found or not executable: ${VALIDATOR_COMMAND}"
+        echo "Set VALIDATOR_COMMAND=/path/to/Validate or make ${DEFAULT_VALIDATOR_COMMAND} executable."
+        exit 1
+    fi
+elif ! command -v "${VALIDATOR_COMMAND}" >/dev/null 2>&1; then
+    echo "ERROR: VAL validator not found in PATH: ${VALIDATOR_COMMAND}"
     echo "Set VALIDATOR_COMMAND=/path/to/Validate or add Validate to PATH."
     exit 1
 fi

@@ -8,8 +8,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=0
-#SBATCH --output=benchmark_test_%j.out
-#SBATCH --error=benchmark_test_%j.err
+#SBATCH --output=Benchmark_Framework/slurm_logs/benchmark_test_%j.out
+#SBATCH --error=Benchmark_Framework/slurm_logs/benchmark_test_%j.err
 
 set -euo pipefail
 
@@ -71,6 +71,6 @@ if [ "${CONFIRM_CLEAR_OUTPUTS}" = "1" ]; then
     printf 'y\n' | python clear_outputs.py
 else
     echo "Safe mode: listing generated outputs only. No files will be removed."
-    echo "To delete, submit with: CONFIRM_CLEAR_OUTPUTS=1 sbatch \"Benchmark Framework/Leonardo script/clear_outputs.sh\""
+    echo "To delete, submit with: CONFIRM_CLEAR_OUTPUTS=1 sbatch Benchmark_Framework/Leonardo_script/clear_outputs.sh"
     python clear_outputs.py < /dev/null
 fi

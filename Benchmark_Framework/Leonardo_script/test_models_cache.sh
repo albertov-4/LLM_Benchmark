@@ -7,8 +7,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --output=test_models_cache_%j.out
-#SBATCH --error=test_models_cache_%j.err
+#SBATCH --output=Benchmark_Framework/slurm_logs/test_models_cache_%j.out
+#SBATCH --error=Benchmark_Framework/slurm_logs/test_models_cache_%j.err
 
 set -euo pipefail
 

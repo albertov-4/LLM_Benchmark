@@ -575,6 +575,7 @@ def build_model_adapter(
             hf_config = hf_module.HFLocalConfig(
                 model_id=model_id,
                 weights_path=str(model_entry.get("weights_path", "")),
+                model_loader=str(model_entry.get("model_loader", "causal_lm") or "causal_lm"),
                 temperature=float(model_entry.get("temperature", generation_config.get("temperature", 0.0)) or 0.0),
                 top_k=int(top_k),
                 top_p=float(top_p) if top_p is not None else None,

@@ -113,6 +113,7 @@ def looks_like_hf_repo_id(value: str) -> bool:
 class HFLocalConfig:
     model_id: str
     weights_path: str = ""
+    model_loader: str = "causal_lm"
     temperature: float = 0.0
     top_k: int | None = 10
     top_p: float | None = None
@@ -141,12 +142,15 @@ class HFLocalAdapter:
             transformers = import_module("transformers")
             AutoModelForCausalLM = getattr(transformers, "AutoModelForCausalLM")
             AutoTokenizer = getattr(transformers, "AutoTokenizer")
+            AutoModel = getattr(transformers, "AutoModel", None)
+            AutoModelForImageTextToText = getattr(transformers, "AutoModelForImageTextToText", None)
+            AutoProcessor = getattr(transformers, "AutoProcessor", None)
         except ImportError as exc:  # pragma: no cover - depends on local env
             raise RuntimeError(
                 "HFLocalAdapter requires `torch` and `transformers` to be installed."
             ) from exc
 
-        return torch, AutoModelForCausalLM, AutoTokenizer
+        return torch, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForImageTextToText, AutoProcessor
 
     def _framework_root(self) -> Path:
         """Return the Benchmark_Framework root directory."""
@@ -269,6 +273,21 @@ class HFLocalAdapter:
 
         return "\n\n".join(rendered_lines).strip()
 
+    @staticmethod
+    def _processor_messages(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
+        """Return messages in the content-list format expected by multimodal processors."""
+        processor_messages: list[dict[str, Any]] = []
+        for message in messages:
+            role = str(message.get("role", "user"))
+            content = str(message.get("content", ""))
+            processor_messages.append(
+                {
+                    "role": role,
+                    "content": [{"type": "text", "text": content}],
+                }
+            )
+        return processor_messages
+
     def _get_model_device(self):
         """Best-effort inference device detection for encoded inputs."""
         if self.model is None:
@@ -352,14 +371,26 @@ class HFLocalAdapter:
         if self.model is not None and self.tokenizer is not None:
             return
 
-        torch, AutoModelForCausalLM, AutoTokenizer = self._load_backend()
+        torch, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForImageTextToText, AutoProcessor = self._load_backend()
         model_source = self._resolve_model_source()
         resolved_dtype = self._resolve_torch_dtype(torch)
+        model_loader = self.config.model_loader.strip().lower()
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_source,
-            trust_remote_code=self.config.trust_remote_code,
-        )
+        if model_loader == "image_text_to_text":
+            if AutoModelForImageTextToText is None or AutoProcessor is None:
+                raise RuntimeError(
+                    "This model requires AutoModelForImageTextToText and AutoProcessor. "
+                    "Upgrade transformers."
+                )
+            tokenizer = AutoProcessor.from_pretrained(
+                model_source,
+                trust_remote_code=self.config.trust_remote_code,
+            )
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_source,
+                trust_remote_code=self.config.trust_remote_code,
+            )
 
         model_kwargs: dict[str, Any] = {
             "trust_remote_code": self.config.trust_remote_code,
@@ -369,7 +400,14 @@ class HFLocalAdapter:
         if resolved_dtype != "auto":
             model_kwargs["torch_dtype"] = resolved_dtype
 
-        model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
+        if model_loader == "image_text_to_text":
+            model = AutoModelForImageTextToText.from_pretrained(model_source, **model_kwargs)
+        elif model_loader == "auto_model":
+            if AutoModel is None:
+                raise RuntimeError("This model requires AutoModel. Upgrade transformers.")
+            model = AutoModel.from_pretrained(model_source, **model_kwargs)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
 
         if self.config.device_map is None:
             target_device = "cuda" if getattr(torch, "cuda", None) and torch.cuda.is_available() else "cpu"
@@ -394,8 +432,19 @@ class HFLocalAdapter:
         model = self.model
         tokenizer = self.tokenizer
 
-        prompt_text = self._build_prompt_text(messages)
-        encoded_inputs = tokenizer(prompt_text, return_tensors="pt")
+        model_loader = self.config.model_loader.strip().lower()
+        if model_loader == "image_text_to_text" and hasattr(tokenizer, "apply_chat_template"):
+            processor_messages = self._processor_messages(messages)
+            encoded_inputs = tokenizer.apply_chat_template(
+                processor_messages,
+                tokenize=True,
+                add_generation_prompt=self.config.add_generation_prompt,
+                return_dict=True,
+                return_tensors="pt",
+            )
+        else:
+            prompt_text = self._build_prompt_text(messages)
+            encoded_inputs = tokenizer(prompt_text, return_tensors="pt")
         prompt_token_count = self._count_tokens(encoded_inputs.get("input_ids")) or 0
 
         model_device = self._get_model_device()
@@ -407,8 +456,9 @@ class HFLocalAdapter:
             "do_sample": do_sample,
         }
 
-        pad_token_id = getattr(tokenizer, "pad_token_id", None)
-        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        tokenizer_like = getattr(tokenizer, "tokenizer", tokenizer)
+        pad_token_id = getattr(tokenizer_like, "pad_token_id", None)
+        eos_token_id = getattr(tokenizer_like, "eos_token_id", None)
         if pad_token_id is not None:
             generation_kwargs["pad_token_id"] = pad_token_id
         if eos_token_id is not None:
@@ -421,14 +471,14 @@ class HFLocalAdapter:
             if self.config.top_p is not None:
                 generation_kwargs["top_p"] = self.config.top_p
 
-        torch_module, _, _ = self._load_backend()
+        torch_module, _, _, _, _, _ = self._load_backend()
         start_time = perf_counter()
         with torch_module.inference_mode():
             generation_output = model.generate(**encoded_inputs, **generation_kwargs)
         latency_s = perf_counter() - start_time
 
         generated_tokens = self._extract_generated_tokens(generation_output, prompt_token_count)
-        raw_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        raw_text = tokenizer_like.decode(generated_tokens, skip_special_tokens=True).strip()
         extracted = _extract_reasoning_from_text(raw_text)
         raw_text = extracted["raw_text"]
         completion_tokens = self._count_tokens(generated_tokens)

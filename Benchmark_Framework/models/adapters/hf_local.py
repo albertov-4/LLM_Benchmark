@@ -15,6 +15,7 @@ from pathlib import Path
 from time import perf_counter
 from collections.abc import Iterable
 from typing import Any
+import sys
 
 
 HF_REPO_ID_PATTERN = re.compile(
@@ -145,9 +146,11 @@ class HFLocalAdapter:
             AutoModel = getattr(transformers, "AutoModel", None)
             AutoModelForImageTextToText = getattr(transformers, "AutoModelForImageTextToText", None)
             AutoProcessor = getattr(transformers, "AutoProcessor", None)
-        except ImportError as exc:  # pragma: no cover - depends on local env
+        except ImportError as exc:
             raise RuntimeError(
-                "HFLocalAdapter requires `torch` and `transformers` to be installed."
+                "HFLocalAdapter backend import failed. "
+                f"python={sys.executable}; "
+                f"original_error={type(exc).__name__}: {exc}"
             ) from exc
 
         return torch, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForImageTextToText, AutoProcessor

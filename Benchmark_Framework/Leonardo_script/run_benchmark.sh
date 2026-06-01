@@ -71,7 +71,7 @@ TIER="${TIER:-}"
 INSTANCE_ID="${INSTANCE_ID:-}"
 DEFAULT_VALIDATOR_COMMAND="${FRAMEWORK_DIR}/utils/linux64/bin/Validate"
 VALIDATOR_COMMAND="${VALIDATOR_COMMAND:-${DEFAULT_VALIDATOR_COMMAND}}"
-RUN_ID="${RUN_ID:-leonardo_hf_${SLURM_JOB_ID:-manual}}"
+RUN_ID="${RUN_ID:-}"
 
 if [ -f "${DEFAULT_VALIDATOR_COMMAND}" ] && [ ! -x "${DEFAULT_VALIDATOR_COMMAND}" ]; then
     chmod +x "${DEFAULT_VALIDATOR_COMMAND}"
@@ -128,8 +128,11 @@ CMD=(
     --use-real-validator
     --validator-command "${VALIDATOR_COMMAND}"
     --preflight-tasks
-    --run-id "${RUN_ID}"
 )
+
+if [ -n "${RUN_ID}" ]; then
+    CMD+=(--run-id "${RUN_ID}")
+fi
 
 if [ -n "${MODEL_ID}" ]; then
     CMD+=(--model-id "${MODEL_ID}")

@@ -124,6 +124,15 @@ class NvidiaAPIAdapter:
         return str(getattr(message, "content", "") or "").strip()
 
     @staticmethod
+    def _extract_finish_reason(completion: Any) -> str | None:
+        choices = getattr(completion, "choices", None) or []
+        if not choices:
+            return None
+
+        finish_reason = getattr(choices[0], "finish_reason", None)
+        return str(finish_reason) if finish_reason is not None else None
+
+    @staticmethod
     def _render_messages_as_input(messages: list[dict[str, str]]) -> str:
         rendered_lines: list[str] = []
         for message in messages:
@@ -184,6 +193,9 @@ class NvidiaAPIAdapter:
                 "raw_text": self._extract_raw_text(completion),
                 "reasoning_text": "",
                 "usage": self._extract_usage(completion),
+                "finish_reason": self._extract_finish_reason(completion),
+                "stop_reason": self._extract_finish_reason(completion),
+                "reached_max_tokens": self._extract_finish_reason(completion) == "length",
                 "stream_complete": True,
                 "stream_error": None,
                 "partial_output": False,
@@ -196,6 +208,7 @@ class NvidiaAPIAdapter:
         stream_error: str | None = None
         partial_output = False
         timed_out_by_job_limit = False
+        finish_reason: str | None = None
         stream_start = perf_counter()
         last_debug_print = stream_start
         chunk_count = 0
@@ -212,6 +225,10 @@ class NvidiaAPIAdapter:
                 chunk_count += 1
                 choices = getattr(chunk, "choices", None) or []
                 if choices:
+                    chunk_finish_reason = getattr(choices[0], "finish_reason", None)
+                    if chunk_finish_reason is not None:
+                        finish_reason = str(chunk_finish_reason)
+
                     delta = getattr(choices[0], "delta", None)
                     if delta is not None:
                         reasoning = getattr(delta, "reasoning_content", None)
@@ -285,6 +302,9 @@ class NvidiaAPIAdapter:
                 "completion_tokens": None,
                 "total_tokens": None,
             },
+            "finish_reason": finish_reason,
+            "stop_reason": finish_reason,
+            "reached_max_tokens": finish_reason == "length",
             "stream_complete": stream_complete,
             "stream_error": stream_error,
             "partial_output": partial_output,
@@ -311,6 +331,9 @@ class NvidiaAPIAdapter:
             "raw_text": raw_text,
             "reasoning_text": "",
             "usage": self._extract_usage(response),
+            "finish_reason": None,
+            "stop_reason": None,
+            "reached_max_tokens": False,
             "stream_complete": True,
             "stream_error": None,
             "partial_output": False,
@@ -335,6 +358,8 @@ class NvidiaAPIAdapter:
             notes.append("stream interrupted; raw_text contains partial output.")
         if generation.get("timed_out_by_job_limit"):
             notes.append("generation stopped by job timeout.")
+        if generation.get("reached_max_tokens"):
+            notes.append("generation likely stopped because it reached the token limit.")
 
         return {
             "model_id": self.config.model_id,
@@ -343,6 +368,9 @@ class NvidiaAPIAdapter:
             "latency_s": latency_s,
             "notes": notes,
             "reasoning_text": generation["reasoning_text"],
+            "finish_reason": generation.get("finish_reason"),
+            "stop_reason": generation.get("stop_reason"),
+            "reached_max_tokens": generation.get("reached_max_tokens", False),
             "stream_complete": generation.get("stream_complete"),
             "stream_error": generation.get("stream_error"),
             "partial_output": generation.get("partial_output", False),

@@ -71,7 +71,7 @@ TIER="${TIER:-easy}"
 INSTANCE_ID="${INSTANCE_ID:-pfile1}"
 DEFAULT_VALIDATOR_COMMAND="${FRAMEWORK_DIR}/utils/linux64/bin/Validate"
 VALIDATOR_COMMAND="${VALIDATOR_COMMAND:-${DEFAULT_VALIDATOR_COMMAND}}"
-RUN_ID="${RUN_ID:-leonardo_test_${SLURM_JOB_ID:-manual}}"
+RUN_ID="${RUN_ID:-}"
 
 if [ -f "${DEFAULT_VALIDATOR_COMMAND}" ] && [ ! -x "${DEFAULT_VALIDATOR_COMMAND}" ]; then
     chmod +x "${DEFAULT_VALIDATOR_COMMAND}"
@@ -134,8 +134,11 @@ CMD=(
     --validator-command "${VALIDATOR_COMMAND}"
     --preflight-tasks
     --stop-on-error
-    --run-id "${RUN_ID}"
 )
+
+if [ -n "${RUN_ID}" ]; then
+    CMD+=(--run-id "${RUN_ID}")
+fi
 
 printf 'Running command:'
 printf ' %q' "${CMD[@]}"

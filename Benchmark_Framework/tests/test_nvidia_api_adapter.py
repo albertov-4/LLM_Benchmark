@@ -31,6 +31,7 @@ class _FakeMessage:
 
 class _FakeChoice:
     message = _FakeMessage()
+    finish_reason = "stop"
 
 
 class _FakeCompletion:
@@ -45,13 +46,14 @@ class _FakeDelta:
 
 
 class _FakeStreamChoice:
-    def __init__(self, delta):
+    def __init__(self, delta, finish_reason=None):
         self.delta = delta
+        self.finish_reason = finish_reason
 
 
 class _FakeStreamChunk:
-    def __init__(self, content=None, reasoning_content=None):
-        self.choices = [_FakeStreamChoice(_FakeDelta(content, reasoning_content))]
+    def __init__(self, content=None, reasoning_content=None, finish_reason=None):
+        self.choices = [_FakeStreamChoice(_FakeDelta(content, reasoning_content), finish_reason)]
 
 
 class _FakeResponse:
@@ -85,6 +87,12 @@ class _TimeoutStream:
     def __iter__(self):
         yield _FakeStreamChunk(content="(move ")
         yield _FakeStreamChunk(content="a b)")
+
+
+class _LengthStream:
+    def __iter__(self):
+        yield _FakeStreamChunk(content="(move ")
+        yield _FakeStreamChunk(content="a b)", finish_reason="length")
 
 
 class _FailingStreamCompletions:
@@ -184,6 +192,9 @@ class NvidiaAPIAdapterTest(unittest.TestCase):
         self.assertEqual(result["model_id"], "nvidia_test")
         self.assertEqual(result["raw_text"], "(move a b)")
         self.assertEqual(result["usage"]["total_tokens"], 6)
+        self.assertEqual(result["finish_reason"], "stop")
+        self.assertEqual(result["stop_reason"], "stop")
+        self.assertFalse(result["reached_max_tokens"])
 
     def test_streaming_chat_collects_content_and_reasoning_separately(self) -> None:
         module = self.nvidia_module
@@ -215,7 +226,40 @@ class NvidiaAPIAdapterTest(unittest.TestCase):
         self.assertIsNone(result["stream_error"])
         self.assertFalse(result["partial_output"])
         self.assertFalse(result["timed_out_by_job_limit"])
+        self.assertIsNone(result["finish_reason"])
+        self.assertIsNone(result["stop_reason"])
+        self.assertFalse(result["reached_max_tokens"])
         self.assertIn("reasoning_content captured", result["notes"][0])
+
+    def test_streaming_chat_reports_token_limit_finish_reason(self) -> None:
+        module = self.nvidia_module
+        old_api_key = os.environ.get("NVIDIA_API_KEY")
+        os.environ["NVIDIA_API_KEY"] = "test-key"
+
+        class TestAdapter(module.NvidiaAPIAdapter):
+            def _load_openai_client_class(self):
+                return lambda **kwargs: _CustomOpenAI(_LengthStream(), **kwargs)
+
+        try:
+            adapter = TestAdapter(
+                module.NvidiaAPIConfig(
+                    model_id="nvidia_length_stream_test",
+                    api_model_name="vendor/model",
+                    stream=True,
+                )
+            )
+            result = adapter.generate([{"role": "user", "content": "Solve."}])
+        finally:
+            if old_api_key is None:
+                os.environ.pop("NVIDIA_API_KEY", None)
+            else:
+                os.environ["NVIDIA_API_KEY"] = old_api_key
+
+        self.assertEqual(result["raw_text"], "(move a b)")
+        self.assertEqual(result["finish_reason"], "length")
+        self.assertEqual(result["stop_reason"], "length")
+        self.assertTrue(result["reached_max_tokens"])
+        self.assertIn("token limit", " ".join(result["notes"]))
 
     def test_streaming_chat_returns_partial_output_when_stream_fails(self) -> None:
         module = self.nvidia_module
@@ -315,6 +359,9 @@ class NvidiaAPIAdapterTest(unittest.TestCase):
         self.assertEqual(fake_client.responses.last_kwargs["model"], "openai/gpt-oss-120b")
         self.assertEqual(fake_client.responses.last_kwargs["max_output_tokens"], 4096)
         self.assertEqual(result["raw_text"], "(move response a b)")
+        self.assertIsNone(result["finish_reason"])
+        self.assertIsNone(result["stop_reason"])
+        self.assertFalse(result["reached_max_tokens"])
 
     def test_missing_api_key_fails_clearly(self) -> None:
         module = self.nvidia_module

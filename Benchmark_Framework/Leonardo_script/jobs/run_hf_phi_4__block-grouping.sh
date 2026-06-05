@@ -18,5 +18,5 @@ export TASK_FAMILY="block-grouping"
 export PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 export OUTPUT_JSON="outputs/scored/${RUN_ID}/suite_results/hf_phi_4__block-grouping.json"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "${SCRIPT_DIR}/../run_benchmark_single.sh"
+REPO_ROOT="${BENCHMARK_REPO_ROOT:-${SLURM_SUBMIT_DIR:-${PWD}}}"
+bash "${REPO_ROOT}/Benchmark_Framework/Leonardo_script/run_benchmark_single.sh"

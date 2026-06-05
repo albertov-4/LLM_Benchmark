@@ -18,5 +18,5 @@ export TASK_FAMILY="rover"
 export PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 export OUTPUT_JSON="outputs/scored/${RUN_ID}/suite_results/hf_gemma_4_31b_it__rover.json"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "${SCRIPT_DIR}/../run_benchmark_single.sh"
+REPO_ROOT="${BENCHMARK_REPO_ROOT:-${SLURM_SUBMIT_DIR:-${PWD}}}"
+bash "${REPO_ROOT}/Benchmark_Framework/Leonardo_script/run_benchmark_single.sh"

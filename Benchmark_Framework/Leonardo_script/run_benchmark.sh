@@ -38,7 +38,8 @@ echo "Logs: ${LOG_DIR}"
 
 for JOB_SCRIPT in "${JOB_SCRIPTS[@]}"; do
     sbatch \
-        --export=ALL,RUN_ID="${RUN_ID}" \
+        --chdir="${REPO_ROOT}" \
+        --export=ALL,RUN_ID="${RUN_ID}",BENCHMARK_REPO_ROOT="${REPO_ROOT}" \
         --output="${LOG_DIR}/%x_%j.out" \
         --error="${LOG_DIR}/%x_%j.err" \
         "${JOB_SCRIPT}"

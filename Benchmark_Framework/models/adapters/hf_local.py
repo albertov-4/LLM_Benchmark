@@ -492,19 +492,8 @@ class HFLocalAdapter:
                 generation_kwargs["top_p"] = self.config.top_p
 
         torch_module, _, _, _, _, _ = self._load_backend()
-        if (
-            "nemotron" in self.config.model_id.lower()
-            and "cache_position" not in generation_kwargs
-            and encoded_inputs.get("input_ids") is not None
-        ):
-            input_ids = encoded_inputs["input_ids"]
-            input_length = self._count_tokens(input_ids)
-            input_device = getattr(input_ids, "device", model_device)
-            if input_length is not None:
-                generation_kwargs["cache_position"] = torch_module.arange(
-                    input_length,
-                    device=input_device,
-                )
+        if "nemotron" in self.config.model_id.lower():
+            generation_kwargs["use_cache"] = False
 
         start_time = perf_counter()
         with torch_module.inference_mode():

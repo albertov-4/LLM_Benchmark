@@ -24,7 +24,17 @@ cd "${REPO_ROOT}"
 
 module purge
 module load python/3.11.7
+module load gcc/12.2.0
 module load cuda/12.1 2>/dev/null || module load cuda 2>/dev/null || true
+
+export CUDA_HOME="${CUDA_HOME:-/leonardo/prod/opt/compilers/cuda/12.1/none}"
+export CUDACXX="${CUDACXX:-${CUDA_HOME}/bin/nvcc}"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+export CC="${CC:-$(command -v gcc)}"
+export CXX="${CXX:-$(command -v g++)}"
+export MAX_JOBS="${MAX_JOBS:-1}"
+export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 
 VENV_ACTIVATED=0
 for CANDIDATE_VENV_DIR in "${PYTHON_VENV:-}" "${VIRTUAL_ENV:-}" "${REPO_ROOT}/../our_env" "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
@@ -71,6 +81,11 @@ echo "Node: ${SLURMD_NODENAME:-local}"
 echo "Repo root: ${REPO_ROOT}"
 echo "Framework dir: ${FRAMEWORK_DIR}"
 echo "HF_HOME: ${HF_HOME}"
+echo "CUDA_HOME: ${CUDA_HOME}"
+echo "CUDACXX: ${CUDACXX}"
+echo "CC: ${CC}"
+echo "CXX: ${CXX}"
+echo "TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST}"
 python --version
 
 if command -v nvidia-smi >/dev/null 2>&1; then

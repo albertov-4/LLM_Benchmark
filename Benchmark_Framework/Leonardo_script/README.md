@@ -9,6 +9,8 @@ environment, and then call the same Python entry points used locally.
 
 - `prepare_models.sh`: prepares Hugging Face models into `models_cache` or a
   configured model directory.
+- `setup_leonardo_env.sh`: pins the Leonardo Python environment to PyTorch
+  CUDA 12.1 and installs `mamba-ssm==2.2.4` without upgrading Torch.
 - `test_models_cache.sh`: checks prepared model directories in offline mode.
 - `test_benchmark.sh`: runs a narrow benchmark job for one model, protocol, task
   family, tier, and instance.
@@ -39,6 +41,58 @@ Common variables:
 - `TASK_FAMILY`, `TIER`, `INSTANCE_ID`: task filters.
 - `RUN_ID`: output run folder name.
 - `OUTPUT_JSON`: optional suite summary path passed to `run_benchmark.py`.
+
+GPU benchmark jobs also load `gcc/12.2.0`, use CUDA 12.1 from
+`/leonardo/prod/opt/compilers/cuda/12.1/none`, set `MAX_JOBS=1`, and target
+A100 GPUs with `TORCH_CUDA_ARCH_LIST=8.0`.
+
+## Leonardo Python Environment
+
+Use the setup script when creating or repairing the Leonardo venv:
+
+```bash
+PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/our_env \
+sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
+```
+
+It runs the equivalent of:
+
+```bash
+module load gcc/12.2.0
+source /leonardo_scratch/large/userexternal/avarini0/our_env/bin/activate
+
+export CUDA_HOME=/leonardo/prod/opt/compilers/cuda/12.1/none
+export CUDACXX=$CUDA_HOME/bin/nvcc
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
+export CC=$(which gcc)
+export CXX=$(which g++)
+export MAX_JOBS=1
+export TORCH_CUDA_ARCH_LIST="8.0"
+
+pip install --force-reinstall \
+  torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+  --index-url https://download.pytorch.org/whl/cu121
+
+pip install --no-cache-dir --no-deps --no-build-isolation mamba-ssm==2.2.4 -v
+```
+
+Do not use plain `pip install mamba-ssm`; it can upgrade Torch and Triton to
+versions that are incompatible with this CUDA 12.1 environment.
+
+The setup script finishes with:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda)"
+python -c "import torchvision, torchaudio; print(torchvision.__version__, torchaudio.__version__)"
+python -c "import mamba_ssm; print('mamba ok')"
+python -c "import triton; print(triton.__version__)"
+pip check
+```
+
+Expected versions are `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`,
+`torchaudio==2.5.1+cu121`, `triton==3.1.0`, `mamba-ssm==2.2.4`, and
+`pip check` reporting no broken requirements.
 
 ## Model Preparation
 

@@ -36,7 +36,19 @@ cd "${REPO_ROOT}"
 
 module purge
 module load python/3.11.7
+module load gcc/12.2.0
 module load cuda/12.1 2>/dev/null || module load cuda 2>/dev/null || true
+
+export CUDA_HOME="${CUDA_HOME:-/leonardo/prod/opt/compilers/cuda/12.1/none}"
+export CUDACXX="${CUDACXX:-${CUDA_HOME}/bin/nvcc}"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+export CC="${CC:-$(command -v gcc)}"
+export CXX="${CXX:-$(command -v g++)}"
+GCC_LIB_DIR="$(dirname "$("${CXX}" -print-file-name=libstdc++.so.6)")"
+export LD_LIBRARY_PATH="${GCC_LIB_DIR}:${LD_LIBRARY_PATH}"
+export MAX_JOBS="${MAX_JOBS:-1}"
+export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 
 VENV_ACTIVATED=0
 for CANDIDATE_VENV_DIR in "${PYTHON_VENV:-}" "${VIRTUAL_ENV:-}" "${REPO_ROOT}/../our_env" "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
@@ -113,6 +125,7 @@ import transformers
 print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_available", torch.cuda.is_available(), "gpus", torch.cuda.device_count())
 print("transformers", transformers.__version__)
 print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"))
+print("LD_LIBRARY_PATH", os.environ.get("LD_LIBRARY_PATH", "<unset>"))
 
 if not torch.cuda.is_available():
     print("ERROR: PyTorch cannot initialize CUDA on this node.", file=sys.stderr)
@@ -120,6 +133,36 @@ if not torch.cuda.is_available():
     print("  pip uninstall -y torch torchvision torchaudio", file=sys.stderr)
     print("  pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio", file=sys.stderr)
     sys.exit(1)
+
+try:
+    import mamba_ssm
+    print("mamba_ssm import ok")
+except Exception as exc:
+    print(f"ERROR: mamba_ssm import failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    import causal_conv1d_cuda
+    print("causal_conv1d_cuda import ok")
+except Exception as exc:
+    print(f"ERROR: causal_conv1d_cuda import failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from transformers.generation import GreedySearchDecoderOnlyOutput
+    print("GreedySearchDecoderOnlyOutput import ok from transformers.generation")
+except Exception as exc:
+    print(f"WARNING: GreedySearchDecoderOnlyOutput import failed from transformers.generation: {type(exc).__name__}: {exc}")
+    try:
+        from transformers.generation.utils import GreedySearchDecoderOnlyOutput
+        print("GreedySearchDecoderOnlyOutput import ok from transformers.generation.utils")
+    except Exception as nested_exc:
+        print(
+            "ERROR: GreedySearchDecoderOnlyOutput import failed from both transformers.generation "
+            f"and transformers.generation.utils: {type(nested_exc).__name__}: {nested_exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 PY
 
 CMD=(

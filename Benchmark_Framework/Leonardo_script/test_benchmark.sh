@@ -78,7 +78,7 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
 
-MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
+MODEL_ID="${MODEL_ID:-hf_qwen_3_6_27b}"
 PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 TASK_FAMILY="${TASK_FAMILY:-block-grouping}"
 TIER="${TIER:-easy}"

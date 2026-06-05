@@ -5,6 +5,7 @@ one task instance.
 """
 
 import json
+import traceback
 from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import lru_cache
 from importlib.util import module_from_spec, spec_from_file_location
@@ -554,6 +555,7 @@ def run_generation_loop(
                 f"{type(exc).__name__}: {exc}",
                 flush=True,
             )
+            traceback.print_exc()
             validation_result = _build_generation_failure_result(
                 exc=exc,
                 iteration=iteration,

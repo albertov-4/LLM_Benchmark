@@ -26,12 +26,12 @@ in one difficulty folder. The current benchmark uses all three tiers.
 
 | Task family | Easy | Medium | Hard |
 | --- | ---: | ---: | ---: |
-| `block-grouping` | 7 | 7 | 6 |
-| `expedition` | 7 | 7 | 6 |
-| `fo-counters` | 7 | 7 | 6 |
-| `fo-sailing` | 7 | 7 | 6 |
-| `rover` | 7 | 7 | 6 |
-| `settlersnumeric` | 7 | 7 | 6 |
+| `block-grouping` | 4 | 4 | 4 |
+| `expedition` | 4 | 4 | 4 |
+| `fo-counters` | 4 | 4 | 4 |
+| `fo-sailing` | 4 | 4 | 4 |
+| `rover` | 4 | 4 | 4 |
+| `settlersnumeric` | 4 | 4 | 4 |
 
 The instance ids are the `.pddl` file stems, such as `pfile1`.
 

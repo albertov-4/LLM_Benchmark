@@ -2,7 +2,7 @@
 #SBATCH --job-name=bench_phi_fo_sailing
 #SBATCH --account=try26_varini
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=40:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

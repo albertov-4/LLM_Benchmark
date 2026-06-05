@@ -90,7 +90,7 @@ bash Benchmark_Framework/Leonardo_script/run_benchmark.sh
 ```
 
 The launcher submits every script under `Leonardo_script/jobs/` with the same
-`RUN_ID`. Each job runs one model and one task family with a 40 hour SLURM time
+`RUN_ID`. Each job runs one model and one task family with a one day SLURM time
 limit. Override the protocol for all submitted jobs from the launcher
 environment if needed:
 

@@ -138,21 +138,15 @@ if not torch.cuda.is_available():
 try:
     print("Installing Transformers generation compatibility shim...", flush=True)
     import transformers.generation as generation_module
-    import transformers.generation.utils as generation_utils_module
 
-    for legacy_name in (
-        "GreedySearchDecoderOnlyOutput",
-        "GreedySearchEncoderDecoderOutput",
-        "SampleDecoderOnlyOutput",
-        "SampleEncoderDecoderOutput",
-        "BeamSearchDecoderOnlyOutput",
-        "BeamSearchEncoderDecoderOutput",
-        "BeamSampleDecoderOnlyOutput",
-        "BeamSampleEncoderDecoderOutput",
-    ):
-        if not hasattr(generation_module, legacy_name) and hasattr(generation_utils_module, legacy_name):
-            setattr(generation_module, legacy_name, getattr(generation_utils_module, legacy_name))
-            print(f"Patched transformers.generation.{legacy_name}", flush=True)
+    generate_decoder_only_output = getattr(generation_module, "GenerateDecoderOnlyOutput", None)
+    if generate_decoder_only_output is None:
+        raise RuntimeError("transformers.generation.GenerateDecoderOnlyOutput is not available.")
+
+    for legacy_name in ("GreedySearchDecoderOnlyOutput", "SampleDecoderOnlyOutput"):
+        if not hasattr(generation_module, legacy_name):
+            setattr(generation_module, legacy_name, generate_decoder_only_output)
+            print(f"Patched transformers.generation.{legacy_name} -> GenerateDecoderOnlyOutput", flush=True)
 
     print("Checking mamba_ssm import...", flush=True)
     import mamba_ssm

@@ -76,7 +76,7 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
 
-MODEL_ID="${MODEL_ID:-hf_gemma_4_31b_it}"
+MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
 PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
 TASK_FAMILY="${TASK_FAMILY:-fo-sailing}"
 TIER="${TIER:-easy}"

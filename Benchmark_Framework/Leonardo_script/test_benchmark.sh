@@ -118,14 +118,15 @@ fi
 python - <<'PY'
 import os
 import sys
+import traceback
 
 import torch
 import transformers
 
-print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_available", torch.cuda.is_available(), "gpus", torch.cuda.device_count())
-print("transformers", transformers.__version__)
-print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"))
-print("LD_LIBRARY_PATH", os.environ.get("LD_LIBRARY_PATH", "<unset>"))
+print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_available", torch.cuda.is_available(), "gpus", torch.cuda.device_count(), flush=True)
+print("transformers", transformers.__version__, flush=True)
+print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"), flush=True)
+print("LD_LIBRARY_PATH", os.environ.get("LD_LIBRARY_PATH", "<unset>"), flush=True)
 
 if not torch.cuda.is_available():
     print("ERROR: PyTorch cannot initialize CUDA on this node.", file=sys.stderr)
@@ -135,33 +136,57 @@ if not torch.cuda.is_available():
     sys.exit(1)
 
 try:
+    print("Installing Transformers generation compatibility shim...", flush=True)
+    import transformers.generation as generation_module
+    import transformers.generation.utils as generation_utils_module
+
+    for legacy_name in (
+        "GreedySearchDecoderOnlyOutput",
+        "GreedySearchEncoderDecoderOutput",
+        "SampleDecoderOnlyOutput",
+        "SampleEncoderDecoderOutput",
+        "BeamSearchDecoderOnlyOutput",
+        "BeamSearchEncoderDecoderOutput",
+        "BeamSampleDecoderOnlyOutput",
+        "BeamSampleEncoderDecoderOutput",
+    ):
+        if not hasattr(generation_module, legacy_name) and hasattr(generation_utils_module, legacy_name):
+            setattr(generation_module, legacy_name, getattr(generation_utils_module, legacy_name))
+            print(f"Patched transformers.generation.{legacy_name}", flush=True)
+
+    print("Checking mamba_ssm import...", flush=True)
     import mamba_ssm
-    print("mamba_ssm import ok")
+    print("mamba_ssm import ok", flush=True)
 except Exception as exc:
     print(f"ERROR: mamba_ssm import failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
+    print("Checking causal_conv1d_cuda import...", flush=True)
     import causal_conv1d_cuda
-    print("causal_conv1d_cuda import ok")
+    print("causal_conv1d_cuda import ok", flush=True)
 except Exception as exc:
     print(f"ERROR: causal_conv1d_cuda import failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
+    print("Checking GreedySearchDecoderOnlyOutput import...", flush=True)
     from transformers.generation import GreedySearchDecoderOnlyOutput
-    print("GreedySearchDecoderOnlyOutput import ok from transformers.generation")
+    print("GreedySearchDecoderOnlyOutput import ok from transformers.generation", flush=True)
 except Exception as exc:
-    print(f"WARNING: GreedySearchDecoderOnlyOutput import failed from transformers.generation: {type(exc).__name__}: {exc}")
+    print(f"WARNING: GreedySearchDecoderOnlyOutput import failed from transformers.generation: {type(exc).__name__}: {exc}", flush=True)
     try:
         from transformers.generation.utils import GreedySearchDecoderOnlyOutput
-        print("GreedySearchDecoderOnlyOutput import ok from transformers.generation.utils")
+        print("GreedySearchDecoderOnlyOutput import ok from transformers.generation.utils", flush=True)
     except Exception as nested_exc:
         print(
             "ERROR: GreedySearchDecoderOnlyOutput import failed from both transformers.generation "
             f"and transformers.generation.utils: {type(nested_exc).__name__}: {nested_exc}",
             file=sys.stderr,
         )
+        traceback.print_exc()
         sys.exit(1)
 PY
 

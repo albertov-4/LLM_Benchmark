@@ -45,8 +45,10 @@ export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 export CC="${CC:-$(command -v gcc)}"
 export CXX="${CXX:-$(command -v g++)}"
-GCC_LIB_DIR="$(dirname "$("${CXX}" -print-file-name=libstdc++.so.6)")"
+GCC_LIBSTDCXX="$("${CXX}" -print-file-name=libstdc++.so.6)"
+GCC_LIB_DIR="$(dirname "${GCC_LIBSTDCXX}")"
 export LD_LIBRARY_PATH="${GCC_LIB_DIR}:${LD_LIBRARY_PATH}"
+export LD_PRELOAD="${GCC_LIBSTDCXX}${LD_PRELOAD:+:${LD_PRELOAD}}"
 export MAX_JOBS="${MAX_JOBS:-1}"
 export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 
@@ -94,6 +96,8 @@ echo "Node: ${SLURMD_NODENAME:-local}"
 echo "Repo root: ${REPO_ROOT}"
 echo "Framework dir: ${FRAMEWORK_DIR}"
 echo "HF_HOME: ${HF_HOME}"
+echo "GCC libstdc++: ${GCC_LIBSTDCXX}"
+echo "LD_PRELOAD: ${LD_PRELOAD}"
 python --version
 
 if command -v nvidia-smi >/dev/null 2>&1; then
@@ -127,6 +131,7 @@ print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_availa
 print("transformers", transformers.__version__, flush=True)
 print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"), flush=True)
 print("LD_LIBRARY_PATH", os.environ.get("LD_LIBRARY_PATH", "<unset>"), flush=True)
+print("LD_PRELOAD", os.environ.get("LD_PRELOAD", "<unset>"), flush=True)
 
 if not torch.cuda.is_available():
     print("ERROR: PyTorch cannot initialize CUDA on this node.", file=sys.stderr)

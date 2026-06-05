@@ -186,6 +186,13 @@ The suite summary is saved to:
 outputs/scored/<run_id>/suite_result.json
 ```
 
+Split Leonardo runs can also save one suite summary per submitted model-task
+job:
+
+```text
+outputs/scored/<run_id>/suite_results/<model_id>__<task_family>.json
+```
+
 `raw` stores prompts and generation payloads, `parsed` stores extracted plans
 and parser issues, and `scored` stores validation results, repair feedback,
 metrics, and artifact paths. During validation the runner checks action

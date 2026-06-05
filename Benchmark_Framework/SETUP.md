@@ -176,6 +176,12 @@ Benchmark_Framework/outputs/scored/<run_id>/...
 Benchmark_Framework/outputs/scored/<run_id>/suite_result.json
 ```
 
+Split Leonardo runs can write one suite summary per submitted model-task job:
+
+```text
+Benchmark_Framework/outputs/scored/<run_id>/suite_results/<model_id>__<task_family>.json
+```
+
 `raw` contains messages and generation payloads, `parsed` contains extracted
 plans and parser issues, and `scored` contains validation results, repair
 feedback, metrics, and artifact paths.

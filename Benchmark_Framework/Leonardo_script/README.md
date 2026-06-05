@@ -12,7 +12,11 @@ environment, and then call the same Python entry points used locally.
 - `test_models_cache.sh`: checks prepared model directories in offline mode.
 - `test_benchmark.sh`: runs a narrow benchmark job for one model, protocol, task
   family, tier, and instance.
-- `run_benchmark.sh`: runs a broader Hugging Face benchmark job.
+- `run_benchmark.sh`: launcher that creates one `RUN_ID` and submits the
+  model-task benchmark jobs in `jobs/`.
+- `run_benchmark_single.sh`: shared worker used by the model-task jobs. It
+  activates the environment, checks CUDA and VAL, then calls `run_benchmark.py`.
+- `jobs/*.sh`: static SLURM jobs for one Hugging Face model and one task family.
 - `clear_outputs.sh`: lists or clears generated outputs through
   `clear_outputs.py`.
 
@@ -34,6 +38,7 @@ Common variables:
 - `PROTOCOL_ID`: protocol id such as `direct_plan` or `iterative_repair`.
 - `TASK_FAMILY`, `TIER`, `INSTANCE_ID`: task filters.
 - `RUN_ID`: output run folder name.
+- `OUTPUT_JSON`: optional suite summary path passed to `run_benchmark.py`.
 
 ## Model Preparation
 
@@ -78,14 +83,37 @@ INSTANCE_ID=pfile1 \
 sbatch Benchmark_Framework/Leonardo_script/test_benchmark.sh
 ```
 
-Run the broader benchmark wrapper:
+Run the split model-task benchmark launcher:
 
 ```bash
-PROTOCOL_ID=iterative_repair sbatch Benchmark_Framework/Leonardo_script/run_benchmark.sh
+bash Benchmark_Framework/Leonardo_script/run_benchmark.sh
 ```
 
-Both benchmark scripts call `run_benchmark.py` with `--adapter hf_local`,
-`--use-real-validator`, `--validator-command`, and `--preflight-tasks`.
+The launcher submits every script under `Leonardo_script/jobs/` with the same
+`RUN_ID`. Each job runs one model and one task family with a 40 hour SLURM time
+limit. Override the protocol for all submitted jobs from the launcher
+environment if needed:
+
+```bash
+PROTOCOL_ID=direct_plan bash Benchmark_Framework/Leonardo_script/run_benchmark.sh
+```
+
+Logs are written under:
+
+```text
+Benchmark_Framework/slurm_logs/<run_id>/
+```
+
+Per-case artifacts share the same run folder. Per-job suite summaries are saved
+under:
+
+```text
+Benchmark_Framework/outputs/scored/<run_id>/suite_results/<model_id>__<task_family>.json
+```
+
+`test_benchmark.sh` and `run_benchmark_single.sh` call `run_benchmark.py` with
+`--adapter hf_local`, `--use-real-validator`, `--validator-command`, and
+`--preflight-tasks`.
 
 ## Output Cleanup
 

@@ -34,6 +34,22 @@ FINAL_MARKER_PATTERN = re.compile(
 )
 
 
+def _install_transformers_generation_compatibility_shim() -> None:
+    """Restore legacy generation aliases expected by older mamba-ssm releases."""
+    try:
+        generation_module = import_module("transformers.generation")
+    except Exception:
+        return
+
+    generate_decoder_only_output = getattr(generation_module, "GenerateDecoderOnlyOutput", None)
+    if generate_decoder_only_output is None:
+        return
+
+    for legacy_name in ("GreedySearchDecoderOnlyOutput", "SampleDecoderOnlyOutput"):
+        if not hasattr(generation_module, legacy_name):
+            setattr(generation_module, legacy_name, generate_decoder_only_output)
+
+
 def _clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -141,6 +157,7 @@ class HFLocalAdapter:
         try:
             torch = import_module("torch")
             transformers = import_module("transformers")
+            _install_transformers_generation_compatibility_shim()
             AutoModelForCausalLM = getattr(transformers, "AutoModelForCausalLM")
             AutoTokenizer = getattr(transformers, "AutoTokenizer")
             AutoModel = getattr(transformers, "AutoModel", None)

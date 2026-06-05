@@ -79,8 +79,8 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 mkdir -p "${HF_HOME}"
 
 MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
-PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
-TASK_FAMILY="${TASK_FAMILY:-fo-sailing}"
+PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
+TASK_FAMILY="${TASK_FAMILY:-block-grouping}"
 TIER="${TIER:-easy}"
 INSTANCE_ID="${INSTANCE_ID:-pfile1}"
 DEFAULT_VALIDATOR_COMMAND="${FRAMEWORK_DIR}/utils/linux64/bin/Validate"

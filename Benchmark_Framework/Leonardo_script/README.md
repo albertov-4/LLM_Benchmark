@@ -126,6 +126,11 @@ complete.
 
 ## Benchmark Jobs
 
+For model-specific debugging notes on `hf_qwen_3_6_27b` and
+`hf_nemotron_3_nano_30b_a3b`, including the Mamba/Transformers shim,
+`libstdc++` preload, Qwen cache naming, and Nemotron generation issues, see
+`QWEN_NEMOTRON_NOTES.md`.
+
 Run a small validation job:
 
 ```bash

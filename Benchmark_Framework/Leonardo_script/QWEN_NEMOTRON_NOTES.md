@@ -130,18 +130,27 @@ forward but caused a mask length mismatch:
 RuntimeError: The size of tensor a (1828) must match the size of tensor b (1829)
 ```
 
-Current workaround in `hf_local.py`:
+The first workaround used `use_cache=False`, which avoided the crash but made
+generation extremely slow when Nemotron generated long outputs. In the
+`block-grouping` run, many generations reached roughly `raw_chars=14340` and
+took around `3700-3900s`.
 
-```python
-if "nemotron" in self.config.model_id.lower():
-    generation_kwargs["use_cache"] = False
-```
+The current adapter workaround keeps caching enabled and patches Nemotron's
+`prepare_inputs_for_generation` at runtime. For Nemotron models only,
+`hf_local.py` now initializes `NemotronHHybridDynamicCache` and fills
+`cache_position` when Transformers does not pass them correctly.
 
-This keeps the workaround scoped to Nemotron. If Nemotron still fails in future
-tests, keep the traceback from `run_case.py` and inspect whether the remote
-model still enters cache-specific code. The next likely fix would be a
-Nemotron-specific generation path or a dedicated Nemotron environment with a
-Transformers version known to match the remote model implementation.
+This should be validated with a single `test_benchmark.sh` run before trusting a
+full Nemotron matrix. If it works, expected behavior is:
+
+- no `cache_position None` `TypeError`;
+- no mask mismatch such as `1828` vs `1829`;
+- much lower generation elapsed time than the `use_cache=False` workaround.
+
+If it still fails, keep the traceback from `run_case.py`; the next likely fix
+would be a dedicated Nemotron generation path or a dedicated Nemotron
+environment with a Transformers version known to match the remote model
+implementation.
 
 ## Qwen
 

@@ -349,6 +349,83 @@ class HFLocalAdapter:
             moved_inputs[key] = value
         return moved_inputs
 
+    def _install_nemotron_cache_patch(self, model: Any, torch_module: Any) -> None:
+        """Patch Nemotron-H generation to provide its required hybrid cache."""
+        if "nemotron" not in self.config.model_id.lower():
+            return
+        if getattr(model, "_benchmark_nemotron_cache_patch_installed", False):
+            return
+        if not hasattr(model, "prepare_inputs_for_generation"):
+            return
+
+        try:
+            model_module = import_module(model.__class__.__module__)
+        except Exception:
+            return
+
+        cache_cls = getattr(model_module, "NemotronHHybridDynamicCache", None)
+        if cache_cls is None:
+            return
+
+        original_prepare = model.prepare_inputs_for_generation
+
+        def patched_prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=None,
+            attention_mask=None,
+            inputs_embeds=None,
+            cache_position=None,
+            **kwargs,
+        ):
+            use_cache = kwargs.get("use_cache", True)
+            sequence_source = inputs_embeds if inputs_embeds is not None else input_ids
+            sequence_shape = getattr(sequence_source, "shape", None)
+
+            if past_key_values is None and use_cache is not False and sequence_shape is not None:
+                dtype = getattr(model, "dtype", None)
+                if dtype is None:
+                    try:
+                        dtype = next(model.parameters()).dtype
+                    except Exception:
+                        dtype = torch_module.bfloat16
+
+                device = getattr(sequence_source, "device", None) or getattr(model, "device", None)
+                batch_size = int(sequence_shape[0])
+                past_key_values = cache_cls(
+                    model.config,
+                    batch_size,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if cache_position is None and sequence_shape is not None:
+                sequence_length = int(sequence_shape[1])
+                past_length = 0
+                if past_key_values is not None and hasattr(past_key_values, "get_seq_length"):
+                    try:
+                        past_length = int(past_key_values.get_seq_length())
+                    except Exception:
+                        past_length = 0
+                device = getattr(sequence_source, "device", None) or getattr(model, "device", None)
+                cache_position = torch_module.arange(
+                    past_length,
+                    past_length + sequence_length,
+                    dtype=torch_module.long,
+                    device=device,
+                )
+
+            return original_prepare(
+                input_ids,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                inputs_embeds=inputs_embeds,
+                cache_position=cache_position,
+                **kwargs,
+            )
+
+        model.prepare_inputs_for_generation = patched_prepare_inputs_for_generation
+        model._benchmark_nemotron_cache_patch_installed = True
+
     @staticmethod
     def _count_tokens(token_like: Any) -> int | None:
         """Count tokens for common list- and tensor-like structures."""
@@ -437,6 +514,8 @@ class HFLocalAdapter:
         if hasattr(model, "eval"):
             model.eval()
 
+        self._install_nemotron_cache_patch(model, torch)
+
         if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token", None) is not None:
             tokenizer.pad_token = tokenizer.eos_token
 
@@ -492,9 +571,6 @@ class HFLocalAdapter:
                 generation_kwargs["top_p"] = self.config.top_p
 
         torch_module, _, _, _, _, _ = self._load_backend()
-        if "nemotron" in self.config.model_id.lower():
-            generation_kwargs["use_cache"] = False
-
         start_time = perf_counter()
         with torch_module.inference_mode():
             generation_output = model.generate(**encoded_inputs, **generation_kwargs)

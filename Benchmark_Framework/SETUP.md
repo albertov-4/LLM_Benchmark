@@ -117,6 +117,22 @@ Supported registry families:
 Before a run, keep `enabled: true` only on models that should participate when
 no `--model-id` filter is provided.
 
+## Runtime Configuration Sources
+
+Most executable behavior is controlled by the command line, model registries,
+protocol YAML files, and prompt files:
+
+- CLI flags choose task filters, protocol filters, registry selection, output
+  paths, validator behavior, and NVIDIA model-lane parallelism.
+- `models/model_registry_*.yaml` selects model entries, adapter backends,
+  provider settings, sampling defaults, timeouts, and secrets keys.
+- `protocols/*.yaml` controls prompt assembly and the per-case attempt budget.
+- `prompts/*.txt` provides system, task-family, examples, and repair text.
+
+The files in `config/` are reference/default metadata for the benchmark. They
+are useful for documentation and future shared defaults, but the current runner
+does not treat them as the primary runtime configuration API.
+
 ## Hugging Face Models
 
 Local Hugging Face runs can load a model from a Hub repo id, a prepared
@@ -246,6 +262,9 @@ Clear generated outputs while preserving the folder structure:
 ```powershell
 python Benchmark_Framework/clear_outputs.py
 ```
+
+See [outputs/README.md](outputs/README.md) for the artifact layout and cleanup
+boundaries.
 
 ## Common Issues
 

@@ -9,21 +9,44 @@ model backends, parsing, validation, metrics, and analysis stay separate. This
 makes it possible to compare different models and protocols on the same task
 matrix without changing the evaluation logic.
 
+## At A Glance
+
+The benchmark flow is:
+
+```text
+tasks + prompts + protocol + model registry
+        |
+        v
+run_benchmark.py -> runner/run_suite.py -> runner/run_case.py
+        |
+        v
+model adapter -> parser -> VAL validator -> metrics
+        |
+        v
+outputs/raw + outputs/parsed + outputs/scored + optional logs
+```
+
+The main user-facing entry point is `run_benchmark.py`. Most runtime behavior
+is selected through CLI flags, model registries under `models/`, protocol YAML
+files under `protocols/`, and prompt text under `prompts/`.
+
 ## What Is Included
 
 ```text
 Benchmark_Framework/
-|-- analysis/             notebooks and report artifacts
-|-- config/               benchmark and compute defaults
-|-- docs/                 operational notes
+|-- analysis/             notebooks, report sources, figures, and exports
+|-- config/               reference/default metadata, not the main runtime API
+|-- docs/                 operational notes that do not belong in quickstart docs
 |-- domains_complexity/   generated complexity summaries
 |-- evaluators/           parser, VAL adapter, metrics, error taxonomy
 |-- Leonardo_script/      SLURM scripts for Leonardo/HPC runs
 |-- models/               model registries and backend adapters
+|-- outputs/              generated raw, parsed, scored, and log artifacts
 |-- prompts/              system, task-family, example, and repair prompts
 |-- protocols/            direct and iterative repair protocol YAML files
 |-- runner/               suite and single-case orchestration
 |-- scripts/              model preparation and complexity scoring utilities
+|-- slurm_logs/           generated SLURM stdout/stderr logs
 |-- tasks/                PDDL domains and benchmark instances
 |-- tests/                unit and integration-style tests
 |-- utils/                bundled VAL binaries for Linux and Windows
@@ -82,6 +105,21 @@ The final suite matrix is:
 ```text
 selected models x selected protocols x selected task cases
 ```
+
+## Run Lifecycle
+
+1. `run_benchmark.py` parses CLI flags, resolves the selected model registry,
+   builds a run id, and delegates to the suite runner.
+2. `runner/run_suite.py` discovers task cases, protocols, and enabled model
+   entries, filters the matrix, optionally preflights PDDL files with VAL, and
+   starts each job.
+3. `runner/run_case.py` builds messages, calls the selected model adapter,
+   parses candidate PDDL actions, validates every non-empty action prefix, and
+   computes metrics.
+4. `evaluators/` normalizes parser, validator, error, and metric payloads so
+   all backends can be compared.
+5. `outputs/` receives per-case artifacts and suite summaries. Analysis
+   notebooks and reports read those artifacts later.
 
 ## Setup
 
@@ -209,13 +247,23 @@ python Benchmark_Framework/clear_outputs.py
 
 - [SETUP.md](SETUP.md): environment, validator, model registry, and common run
   setup.
+- [analysis/README.md](analysis/README.md): notebooks, reports, and analysis
+  workflow.
+- [config/README.md](config/README.md): reference metadata and current runtime
+  boundaries.
+- [docs/README.md](docs/README.md): longer operational notes.
+- [domains_complexity/README.md](domains_complexity/README.md): generated
+  complexity reports.
 - [docs/model_preparation.md](docs/model_preparation.md): Hugging Face model
   preparation for local and HPC runs.
+- [outputs/README.md](outputs/README.md): generated artifact layout and cleanup.
 - [protocols/README.md](protocols/README.md): protocol fields and repair flow.
+- [scripts/README.md](scripts/README.md): utility script commands and outputs.
 - [models/README.md](models/README.md): registry fields and backend settings.
 - [runner/README.md](runner/README.md): suite discovery and execution behavior.
 - [evaluators/README.md](evaluators/README.md): parser, validator, metrics, and
   error taxonomy.
+- [slurm_logs/README.md](slurm_logs/README.md): Leonardo/SLURM log location.
 - [tasks/README.md](tasks/README.md): task layout and current task inventory.
 - [Leonardo_script/README.md](Leonardo_script/README.md): SLURM workflows for
   model preparation, cache checks, benchmark tests, and full HPC runs.

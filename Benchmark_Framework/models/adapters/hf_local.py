@@ -570,7 +570,7 @@ class HFLocalAdapter:
             if self.config.top_p is not None:
                 generation_kwargs["top_p"] = self.config.top_p
 
-        torch_module, _, _, _, _, _ = self._load_backend()
+        torch_module = self._load_backend()[0]
         start_time = perf_counter()
         with torch_module.inference_mode():
             generation_output = model.generate(**encoded_inputs, **generation_kwargs)

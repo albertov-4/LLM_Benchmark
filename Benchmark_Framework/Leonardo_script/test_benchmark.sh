@@ -52,6 +52,12 @@ export LD_PRELOAD="${GCC_LIBSTDCXX}${LD_PRELOAD:+:${LD_PRELOAD}}"
 export MAX_JOBS="${MAX_JOBS:-1}"
 export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 
+MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
+
+if [ "${MODEL_ID}" = "hf_gpt_oss_120b" ] && [ -z "${PYTHON_VENV:-}" ]; then
+    PYTHON_VENV="${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/avarini0/gptoss_env}"
+fi
+
 VENV_ACTIVATED=0
 for CANDIDATE_VENV_DIR in "${PYTHON_VENV:-}" "${VIRTUAL_ENV:-}" "${REPO_ROOT}/../our_env" "${REPO_ROOT}/our_env" "${FRAMEWORK_DIR}/our_env" "${REPO_ROOT}/project_venv" "${REPO_ROOT}/venv" "${REPO_ROOT}/.venv" "${REPO_ROOT}/.venv-new" "${FRAMEWORK_DIR}/project_venv" "${FRAMEWORK_DIR}/venv"; do
     if [ -z "${CANDIDATE_VENV_DIR}" ]; then
@@ -78,7 +84,6 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
 
-MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
 PROTOCOL_ID="${PROTOCOL_ID:-direct_plan}"
 TASK_FAMILY="${TASK_FAMILY:-fo-sailing}"
 TIER="${TIER:-easy}"
@@ -122,7 +127,6 @@ fi
 python - <<'PY'
 import os
 import sys
-import traceback
 
 import torch
 import transformers
@@ -139,6 +143,14 @@ if not torch.cuda.is_available():
     print("  pip uninstall -y torch torchvision torchaudio", file=sys.stderr)
     print("  pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio", file=sys.stderr)
     sys.exit(1)
+PY
+
+if [ "${MODEL_ID}" = "hf_nemotron_3_nano_30b_a3b" ]; then
+    python - <<'PY'
+import sys
+import traceback
+
+import transformers
 
 try:
     print("Installing Transformers generation compatibility shim...", flush=True)
@@ -188,6 +200,9 @@ except Exception as exc:
         traceback.print_exc()
         sys.exit(1)
 PY
+else
+    echo "Skipping Nemotron-specific dependency checks for MODEL_ID=${MODEL_ID}"
+fi
 
 CMD=(
     python "${FRAMEWORK_DIR}/run_benchmark.py"

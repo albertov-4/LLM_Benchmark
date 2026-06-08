@@ -27,7 +27,7 @@ def _resolve_validate_command(framework_root: Path) -> str | None:
     if path_command:
         return path_command
 
-    # Bundled binaries committed to the repo under Benchmark Framework/utils/
+    # Bundled binaries committed to the repo under Benchmark_Framework/utils/
     for bundled in (
         framework_root / "utils" / "win64"   / "bin" / "Validate.exe",
         framework_root / "utils" / "linux64" / "bin" / "Validate",

@@ -1,182 +1,129 @@
 # Prompts
 
-This folder contains the text files used to build model messages.
+This folder contains text fragments used to build model messages. Prompts do
+not choose models, protocols, or tasks; they only control how a selected task is
+presented to the selected model.
 
-Prompts do not select the model, protocol or task. They only define how a task
-is presented to the model.
-
-## Structure
+## Layout
 
 ```text
 prompts/
 |-- system.txt
-|-- <task_family>.txt
 |-- feedback.txt
-|-- examples/
-    |-- <task_family>.txt
+|-- <task_family>.txt
+`-- examples/
+    `-- <task_family>.txt
 ```
+
+There are prompt files for the current task families:
+
+- `block-grouping`
+- `expedition`
+- `fo-counters`
+- `fo-sailing`
+- `rover`
+- `settlersnumeric`
 
 ## `system.txt`
 
-Global benchmark prompt.
-
-It is included as a `system` message when the protocol has:
+The global system prompt is included when a protocol sets:
 
 ```yaml
 prompting:
   use_system_prompt: true
 ```
 
-It defines rules shared across domains:
+It contains benchmark-wide rules: use only domain actions, use only problem
+objects, do not invent predicates or numeric fluents, produce grounded PDDL
+actions, and respect preconditions, effects, and goals.
 
-- use only actions defined in the domain
-- use only objects present in the problem
-- do not invent predicates, objects or numeric fluents
-- produce grounded PDDL actions
-- respect preconditions, effects and the final goal
-
-This file should stay general and should not contain task-family-specific
-details.
+Keep this file general. Task-family-specific semantics belong in
+`<task_family>.txt`.
 
 ## `<task_family>.txt`
 
-Task-family-specific prompt.
-
-Example:
-
-```text
-prompts/<task_family>.txt
-```
-
-It is loaded when the protocol has:
+Task-family prompts are required when a protocol sets:
 
 ```yaml
 prompting:
   include_domain_prompt: true
 ```
 
-This file is required. If `prompts/<task_family>.txt` is missing, the benchmark
-fails before calling the model.
+The runner does not fall back to a generic prompt. Missing task-family prompts
+fail before a model call so that benchmark runs are not silently evaluated with
+ambiguous instructions.
 
-There is no automatic fallback to `default.txt`. This prevents ambiguous runs
-where a task family is evaluated with a generic prompt instead of its own
-domain-specific instructions.
+Each task-family prompt should explain:
 
-The prompt should explain:
-
-- the domain semantics
-- important constraints
-- available actions
-- common mistakes to avoid
-- expected formatting, when domain-specific formatting matters
+- domain semantics;
+- important constraints;
+- available actions and naming conventions;
+- common mistakes to avoid;
+- formatting expectations that are specific to the domain.
 
 ## `examples/<task_family>.txt`
 
-Optional examples for one task family.
-
-Example:
-
-```text
-prompts/examples/<task_family>.txt
-```
-
-It is loaded only when the protocol has:
+Example prompts are optional and loaded only when:
 
 ```yaml
 prompting:
   include_examples: true
 ```
 
-Examples clarify action formatting and common mistakes. They should not solve
-benchmark instances.
+Examples are appended after the task-family prompt. They should clarify action
+format and constraints, but should not solve benchmark instances. If an example
+file is missing, the benchmark continues without examples.
 
 ## `feedback.txt`
 
-Prompt used by repair protocols.
-
-It is included in feedback messages when the protocol has:
+The repair prompt is used by protocols with:
 
 ```yaml
 prompting:
   include_external_feedback: true
 ```
 
-The runner combines this text with validator output. The model receives:
+The runner combines this text with validator output, including status, error
+type, failed step, failed action, and validator feedback when available. The
+model is asked to return a complete corrected plan.
 
-- general repair rules
-- validation status
-- error type
-- failed step, when available
-- failed action, when available
-- validator feedback
+## Protocol Assembly
 
-The model should return a complete corrected plan, not only a patch or the
-single failed action.
-
-## Protocol Flow
-
-`direct_plan`
+`direct_plan`:
 
 ```text
 system.txt
 + <task_family>.txt
-+ dominio PDDL
-+ problema PDDL
++ domain PDDL
++ problem PDDL
 ```
 
-The model should produce the final plan directly.
-
-`direct_plan_with_rationale`
+`direct_plan_with_rationale`:
 
 ```text
 system.txt
 + <task_family>.txt
 + examples/<task_family>.txt
-+ dominio PDDL
-+ problema PDDL
++ domain PDDL
++ problem PDDL
 ```
 
-The model may produce a short rationale if the protocol does not require
-plan-only output. The final plan must still be extractable as PDDL actions.
-
-`iterative_repair`
-
-First attempt:
+`iterative_repair`, first attempt:
 
 ```text
 system.txt
 + <task_family>.txt
 + examples/<task_family>.txt
-+ dominio PDDL
-+ problema PDDL
++ domain PDDL
++ problem PDDL
 ```
 
-Later attempts:
+`iterative_repair`, later attempts:
 
 ```text
 previous messages
 + feedback.txt
-+ validator feedback
++ normalized validator feedback
 ```
 
-Each iteration is saved in the output `attempts` field, including the messages
-sent to the model.
-
-## Adding A New Task Family
-
-To add a new task family, create at least:
-
-```text
-tasks/<task_family>/domain/domain.pddl
-tasks/<task_family>/easy/<instance_id>.pddl
-prompts/<task_family>.txt
-```
-
-If the protocol uses examples, also add:
-
-```text
-prompts/examples/<task_family>.txt
-```
-
-Without `prompts/<task_family>.txt`, every protocol with
-`include_domain_prompt: true` will fail before querying the model.
+Each attempt is saved in the output artifacts.

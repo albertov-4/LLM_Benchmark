@@ -1,14 +1,21 @@
 # Reports
 
-This folder is intended for exported reports.
+This folder stores exported benchmark reports and report assets. It may contain
+LaTeX sources, generated PDFs, figures, and supporting files.
 
-Typical outputs:
-- final tables
-- consolidated plots
-- PDF reports
-- comparative summaries by model or protocol
+Current report artifacts are generated from benchmark outputs and domain
+complexity summaries. They are useful for sharing final tables and plots, but
+they are not used by the runner.
 
 Recommended organization:
-- one report per model
-- one report per protocol
-- one final comparative report
+
+- keep final comparative reports here;
+- keep generated figures beside the report that uses them;
+- record the `run_id` or input data source inside the report source;
+- avoid using this folder as the source of truth for raw benchmark results.
+
+The source of truth for benchmark runs remains:
+
+```text
+Benchmark_Framework/outputs/scored/<run_id>/suite_result.json
+```

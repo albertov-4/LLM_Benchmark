@@ -29,20 +29,25 @@ class ClearOutputsTest(unittest.TestCase):
             parsed_root = outputs_root / "parsed"
             scored_root = outputs_root / "scored"
             runs_root = outputs_root / "runs"
+            logs_root = outputs_root / "logs"
             raw_root.mkdir(parents=True)
             parsed_root.mkdir(parents=True)
             scored_root.mkdir(parents=True)
             runs_root.mkdir(parents=True)
+            logs_root.mkdir(parents=True)
 
             (raw_root / ".gitkeep").write_text("", encoding="utf-8")
             (parsed_root / ".gitkeep").write_text("", encoding="utf-8")
             (scored_root / ".gitkeep").write_text("", encoding="utf-8")
             (runs_root / ".gitkeep").write_text("", encoding="utf-8")
+            (logs_root / ".gitkeep").write_text("", encoding="utf-8")
             (raw_root / "model_a").mkdir()
             (raw_root / "model_a" / "artifact.json").write_text("{}", encoding="utf-8")
             (parsed_root / "model_a").mkdir()
             (scored_root / "suite_result_latest.json").write_text("{}", encoding="utf-8")
             (runs_root / "2026-05-05_12-00-00").mkdir()
+            (logs_root / "2026-05-05_12-00-00").mkdir()
+            (logs_root / "2026-05-05_12-00-00" / "model_a.log").write_text("log", encoding="utf-8")
 
             targets = module.collect_output_targets(outputs_root)
 
@@ -50,6 +55,7 @@ class ClearOutputsTest(unittest.TestCase):
                 {target.name for target in targets},
                 {"model_a", "suite_result_latest.json", "2026-05-05_12-00-00"},
             )
+            self.assertEqual(len(targets), 5)
 
             module.delete_targets(targets)
 
@@ -57,10 +63,12 @@ class ClearOutputsTest(unittest.TestCase):
             self.assertTrue((parsed_root / ".gitkeep").exists())
             self.assertTrue((scored_root / ".gitkeep").exists())
             self.assertTrue((runs_root / ".gitkeep").exists())
+            self.assertTrue((logs_root / ".gitkeep").exists())
             self.assertFalse((raw_root / "model_a").exists())
             self.assertFalse((parsed_root / "model_a").exists())
             self.assertFalse((scored_root / "suite_result_latest.json").exists())
             self.assertFalse((runs_root / "2026-05-05_12-00-00").exists())
+            self.assertFalse((logs_root / "2026-05-05_12-00-00").exists())
 
 
 if __name__ == "__main__":

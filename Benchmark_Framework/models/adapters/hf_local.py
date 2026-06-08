@@ -15,6 +15,7 @@ from pathlib import Path
 from time import perf_counter
 from collections.abc import Iterable
 from typing import Any
+import sys
 
 
 HF_REPO_ID_PATTERN = re.compile(
@@ -31,6 +32,22 @@ OPEN_THINKING_TAG_PATTERN = re.compile(
 FINAL_MARKER_PATTERN = re.compile(
     r"(?im)^\s*(?:final\s+answer|final\s+plan|answer|plan|actions?)\s*:?\s*$"
 )
+
+
+def _install_transformers_generation_compatibility_shim() -> None:
+    """Restore legacy generation aliases expected by older mamba-ssm releases."""
+    try:
+        generation_module = import_module("transformers.generation")
+    except Exception:
+        return
+
+    generate_decoder_only_output = getattr(generation_module, "GenerateDecoderOnlyOutput", None)
+    if generate_decoder_only_output is None:
+        return
+
+    for legacy_name in ("GreedySearchDecoderOnlyOutput", "SampleDecoderOnlyOutput"):
+        if not hasattr(generation_module, legacy_name):
+            setattr(generation_module, legacy_name, generate_decoder_only_output)
 
 
 def _clean_text(value: Any) -> str:
@@ -113,6 +130,7 @@ def looks_like_hf_repo_id(value: str) -> bool:
 class HFLocalConfig:
     model_id: str
     weights_path: str = ""
+    model_loader: str = "causal_lm"
     temperature: float = 0.0
     top_k: int | None = 10
     top_p: float | None = None
@@ -139,17 +157,23 @@ class HFLocalAdapter:
         try:
             torch = import_module("torch")
             transformers = import_module("transformers")
+            _install_transformers_generation_compatibility_shim()
             AutoModelForCausalLM = getattr(transformers, "AutoModelForCausalLM")
             AutoTokenizer = getattr(transformers, "AutoTokenizer")
-        except ImportError as exc:  # pragma: no cover - depends on local env
+            AutoModel = getattr(transformers, "AutoModel", None)
+            AutoModelForImageTextToText = getattr(transformers, "AutoModelForImageTextToText", None)
+            AutoProcessor = getattr(transformers, "AutoProcessor", None)
+        except ImportError as exc:
             raise RuntimeError(
-                "HFLocalAdapter requires `torch` and `transformers` to be installed."
+                "HFLocalAdapter backend import failed. "
+                f"python={sys.executable}; "
+                f"original_error={type(exc).__name__}: {exc}"
             ) from exc
 
-        return torch, AutoModelForCausalLM, AutoTokenizer
+        return torch, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForImageTextToText, AutoProcessor
 
     def _framework_root(self) -> Path:
-        """Return the Benchmark Framework root directory."""
+        """Return the Benchmark_Framework root directory."""
         return Path(__file__).resolve().parents[2]
 
     def _models_cache_dir(self) -> Path:
@@ -269,6 +293,21 @@ class HFLocalAdapter:
 
         return "\n\n".join(rendered_lines).strip()
 
+    @staticmethod
+    def _processor_messages(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
+        """Return messages in the content-list format expected by multimodal processors."""
+        processor_messages: list[dict[str, Any]] = []
+        for message in messages:
+            role = str(message.get("role", "user"))
+            content = str(message.get("content", ""))
+            processor_messages.append(
+                {
+                    "role": role,
+                    "content": [{"type": "text", "text": content}],
+                }
+            )
+        return processor_messages
+
     def _get_model_device(self):
         """Best-effort inference device detection for encoded inputs."""
         if self.model is None:
@@ -309,6 +348,83 @@ class HFLocalAdapter:
                     pass
             moved_inputs[key] = value
         return moved_inputs
+
+    def _install_nemotron_cache_patch(self, model: Any, torch_module: Any) -> None:
+        """Patch Nemotron-H generation to provide its required hybrid cache."""
+        if "nemotron" not in self.config.model_id.lower():
+            return
+        if getattr(model, "_benchmark_nemotron_cache_patch_installed", False):
+            return
+        if not hasattr(model, "prepare_inputs_for_generation"):
+            return
+
+        try:
+            model_module = import_module(model.__class__.__module__)
+        except Exception:
+            return
+
+        cache_cls = getattr(model_module, "NemotronHHybridDynamicCache", None)
+        if cache_cls is None:
+            return
+
+        original_prepare = model.prepare_inputs_for_generation
+
+        def patched_prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=None,
+            attention_mask=None,
+            inputs_embeds=None,
+            cache_position=None,
+            **kwargs,
+        ):
+            use_cache = kwargs.get("use_cache", True)
+            sequence_source = inputs_embeds if inputs_embeds is not None else input_ids
+            sequence_shape = getattr(sequence_source, "shape", None)
+
+            if past_key_values is None and use_cache is not False and sequence_shape is not None:
+                dtype = getattr(model, "dtype", None)
+                if dtype is None:
+                    try:
+                        dtype = next(model.parameters()).dtype
+                    except Exception:
+                        dtype = torch_module.bfloat16
+
+                device = getattr(sequence_source, "device", None) or getattr(model, "device", None)
+                batch_size = int(sequence_shape[0])
+                past_key_values = cache_cls(
+                    model.config,
+                    batch_size,
+                    dtype=dtype,
+                    device=device,
+                )
+
+            if cache_position is None and sequence_shape is not None:
+                sequence_length = int(sequence_shape[1])
+                past_length = 0
+                if past_key_values is not None and hasattr(past_key_values, "get_seq_length"):
+                    try:
+                        past_length = int(past_key_values.get_seq_length())
+                    except Exception:
+                        past_length = 0
+                device = getattr(sequence_source, "device", None) or getattr(model, "device", None)
+                cache_position = torch_module.arange(
+                    past_length,
+                    past_length + sequence_length,
+                    dtype=torch_module.long,
+                    device=device,
+                )
+
+            return original_prepare(
+                input_ids,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                inputs_embeds=inputs_embeds,
+                cache_position=cache_position,
+                **kwargs,
+            )
+
+        model.prepare_inputs_for_generation = patched_prepare_inputs_for_generation
+        model._benchmark_nemotron_cache_patch_installed = True
 
     @staticmethod
     def _count_tokens(token_like: Any) -> int | None:
@@ -352,14 +468,26 @@ class HFLocalAdapter:
         if self.model is not None and self.tokenizer is not None:
             return
 
-        torch, AutoModelForCausalLM, AutoTokenizer = self._load_backend()
+        torch, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForImageTextToText, AutoProcessor = self._load_backend()
         model_source = self._resolve_model_source()
         resolved_dtype = self._resolve_torch_dtype(torch)
+        model_loader = self.config.model_loader.strip().lower()
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_source,
-            trust_remote_code=self.config.trust_remote_code,
-        )
+        if model_loader == "image_text_to_text":
+            if AutoModelForImageTextToText is None or AutoProcessor is None:
+                raise RuntimeError(
+                    "This model requires AutoModelForImageTextToText and AutoProcessor. "
+                    "Upgrade transformers."
+                )
+            tokenizer = AutoProcessor.from_pretrained(
+                model_source,
+                trust_remote_code=self.config.trust_remote_code,
+            )
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_source,
+                trust_remote_code=self.config.trust_remote_code,
+            )
 
         model_kwargs: dict[str, Any] = {
             "trust_remote_code": self.config.trust_remote_code,
@@ -369,7 +497,14 @@ class HFLocalAdapter:
         if resolved_dtype != "auto":
             model_kwargs["torch_dtype"] = resolved_dtype
 
-        model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
+        if model_loader == "image_text_to_text":
+            model = AutoModelForImageTextToText.from_pretrained(model_source, **model_kwargs)
+        elif model_loader == "auto_model":
+            if AutoModel is None:
+                raise RuntimeError("This model requires AutoModel. Upgrade transformers.")
+            model = AutoModel.from_pretrained(model_source, **model_kwargs)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
 
         if self.config.device_map is None:
             target_device = "cuda" if getattr(torch, "cuda", None) and torch.cuda.is_available() else "cpu"
@@ -378,6 +513,8 @@ class HFLocalAdapter:
 
         if hasattr(model, "eval"):
             model.eval()
+
+        self._install_nemotron_cache_patch(model, torch)
 
         if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token", None) is not None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -394,8 +531,19 @@ class HFLocalAdapter:
         model = self.model
         tokenizer = self.tokenizer
 
-        prompt_text = self._build_prompt_text(messages)
-        encoded_inputs = tokenizer(prompt_text, return_tensors="pt")
+        model_loader = self.config.model_loader.strip().lower()
+        if model_loader == "image_text_to_text" and hasattr(tokenizer, "apply_chat_template"):
+            processor_messages = self._processor_messages(messages)
+            encoded_inputs = tokenizer.apply_chat_template(
+                processor_messages,
+                tokenize=True,
+                add_generation_prompt=self.config.add_generation_prompt,
+                return_dict=True,
+                return_tensors="pt",
+            )
+        else:
+            prompt_text = self._build_prompt_text(messages)
+            encoded_inputs = tokenizer(prompt_text, return_tensors="pt")
         prompt_token_count = self._count_tokens(encoded_inputs.get("input_ids")) or 0
 
         model_device = self._get_model_device()
@@ -407,8 +555,9 @@ class HFLocalAdapter:
             "do_sample": do_sample,
         }
 
-        pad_token_id = getattr(tokenizer, "pad_token_id", None)
-        eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        tokenizer_like = getattr(tokenizer, "tokenizer", tokenizer)
+        pad_token_id = getattr(tokenizer_like, "pad_token_id", None)
+        eos_token_id = getattr(tokenizer_like, "eos_token_id", None)
         if pad_token_id is not None:
             generation_kwargs["pad_token_id"] = pad_token_id
         if eos_token_id is not None:
@@ -421,14 +570,14 @@ class HFLocalAdapter:
             if self.config.top_p is not None:
                 generation_kwargs["top_p"] = self.config.top_p
 
-        torch_module, _, _ = self._load_backend()
+        torch_module = self._load_backend()[0]
         start_time = perf_counter()
         with torch_module.inference_mode():
             generation_output = model.generate(**encoded_inputs, **generation_kwargs)
         latency_s = perf_counter() - start_time
 
         generated_tokens = self._extract_generated_tokens(generation_output, prompt_token_count)
-        raw_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        raw_text = tokenizer_like.decode(generated_tokens, skip_special_tokens=True).strip()
         extracted = _extract_reasoning_from_text(raw_text)
         raw_text = extracted["raw_text"]
         completion_tokens = self._count_tokens(generated_tokens)

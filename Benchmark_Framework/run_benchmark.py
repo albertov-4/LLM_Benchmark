@@ -1,7 +1,7 @@
 """CLI entry point for launching the benchmark suite.
 
 Example:
-    python "Benchmark Framework/run_benchmark.py" --use-real-validator
+    python Benchmark_Framework/run_benchmark.py --use-real-validator
 """
 
 from __future__ import annotations
@@ -75,13 +75,13 @@ def _resolve_output_base(output_root: str | Path, framework_root: Path) -> Path:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the LLM planning benchmark suite.")
-    parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark Framework.")
-    parser.add_argument("--protocols-root", default="protocols", help="Protocols root relative to Benchmark Framework.")
-    parser.add_argument("--prompts-root", default="prompts", help="Prompts root relative to Benchmark Framework.")
+    parser.add_argument("--tasks-root", default="tasks", help="Task root relative to Benchmark_Framework.")
+    parser.add_argument("--protocols-root", default="protocols", help="Protocols root relative to Benchmark_Framework.")
+    parser.add_argument("--prompts-root", default="prompts", help="Prompts root relative to Benchmark_Framework.")
     parser.add_argument(
         "--model-registry-path",
         default=None,
-        help="Manual model registry path relative to Benchmark Framework. Overrides --adapter.",
+        help="Manual model registry path relative to Benchmark_Framework. Overrides --adapter.",
     )
     parser.add_argument(
         "--model-id",
@@ -118,7 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         default="outputs",
-        help="Base output directory relative to Benchmark Framework.",
+        help="Base output directory relative to Benchmark_Framework.",
     )
     parser.add_argument(
         "--run-id",
@@ -145,6 +145,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--preflight-tasks",
         action="store_true",
         help="Check task domain/problem files with VAL before launching model jobs.",
+    )
+    parser.add_argument(
+        "--parallel-nvidia-models",
+        action="store_true",
+        help=(
+            "Run NVIDIA API models in parallel lanes. Each model lane still runs "
+            "selected protocols and task instances sequentially."
+        ),
+    )
+    parser.add_argument(
+        "--max-concurrent-nvidia-models",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of NVIDIA model lanes to run at once when "
+            "--parallel-nvidia-models is enabled. Defaults to all selected "
+            "NVIDIA models."
+        ),
     )
     parser.add_argument(
         "--stop-on-error",
@@ -196,6 +214,8 @@ def main() -> int:
         validator_command=args.validator_command,
         validator_timeout_seconds=args.validator_timeout_seconds,
         preflight_tasks=args.preflight_tasks,
+        parallel_nvidia_models=args.parallel_nvidia_models,
+        max_concurrent_nvidia_models=args.max_concurrent_nvidia_models,
         stop_on_error=args.stop_on_error,
     )
 
@@ -221,6 +241,7 @@ def main() -> int:
             "summary": serializable_result.get("summary", {}),
             "aggregate_results": serializable_result.get("aggregate_results", {}),
             "orchestration_errors": serializable_result.get("orchestration_errors", []),
+            "nvidia_lane_log_paths": serializable_result.get("nvidia_lane_log_paths", {}),
             "run_id": run_id,
             "output_root": str(output_root),
             "saved_to": str(output_path),

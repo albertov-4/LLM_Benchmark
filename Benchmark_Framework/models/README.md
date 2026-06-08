@@ -1,19 +1,18 @@
 # Models
 
-This folder contains model registries and adapter implementations.
-
-Components:
-- `model_registry_nvidia.yaml`: NVIDIA API registry
-- `model_registry_hf.yaml`: Hugging Face local registry
-- `model_registry_ollama.yaml`: Ollama registry
-- `model_registry_llama_cpp.yaml`: llama.cpp / GGUF registry
-- `adapters/`: implementations exposing `generate(messages)`
+This folder contains model registries and backend adapters. Registries describe
+what to run; adapters implement how to call each backend.
 
 ## Registry Files
 
-Each registry file contains a `models` list. Every item in that list describes one model configuration.
+- `model_registry_nvidia.yaml`: NVIDIA API models through an OpenAI-compatible
+  client.
+- `model_registry_hf.yaml`: local Hugging Face Transformers models.
+- `model_registry_ollama.yaml`: models served by a local Ollama server.
+- `model_registry_llama_cpp.yaml`: GGUF models executed through llama.cpp CLI.
+- `adapters/`: adapter implementations used by the runner.
 
-Example:
+Each registry contains a `models` list:
 
 ```yaml
 models:
@@ -24,147 +23,101 @@ models:
     enabled: true
 ```
 
-The launcher can select a registry automatically with `--adapter`, or load an explicit registry with `--model-registry-path`.
+`--adapter` selects a matching registry automatically. `--model-registry-path`
+loads an explicit registry and takes precedence over `--adapter`.
 
-Some registry files also include `registry_rules`. This section documents expected fields for that registry:
-- `required_fields`: fields that every model entry in that registry should define.
-- `optional_fields`: fields accepted by that registry but not required for every model.
+## Common Fields
 
-`registry_rules` is documentation metadata. Model execution is controlled by the entries under `models`.
+- `model_id`: stable id used in filters and output paths.
+- `family`: human-readable model family.
+- `adapter`: backend implementation. Supported values are `nvidia_api`,
+  `hf_local`, `ollama`, and `llama_cpp_cli`.
+- `provider`: descriptive provider/runtime label.
+- `enabled`: included in full runs when no `--model-id` is supplied.
+- `reasoning_notes`: setup notes, expected limitations, or model behavior.
+- `temperature`, `top_p`, `max_tokens`, `timeout_seconds`: generation/runtime
+  settings used where the adapter supports them.
 
-## Complete Field Reference
+Some registries include `registry_rules`. These are documentation metadata for
+expected fields; execution is controlled by entries under `models`.
 
-Common fields:
-- `model_id`: unique identifier used by the benchmark outputs, filters and result files.
-- `family`: model family label used for organization and human readability.
-- `adapter`: backend implementation to use. Supported values include `hf_local`, `nvidia_api`, `ollama` and `llama_cpp_cli`.
-- `provider`: provider or runtime label. This is mainly descriptive and helps distinguish local, API and server-backed models.
-- `enabled`: includes or excludes the model when no `--model-id` filter is used.
-- `reasoning_notes`: free-text notes about access, model behavior, reasoning mode, expected limitations or setup requirements.
+## Hugging Face Local
 
-Hugging Face local fields:
-- `weights_path`: Hugging Face repo id or local directory passed to `from_pretrained(...)`.
-- `device_map`: device placement for Transformers, for example `auto` or `none`.
-- `torch_dtype`: dtype used when loading the model, for example `auto`, `float16` or `bfloat16`.
-- `trust_remote_code`: allows model repositories with custom Python model code.
-- `use_chat_template`: uses the tokenizer chat template when available.
-- `add_generation_prompt`: adds the assistant-generation marker when applying the chat template.
+Important fields:
 
-NVIDIA API fields:
-- `api_model_name`: remote model name sent to the NVIDIA API.
-- `api_mode`: API endpoint style used by the adapter. Current values are `chat_completions` and `responses`.
-- `base_url`: OpenAI-compatible API base URL.
-- `api_key_env`: environment variable name or local secrets key used to load the API key.
-- `stream`: enables streamed responses when supported by the selected API mode.
-- `temperature`: sampling temperature.
-- `top_p`: nucleus sampling parameter.
-- `max_tokens`: maximum generated tokens requested from the provider.
-- `timeout_seconds`: API/client timeout.
-- `job_timeout_seconds`: optional total generation-attempt timeout for streaming runs.
-- `debug_stream`: enables NVIDIA streaming progress logs for this model.
-- `debug_stream_interval_seconds`: minimum interval between NVIDIA streaming progress logs.
-- `thinking_key`: provider-specific key inserted under `chat_template_kwargs` to enable or disable thinking/reasoning modes.
-- `thinking_enabled`: boolean value used with `thinking_key`.
-- `reasoning_budget`: provider-specific reasoning budget passed in the request body.
+- `weights_path`: Hugging Face repo id or local directory.
+- `device_map`: `auto`, `none`, or another Transformers-supported placement.
+- `torch_dtype`: `auto`, `float16`, `bfloat16`, or similar.
+- `trust_remote_code`: allow custom model code.
+- `use_chat_template`: use tokenizer chat templates when available.
+- `add_generation_prompt`: add the assistant-generation marker.
+- `thinking_key` and `thinking_enabled`: optional chat-template kwargs for
+  models that expose reasoning controls.
 
-Ollama fields:
-- `ollama_model`: local Ollama model name to call.
-- `base_url`: Ollama server URL, usually `http://localhost:11434`.
-- `temperature`: sampling temperature.
-- `top_p`: nucleus sampling parameter.
-- `max_tokens`: maximum generated tokens requested from Ollama.
-- `timeout_seconds`: HTTP request timeout.
+The adapter resolves model sources in this order: explicit local path,
+`models_cache/<namespace>__<repo>` for prepared Hub models, then the original
+repo id or configured value.
 
-llama.cpp CLI fields:
-- `executable_path`: path or command name for the llama.cpp executable.
-- `model_path`: local `.gguf` file used by llama.cpp.
-- `weights_path`: optional alternative source for `model_path` in adapters that support it.
-- `gguf_source`: informational source or repository for the GGUF file. This is not downloaded automatically by the runner.
-- `temperature`: sampling temperature.
-- `top_p`: nucleus sampling parameter.
-- `max_tokens`: maximum generated tokens requested from llama.cpp.
-- `context_size`: context window passed to llama.cpp when configured.
-- `threads`: number of CPU threads passed to llama.cpp when configured.
-- `timeout_seconds`: process timeout.
+Prepare local models with:
 
-Additional metadata fields:
-- `context_window`: optional descriptive context-window metadata. It is useful for documentation, but the current runner does not use it directly.
-- `executable_path`: command or executable location for CLI-based adapters.
-- `model_path`: local model file path for file-based adapters.
-
-## Useful Fields
-
-Most runs only require these fields:
-- `model_id`
-- `adapter`
-- `enabled`
-- `weights_path` for Hugging Face local models
-- `api_model_name` and `api_key_env` for NVIDIA API models
-- `ollama_model` for Ollama models
-- `model_path` and `executable_path` for llama.cpp models
-- `max_tokens`
-- `temperature`
-- `top_p`
-- `timeout_seconds`
-- `job_timeout_seconds` for NVIDIA streaming runs
-- `debug_stream` when diagnosing NVIDIA streaming stalls
-- `stream` for APIs that support streaming
-
-## Generation Sampling Fields
-
-`temperature` and `top_p` control how deterministic or varied the model output is.
-
-`temperature`:
-- controls how strongly the model favors the most likely next token
-- lower values make output more deterministic
-- higher values make output more varied and less predictable
-- for planning benchmarks, low values are usually preferable because the goal is valid action generation, not creative variation
-
-Practical `temperature` values:
-- `0.0`: most deterministic setting when supported by the backend
-- `0.1` to `0.3`: still conservative, but may avoid some repetitive failures
-- `0.7` to `1.0`: more exploratory, usually less stable for strict PDDL output
-
-`top_p`:
-- controls nucleus sampling
-- the model samples only from the smallest token set whose cumulative probability reaches `top_p`
-- lower values restrict the candidate token set
-- higher values allow more alternatives
-
-Practical `top_p` values:
-- `0.7`: restrictive and more focused
-- `0.9` to `0.95`: common balanced setting
-- `1.0`: least restrictive setting
-
-How to modify them:
-
-```yaml
-models:
-  - model_id: example_model
-    adapter: nvidia_api
-    temperature: 0.1
-    top_p: 0.9
+```powershell
+python Benchmark_Framework/scripts/prepare_models.py --model-registry-path models/model_registry_hf.yaml --models-dir models_cache
 ```
 
-Recommended benchmark practice:
-- keep `temperature` and `top_p` fixed when comparing models
-- change one field at a time when testing sensitivity
-- record the chosen values in the registry so results remain reproducible
-- start with `temperature: 0.0` or `0.1` for strict plan-only protocols
+## NVIDIA API
 
-## Operational Notes
+Important fields:
 
-- `--adapter` selects the matching registry automatically.
-- `--model-registry-path` overrides the adapter shortcut and loads a specific YAML file.
-- Alternative registries can keep entries disabled by default to avoid accidental heavy runs.
-- For local/HPC Hugging Face runs, `weights_path` can be replaced with a prepared local model directory.
-- For NVIDIA API runs, set the variable or local secret referenced by `api_key_env`.
-- For NVIDIA streaming runs, partial output is preserved when the stream is interrupted after text has already been received.
-- For llama.cpp, replace `model_path: REPLACE_WITH_LOCAL_GGUF_FILE` with a real local `.gguf` path.
+- `api_model_name`: remote model name sent to the provider.
+- `api_mode`: endpoint style, such as `chat_completions` or `responses`.
+- `base_url`: OpenAI-compatible base URL.
+- `api_key_env`: environment variable or local secrets key.
+- `stream`: enables streamed responses.
+- `timeout_seconds`: API/client timeout.
+- `job_timeout_seconds`: optional total timeout for one streamed attempt.
+- `debug_stream`: print streaming diagnostics.
+- `thinking_key`, `thinking_enabled`, `reasoning_budget`: optional
+  provider-specific reasoning controls.
+
+For streaming runs, interrupted streams with partial text are preserved and
+marked in the generation payload with stream status fields.
+
+## Ollama
+
+Important fields:
+
+- `ollama_model`: local Ollama model name.
+- `base_url`: usually `http://localhost:11434`.
+- `temperature`, `top_p`, `max_tokens`, `timeout_seconds`.
+
+Install Ollama separately, start the service, pull the model, and enable the
+matching registry entry.
+
+## llama.cpp CLI
+
+Important fields:
+
+- `executable_path`: command or path for the llama.cpp executable.
+- `model_path`: local `.gguf` file.
+- `weights_path`: optional alternative source for file-based setups.
+- `gguf_source`: informational source for the GGUF file.
+- `context_size`, `threads`, `timeout_seconds`.
+
+The runner does not download GGUF files. Replace placeholder paths with real
+local files before enabling llama.cpp entries.
+
+## Sampling Practice
+
+For planning benchmarks, keep generation settings stable when comparing models.
+Low temperatures are usually preferable because output must be valid PDDL, not
+creative prose. Change one sampling field at a time when testing sensitivity and
+record the chosen values in the registry.
 
 ## Examples
 
-- NVIDIA: `python "Benchmark Framework/run_benchmark.py" --adapter nvidia_api --model-id <model_id>`
-- Hugging Face: `python "Benchmark Framework/run_benchmark.py" --adapter hf_local --model-id <model_id>`
-- Ollama: `python "Benchmark Framework/run_benchmark.py" --adapter ollama --model-id <model_id>`
-- llama.cpp: `python "Benchmark Framework/run_benchmark.py" --adapter llama_cpp_cli --model-id <model_id>`
+```powershell
+python Benchmark_Framework/run_benchmark.py --adapter nvidia_api --model-id <model_id> --use-real-validator
+python Benchmark_Framework/run_benchmark.py --adapter hf_local --model-id <model_id> --use-real-validator
+python Benchmark_Framework/run_benchmark.py --adapter ollama --model-id <model_id> --use-real-validator
+python Benchmark_Framework/run_benchmark.py --adapter llama_cpp_cli --model-id <model_id> --use-real-validator
+```

@@ -1,150 +1,97 @@
 # Protocols
 
-This folder defines the experimental protocols used by the benchmark.
-
-A protocol describes how the model is queried. It does not select the task or
-the model. The final matrix is built from:
+Protocols define how a model is prompted and how many attempts are allowed. A
+protocol does not select the task or model. The suite matrix is built from:
 
 ```text
-selected models x selected protocols x discovered tasks
+selected models x selected protocols x selected tasks
 ```
 
 Run one protocol:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --protocol-id direct_plan --use-real-validator
+python Benchmark_Framework/run_benchmark.py --protocol-id direct_plan --use-real-validator
 ```
 
 Combine protocol and task filters:
 
 ```powershell
-python "Benchmark Framework/run_benchmark.py" --protocol-id iterative_repair --task-family <task_family> --tier <tier> --use-real-validator
+python Benchmark_Framework/run_benchmark.py --protocol-id iterative_repair --task-family fo-sailing --tier easy --use-real-validator
 ```
 
 ## Available Protocols
 
 `direct_plan.yaml`
 
-The model receives the domain, problem and formatting instructions. It should
-produce the final plan directly, without explicit reasoning or repair.
-
-Measures:
-- first-attempt validity
-- output-format compliance
-- planning without external feedback
+The model receives the domain, problem, and formatting instructions. It should
+return only the final plan as parenthesized PDDL actions. This measures
+first-attempt validity and format compliance without repair.
 
 `direct_plan_with_rationale.yaml`
 
-The model may produce textual reasoning, but the final plan must remain
-extractable. The parser extracts PDDL actions from the model output.
-
-Measures:
-- whether rationale improves plan quality
-- whether rationale stays consistent with final actions
-- how much extra text is introduced compared with plan-only output
+The model may include a short rationale before the final action sequence. The
+parser still extracts PDDL actions from the final text. This measures whether
+rationale helps plan quality and whether the final plan remains extractable.
 
 `iterative_repair.yaml`
 
-The model generates a plan, the validator checks it and, if validation fails,
-the runner adds feedback to the next attempt.
-
-Measures:
-- whether the model can self-correct after external feedback
-- how many iterations are needed to reach a valid plan
-- which errors persist after repair
+The model generates a plan, VAL validates it, and the runner appends validation
+feedback to the next attempt when validation fails. This measures whether the
+model can correct plans after external feedback and how many iterations are
+needed.
 
 ## YAML Fields
 
-`protocol_id`
+`protocol_id` is the stable identifier used in filters and output paths.
 
-Stable protocol identifier used by the runner and in the output files.
+`description` documents the experimental intent.
 
-Example:
+`prompting` controls prompt assembly:
 
-```yaml
-protocol_id: iterative_repair
-```
+- `use_system_prompt`: include `prompts/system.txt`.
+- `include_domain_prompt`: require and include `prompts/<task_family>.txt`.
+- `include_examples`: append `prompts/examples/<task_family>.txt` when present.
+- `include_chain_of_thought`: allow rationale instructions where the protocol
+  permits them.
+- `include_external_feedback`: enable validator feedback in later attempts.
 
-`description`
+There is no automatic fallback for missing task-family prompts. If a protocol
+requires a domain prompt and `prompts/<task_family>.txt` is missing, the run
+fails before querying the model.
 
-Human-readable description. It documents the experimental intent but does not
-directly affect execution.
+`generation` stores common generation settings such as `mode`, `temperature`,
+`top_k`, and `max_tokens`. Adapters use supported fields where applicable.
 
-`prompting`
+`evaluation` controls the loop:
 
-Controls which prompt components are included.
-
-Main fields:
-- `use_system_prompt`: includes `prompts/system.txt`
-- `include_domain_prompt`: includes `prompts/<task_family>.txt`
-- if `include_domain_prompt: true`, `prompts/<task_family>.txt` is required; `prompts/default.txt` is not used as an automatic fallback
-- `include_examples`: includes examples when available
-- `include_chain_of_thought`: allows rationale instructions for non-plan-only protocols; plan-only protocols still require action-only output
-- `include_external_feedback`: enables validator feedback in later attempts
-
-`generation`
-
-Describes generation settings passed to adapters when supported.
-
-Main fields:
-- `mode`: descriptive label, such as `deterministic`, `semi_deterministic` or `repair_loop`
-- `temperature`: controls sampling variability
-- `top_k`: limits sampling to top token candidates when supported
-- `max_tokens`: maximum number of generated tokens
-
-Not every adapter uses every field in the same way. The runner passes common
-parameters where supported.
-
-`evaluation`
-
-Controls the evaluation loop.
-
-Main fields:
-- `max_iterations`: maximum number of attempts per task
-- `require_final_plan_only`: when `true`, the final output should contain only PDDL actions
-
-In `direct_plan` and `direct_plan_with_rationale`, `max_iterations` is usually
-`1`. In `iterative_repair`, it can be greater than `1`.
-
-`primary_questions`
-
-Experimental questions associated with the protocol. They document what should
-be analyzed after the run.
+- `max_iterations`: attempt budget for one task.
+- `require_final_plan_only`: whether the final answer should contain only PDDL
+  actions.
 
 ## Iterative Repair Flow
 
-The repair loop works as follows:
+1. Build the initial prompt from system, task-family, examples, domain, and
+   problem text.
+2. Generate a candidate plan.
+3. Parse parenthesized PDDL actions.
+4. Validate extracted action prefixes with VAL.
+5. Stop if a valid plan is found.
+6. Build concise feedback from the validation result.
+7. Add the feedback to the next prompt.
+8. Repeat until success or `max_iterations`.
 
-1. The runner builds the initial prompt with domain, problem and instructions.
-2. The model generates a candidate plan.
-3. The parser extracts PDDL actions from the generated text.
-4. If no actions are found, a parse error is created.
-5. If actions are found, `VAL` validates the plan against the domain and problem.
-6. If the plan is valid, the run ends with `solved: true`.
-7. If the plan is invalid, the runner creates feedback.
-8. The feedback is added to the next prompt.
-9. The loop continues until a valid plan is found or `max_iterations` is reached.
+The base repair prompt is `prompts/feedback.txt`.
 
-The base feedback text lives in:
+## Outputs
+
+Protocol ids are part of every per-case artifact path:
 
 ```text
-Benchmark Framework/prompts/feedback.txt
+outputs/raw/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/parsed/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
+outputs/scored/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
 ```
 
-## Output And Analysis
-
-Final results include:
-- `solved`: whether the task was solved
-- `iterations_used`: number of attempts used
-- `max_iterations`: protocol iteration budget
-- `stopped_by_iteration_limit`: whether the run stopped because the budget was exhausted
-- `validation_result`: final validation result
-- `metrics`: derived metrics such as `repair_success` and `iterations_to_valid`
-
-Per-job outputs are separated by level:
-- `raw`: contains `messages`, `generation`, `raw_output` and `raw_generations`
-- `parsed`: contains `parsed_plan` for each attempt
-- `scored`: contains `validation_result`, `feedback_to_next_iteration`, final metrics and artifact paths
-
-The `attempts` field exists in all three levels, but with different content.
-This avoids duplicating every detail in every file.
+Scored artifacts include `solved`, `iterations_used`, `max_iterations`,
+`stopped_by_iteration_limit`, final validation results, metrics, and per-attempt
+repair feedback.

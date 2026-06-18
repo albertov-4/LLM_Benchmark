@@ -5,9 +5,9 @@ single execution pipeline: build a prompt, generate a plan, parse the model
 output, validate the candidate plan with VAL, and save comparable artifacts.
 
 The framework is organized so that task definitions, prompting protocols,
-model backends, parsing, validation, metrics, and analysis stay separate. This
-makes it possible to compare different models and protocols on the same task
-matrix without changing the evaluation logic.
+model backends, parsing, validation, metrics, and generated artifacts stay
+separate. Analysis notebooks and reports live at repository top level under
+`analysis/` so the reusable execution path remains focused.
 
 ## At A Glance
 
@@ -34,10 +34,7 @@ files under `protocols/`, and prompt text under `prompts/`.
 
 ```text
 Benchmark_Framework/
-|-- analysis/             notebooks, report sources, figures, and exports
-|-- config/               reference/default metadata, not the main runtime API
 |-- docs/                 operational notes that do not belong in quickstart docs
-|-- domains_complexity/   generated complexity summaries
 |-- evaluators/           parser, VAL adapter, metrics, error taxonomy
 |-- Leonardo_script/      SLURM scripts for Leonardo/HPC runs
 |-- models/               model registries and backend adapters
@@ -118,8 +115,8 @@ selected models x selected protocols x selected task cases
    computes metrics.
 4. `evaluators/` normalizes parser, validator, error, and metric payloads so
    all backends can be compared.
-5. `outputs/` receives per-case artifacts and suite summaries. Analysis
-   notebooks and reports read those artifacts later.
+5. `outputs/` receives per-case artifacts and suite summaries. Top-level
+   analysis notebooks and reports read those artifacts later.
 
 ## Setup
 
@@ -247,13 +244,11 @@ python Benchmark_Framework/clear_outputs.py
 
 - [SETUP.md](SETUP.md): environment, validator, model registry, and common run
   setup.
-- [analysis/README.md](analysis/README.md): notebooks, reports, and analysis
-  workflow.
-- [config/README.md](config/README.md): reference metadata and current runtime
-  boundaries.
+- [../analysis/README.md](../analysis/README.md): notebooks, reports, and
+  analysis workflow.
 - [docs/README.md](docs/README.md): longer operational notes.
-- [domains_complexity/README.md](domains_complexity/README.md): generated
-  complexity reports.
+- [../analysis/domain_complexity/README.md](../analysis/domain_complexity/README.md):
+  generated complexity reports.
 - [docs/model_preparation.md](docs/model_preparation.md): Hugging Face model
   preparation for local and HPC runs.
 - [outputs/README.md](outputs/README.md): generated artifact layout and cleanup.

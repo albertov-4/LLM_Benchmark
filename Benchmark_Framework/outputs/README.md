@@ -1,7 +1,12 @@
 # Outputs
 
 This folder stores generated benchmark artifacts. It is the main handoff point
-from execution to analysis.
+from execution to analysis and is intentionally kept inside
+`Benchmark_Framework/` because it is the runner's default output location.
+
+The JSON files in this tree are generated artifacts, not framework source code.
+They are tracked in this repository to preserve the completed benchmark runs
+used by the analysis.
 
 ## Layout
 

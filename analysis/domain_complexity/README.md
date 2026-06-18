@@ -17,7 +17,7 @@ properties.
 From the repository root:
 
 ```powershell
-python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir Benchmark_Framework/domains_complexity
+python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir analysis/domain_complexity
 ```
 
 The script scans task families under `tasks/`, ignores support/template

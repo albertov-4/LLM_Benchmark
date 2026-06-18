@@ -65,8 +65,8 @@ python Benchmark_Framework/run_benchmark.py --task-family <task_family> --prefli
 The core runner does not depend on it.
 
 Domain complexity summaries are generated separately under
-`domains_complexity/` by:
+`analysis/domain_complexity/` by:
 
 ```powershell
-python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir Benchmark_Framework/domains_complexity
+python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir analysis/domain_complexity
 ```

@@ -2,11 +2,15 @@
 
 The script reads a directory shaped as:
 
-    Planning Domains/
+    Benchmark_Framework/tasks/
       domain-name/
-        domain.pddl
-        instances/
+        domain/domain.pddl
+        easy/
           pfile1.pddl
+        medium/
+          pfile8.pddl
+        hard/
+          pfile15.pddl
 
 and writes per-instance and per-domain complexity reports.
 """
@@ -771,8 +775,8 @@ def score_domains(domains_dir: Path) -> list[dict[str, Any]]:
 def default_paths() -> tuple[Path, Path]:
     repo_root = Path(__file__).resolve().parents[2]
     return (
-        repo_root / "Planning Domains",
-        repo_root / "Benchmark_Framework" / "domains_complexity",
+        repo_root / "Benchmark_Framework" / "tasks",
+        repo_root / "analysis" / "domain_complexity",
     )
 
 

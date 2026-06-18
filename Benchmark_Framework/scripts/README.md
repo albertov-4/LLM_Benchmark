@@ -32,7 +32,7 @@ Supported options:
 Scores PDDL task-family instances and writes complexity reports.
 
 ```powershell
-python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir Benchmark_Framework/domains_complexity
+python Benchmark_Framework/scripts/score_domains_complexity.py --domains-dir Benchmark_Framework/tasks --output-dir analysis/domain_complexity
 ```
 
 Supported options:

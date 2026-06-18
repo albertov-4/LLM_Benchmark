@@ -1,15 +1,17 @@
 # Analysis
 
 This folder contains the analysis layer for benchmark results. It is separate
-from execution: benchmark runs write artifacts under `outputs/`, and analysis
-notebooks or reports read those artifacts afterward.
+from execution: benchmark runs write artifacts under
+`Benchmark_Framework/outputs/`, and analysis notebooks or reports read those
+artifacts afterward.
 
 ## Contents
 
 ```text
 analysis/
-|-- notebooks/   exploratory and reporting notebooks
-`-- reports/     exported reports, figures, LaTeX sources, and PDFs
+|-- domain_complexity/   generated task-complexity summaries
+|-- notebooks/           exploratory and reporting notebooks
+`-- reports/             exported reports, figures, LaTeX sources, and PDFs
 ```
 
 Use `notebooks/` when inspecting raw benchmark behavior, comparing models,
@@ -33,7 +35,7 @@ Benchmark_Framework/outputs/scored/<run_id>/...
 ```
 
 Domain complexity inputs, when needed for plots or tables, come from
-`domains_complexity/`.
+`analysis/domain_complexity/`.
 
 ## Workflow
 

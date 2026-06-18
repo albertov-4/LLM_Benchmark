@@ -41,6 +41,7 @@ Benchmark_Framework/
 |-- outputs/              generated raw, parsed, scored, and log artifacts
 |-- prompts/              system, task-family, example, and repair prompts
 |-- protocols/            direct and iterative repair protocol YAML files
+|-- requirements/         curated Python requirements for Leonardo envs
 |-- runner/               suite and single-case orchestration
 |-- scripts/              model preparation and complexity scoring utilities
 |-- slurm_logs/           generated SLURM stdout/stderr logs
@@ -125,13 +126,14 @@ Install Python dependencies from the repository root:
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r Benchmark_Framework/requirements.txt
+pip install -r Benchmark_Framework/requirements/leonardo-our-env.txt
 ```
 
 The real validator is VAL. It can be found on `PATH` or passed explicitly with
 `--validator-command`, including a path to one of the bundled platform
-executables under `utils/`. See [SETUP.md](SETUP.md) for local, API, and HPC
-setup details.
+executables under `utils/`. `hf_gpt_oss_120b` uses the separate
+`Benchmark_Framework/requirements/leonardo-gptoss-env.txt` environment on
+Leonardo. See [SETUP.md](SETUP.md) for local, API, and HPC setup details.
 
 ## Running Benchmarks
 

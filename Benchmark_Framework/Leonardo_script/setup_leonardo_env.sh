@@ -34,6 +34,15 @@ fi
 # shellcheck disable=SC1091
 source "${VENV_DIR}/bin/activate"
 
+VENV_BASENAME="$(basename "${VENV_DIR}")"
+if [ -n "${LEONARDO_ENV_PROFILE:-}" ]; then
+    ENV_PROFILE="${LEONARDO_ENV_PROFILE}"
+elif [ "${VENV_BASENAME}" = "gptoss_env" ]; then
+    ENV_PROFILE="gptoss_env"
+else
+    ENV_PROFILE="our_env"
+fi
+
 export CUDA_HOME="${CUDA_HOME:-/leonardo/prod/opt/compilers/cuda/12.1/none}"
 export CUDACXX="${CUDACXX:-${CUDA_HOME}/bin/nvcc}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
@@ -44,6 +53,7 @@ export MAX_JOBS="${MAX_JOBS:-1}"
 export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 
 echo "Venv: ${VENV_DIR}"
+echo "Environment profile: ${ENV_PROFILE}"
 echo "CUDA_HOME: ${CUDA_HOME}"
 echo "CUDACXX: ${CUDACXX}"
 echo "CC: ${CC}"
@@ -55,14 +65,30 @@ python --version
 nvcc --version
 gcc --version | head -1
 
-python -m pip install --force-reinstall \
-    torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
-    --index-url https://download.pytorch.org/whl/cu121
+case "${ENV_PROFILE}" in
+    our_env)
+        python -m pip install -r "${FRAMEWORK_DIR}/requirements/leonardo-our-env.txt"
 
-python -m pip install --no-cache-dir --no-deps --no-build-isolation mamba-ssm==2.2.4 -v
+        python -m pip install --force-reinstall \
+            torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+            --index-url https://download.pytorch.org/whl/cu121
+
+        python -m pip install --no-cache-dir --no-deps --no-build-isolation mamba-ssm==2.2.4 -v
+
+        python -c "import torchvision, torchaudio; print(torchvision.__version__, torchaudio.__version__)"
+        python -c "import mamba_ssm; print('mamba ok')"
+        ;;
+    gptoss_env)
+        python -m pip install -r "${FRAMEWORK_DIR}/requirements/leonardo-gptoss-env.txt"
+        ;;
+    *)
+        echo "ERROR: unknown LEONARDO_ENV_PROFILE=${ENV_PROFILE}"
+        echo "Use LEONARDO_ENV_PROFILE=our_env or LEONARDO_ENV_PROFILE=gptoss_env."
+        exit 1
+        ;;
+esac
 
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
-python -c "import torchvision, torchaudio; print(torchvision.__version__, torchaudio.__version__)"
-python -c "import mamba_ssm; print('mamba ok')"
+python -c "import transformers; print(transformers.__version__)"
 python -c "import triton; print(triton.__version__)"
 python -m pip check

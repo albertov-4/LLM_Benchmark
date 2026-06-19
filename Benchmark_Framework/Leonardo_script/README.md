@@ -9,8 +9,10 @@ environment, and then call the same Python entry points used locally.
 
 - `prepare_models.sh`: prepares Hugging Face models into `models_cache` or a
   configured model directory.
-- `setup_leonardo_env.sh`: pins the Leonardo Python environment to PyTorch
-  CUDA 12.1 and installs `mamba-ssm==2.2.4` without upgrading Torch.
+- `setup_leonardo_env.sh`: installs the selected Leonardo Python environment.
+  The default `our_env` profile pins PyTorch CUDA 12.1 and installs
+  `mamba-ssm==2.2.4` without upgrading Torch; the `gptoss_env` profile uses the
+  GPT-OSS requirements and skips those `our_env`-specific pins.
 - `test_models_cache.sh`: checks prepared model directories in offline mode.
 - `test_benchmark.sh`: runs a narrow benchmark job for one model, protocol, task
   family, tier, and instance.
@@ -55,6 +57,15 @@ PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/our_env \
 sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
 ```
 
+The script defaults to `our_env`. It switches to the GPT-OSS profile when
+`PYTHON_VENV` ends in `gptoss_env`, or when you set it explicitly:
+
+```bash
+LEONARDO_ENV_PROFILE=gptoss_env \
+PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/gptoss_env \
+sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
+```
+
 It runs the equivalent of:
 
 ```bash
@@ -69,6 +80,8 @@ export CC=$(which gcc)
 export CXX=$(which g++)
 export MAX_JOBS=1
 export TORCH_CUDA_ARCH_LIST="8.0"
+
+pip install -r Benchmark_Framework/requirements/leonardo-our-env.txt
 
 pip install --force-reinstall \
   torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
@@ -93,6 +106,17 @@ pip check
 Expected versions are `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`,
 `torchaudio==2.5.1+cu121`, `triton==3.1.0`, `mamba-ssm==2.2.4`, and
 `pip check` reporting no broken requirements.
+
+`hf_gpt_oss_120b` uses a separate environment:
+
+```bash
+LEONARDO_ENV_PROFILE=gptoss_env \
+PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/gptoss_env \
+sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
+```
+
+The launcher routes that model through `GPTOSS_PYTHON_VENV` or the default
+`/leonardo_scratch/large/userexternal/avarini0/gptoss_env` path.
 
 ## Model Preparation
 

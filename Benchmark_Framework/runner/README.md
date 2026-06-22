@@ -81,12 +81,15 @@ For each job, `run_case.py`:
 3. Calls the model adapter.
 4. Parses `raw_text` and provider `reasoning_text` into separate plan sections.
 5. Validates each non-empty prefix of `parsed_plan.raw.actions` with VAL or the configured validator.
-6. Adds validator feedback for iterative repair protocols.
+6. Validates decoded reasoning candidates individually, then stores the best diagnostic candidate in `parsed_plan.reasoning.actions`.
+7. Adds validator feedback for iterative repair protocols.
 7. Computes normalized metrics.
 8. Writes `raw`, `parsed`, and `scored` artifacts when an output root is set.
 
 Prefix validation records the first valid prefix, whether the full generated
 plan is valid, and whether extra actions appeared after the first valid prefix.
+Reasoning-candidate selection prefers fully valid, non-truncated, final-marker-adjacent candidates;
+this never changes official `solved`, metrics, or raw validation.
 
 ## Validation
 
@@ -117,5 +120,8 @@ outputs/scored/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_
 the official extracted plan and `parsed_plan.reasoning` for diagnostic reasoning
 plan extraction; the reasoning section stores only a `source_ref`, not the full
 reasoning text. `scored` stores official raw validation plus diagnostic
-`reasoning_validation_result` fields when a reasoning plan was decoded. Metrics,
-repair, and `solved` still use only `parsed_plan.raw`. If a decoded reasoning plan validates while raw fails, repair feedback may include that decoded reasoning action sequence as a hint for the next final answer.
+`reasoning_validation_result` fields and reasoning-candidate selection metadata
+when reasoning candidates were decoded. Metrics, repair, and `solved` still use
+only `parsed_plan.raw`. If a decoded reasoning plan validates while raw fails,
+repair feedback may include that decoded reasoning action sequence as a hint for
+the next final answer.

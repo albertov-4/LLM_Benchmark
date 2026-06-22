@@ -30,13 +30,18 @@ scored as plan actions. The parser does not check preconditions or simulate
 state.
 
 Safe local repeats are expanded when attached to a valid action, including
-`repeat N times (action ...)`, `(action ...) xN`, `(action ...) *N`,
-`(action ...) N times`, and `(action ...) repeated N times`. The parser also
-accepts parenthesized local repeat shorthand such as `(repeat up 2 times)` or
-`(repeat go_south 59 times)` only when a previous one-argument action already
-established the current object. For one-argument actions, the parser also
-supports safe domain-derived compression such as `b4 up 2` and progressive
-numbered compressed lists such as `1 b4 up 2`.
+`repeat N times (action ...)`, `N times (action ...)`, `(repeat N times) (action ...)`,
+`(action ...) xN`, `(action ...) *N`, `(action ...) N times`, `(action ...) repeated N times`,
+and word counts such as `(action ...) twice`. The parser also accepts parenthesized local repeat
+shorthand such as `(repeat up 2 times)` or `(repeat go_south 59 times)` only when a previous
+one-argument action already established the current object. For one-argument actions, the parser
+also supports safe domain-derived compression such as `b4 up 2` and progressive numbered compressed
+lists such as `1 b4 up 2`.
+
+Reasoning text can contain multiple candidate plans. The parser exposes those candidates to the
+runner, including whether a candidate is near a final-answer marker and whether it appears truncated.
+The runner validates candidates individually and writes the selected diagnostic candidate back to
+`parsed_plan.reasoning.actions`.
 
 Parser issues:
 
@@ -54,6 +59,7 @@ Parser issues:
 - `compressed_actions_expanded`: a repeat or compressed action form was expanded into grounded actions.
 - `multiple_reasoning_candidate_plans`: more than one candidate action sequence was found in `reasoning_text`.
 - `ambiguous_reasoning_plan_selection`: multiple reasoning candidates tied under the selection heuristic.
+- `truncated_reasoning_candidate`: the selected reasoning candidate ended near an incomplete action fragment.
 - `no_valid_domain_actions_found`: no domain-valid actions were found when `domain_text` was available.
 - `no_parenthesized_actions_found`: no parenthesized actions were found in legacy parsing without `domain_text`.
 

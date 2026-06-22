@@ -295,6 +295,44 @@ Move b2:
         self.assertEqual(result.raw["actions"], [])
         self.assertIn("no_valid_domain_actions_found", result.raw["format_issues"])
 
+    def test_reasoning_candidates_include_multiple_sailing_plans(self) -> None:
+        reasoning_text = """First candidate:
+(go_south b0) x174
+(save_person b0 p0)
+
+Final answer:
+(accelerate b0) twice
+58 times (go_south b0)
+(decelerate b0) twice
+(save_person b0 p0)
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=SAILING_DOMAIN)
+        candidates = self.parser_module.extract_reasoning_candidates(reasoning_text, domain_text=SAILING_DOMAIN)
+
+        self.assertGreaterEqual(len(candidates), 2)
+        self.assertEqual(result.reasoning["actions"].count("(go_south b0)"), 58)
+        self.assertEqual(result.reasoning["actions"][0:2], ["(accelerate b0)", "(accelerate b0)"])
+        self.assertEqual(result.reasoning["actions"][-3:], ["(decelerate b0)", "(decelerate b0)", "(save_person b0 p0)"])
+
+    def test_parenthesized_repeat_count_before_action(self) -> None:
+        result = self.parser_module.parse_plan_text("", reasoning_text="(repeat 3 times) (go_south b0)", domain_text=SAILING_DOMAIN)
+
+        self.assertEqual(result.reasoning["actions"], ["(go_south b0)", "(go_south b0)", "(go_south b0)"])
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_reasoning_candidate_marks_truncated_action_fragment(self) -> None:
+        reasoning_text = """Final answer:
+(accelerate b0)
+(go_south"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=SAILING_DOMAIN)
+        candidates = self.parser_module.extract_reasoning_candidates(reasoning_text, domain_text=SAILING_DOMAIN)
+
+        self.assertTrue(candidates[0]["truncated"])
+        self.assertIn("truncated_reasoning_candidate", result.reasoning["format_issues"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

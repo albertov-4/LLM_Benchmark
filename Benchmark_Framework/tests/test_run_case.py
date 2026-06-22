@@ -588,6 +588,146 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertIsNone(scored_payload["attempts"][0]["reasoning_first_valid_prefix_length"])
             self.assertNotIn("messages", scored_payload["attempts"][0])
 
+    def test_reasoning_candidate_selection_prefers_valid_candidate(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_candidate_valid_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            def generate(self, messages):
+                return {
+                    "raw_text": "(move raw bad)",
+                    "reasoning_text": """Try:
+(move a b)
+
+Final answer:
+(move a b)
+(move b c)""",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=ReasoningAdapter(),
+            validator=PrefixLengthValidator(valid_prefix_length=2),
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        attempt = result.attempts[0]
+        self.assertFalse(result.solved)
+        self.assertTrue(attempt["reasoning_final_plan_valid"])
+        self.assertEqual(attempt["reasoning_valid_candidate_count"], 1)
+        self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)", "(move b c)"])
+
+    def test_reasoning_candidate_selection_prefers_final_marker_between_valid_candidates(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_candidate_final_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            def generate(self, messages):
+                return {
+                    "raw_text": "this is not a plan",
+                    "reasoning_text": """Candidate:
+(move x y)
+
+Final answer:
+(move a b)""",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=ReasoningAdapter(),
+            validator=PrefixLengthValidator(valid_prefix_length=1),
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        attempt = result.attempts[0]
+        self.assertEqual(attempt["reasoning_valid_candidate_count"], 2)
+        self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)"])
+
+    def test_reasoning_candidate_selection_penalizes_truncated_candidate(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_candidate_truncated_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            def generate(self, messages):
+                return {
+                    "raw_text": "this is not a plan",
+                    "reasoning_text": """Final answer:
+(move x y)
+(move
+
+Alternative:
+(move a b)""",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=ReasoningAdapter(),
+            validator=PrefixLengthValidator(valid_prefix_length=1),
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        attempt = result.attempts[0]
+        self.assertFalse(attempt["reasoning_selected_candidate_truncated"])
+        self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)"])
+
+    def test_reasoning_candidate_selection_keeps_best_invalid_candidate_diagnostic(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_candidate_invalid_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            def generate(self, messages):
+                return {
+                    "raw_text": "this is not a plan",
+                    "reasoning_text": """Candidate:
+(move x y)
+
+Final answer:
+(move a b)
+(move b c)""",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=ReasoningAdapter(),
+            validator=PrefixLengthValidator(valid_prefix_length=None),
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        attempt = result.attempts[0]
+        self.assertFalse(result.solved)
+        self.assertEqual(attempt["reasoning_valid_candidate_count"], 0)
+        self.assertFalse(attempt["reasoning_validation_result"]["valid"])
+        self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)", "(move b c)"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

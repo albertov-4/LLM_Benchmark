@@ -198,6 +198,10 @@ def _build_scored_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any
                 "reasoning_first_valid_plan_text": attempt.get("reasoning_first_valid_plan_text"),
                 "reasoning_final_plan_valid": attempt.get("reasoning_final_plan_valid"),
                 "reasoning_extra_actions_after_first_valid": attempt.get("reasoning_extra_actions_after_first_valid"),
+                "reasoning_candidate_count": attempt.get("reasoning_candidate_count"),
+                "reasoning_valid_candidate_count": attempt.get("reasoning_valid_candidate_count"),
+                "reasoning_selected_candidate_index": attempt.get("reasoning_selected_candidate_index"),
+                "reasoning_selected_candidate_truncated": attempt.get("reasoning_selected_candidate_truncated"),
                 "feedback_to_next_iteration": attempt.get("feedback_to_next_iteration"),
             }
         )
@@ -244,6 +248,16 @@ def _reasoning_actions(parsed_plan: dict[str, Any] | None) -> list[Any]:
     if isinstance(reasoning_plan, dict) and isinstance(reasoning_plan.get("actions"), list):
         return reasoning_plan["actions"]
     return []
+
+
+def _extract_reasoning_candidates(generation_reasoning: Any, domain_text: str | None) -> list[dict[str, Any]]:
+    parser_module = _load_framework_module(
+        "benchmark_framework_parser",
+        "evaluators/parser.py",
+    )
+    reasoning_text = "" if generation_reasoning is None else str(generation_reasoning)
+    extractor = getattr(parser_module, "extract_reasoning_candidates", None)
+    return extractor(reasoning_text, domain_text=domain_text) if extractor else []
 
 
 def _raw_format_issues(parsed_plan: dict[str, Any] | None) -> list[str]:
@@ -436,6 +450,46 @@ def _validate_action_prefixes(
             else None
         ),
     }
+
+
+def _select_reasoning_candidate(
+    validator,
+    task_spec: TaskSpec,
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    records: list[dict[str, Any]] = []
+    for candidate in candidates:
+        actions = [action for action in candidate.get("actions", []) if isinstance(action, str)]
+        if not actions:
+            continue
+        summary = _validate_action_prefixes(validator, task_spec, actions)
+        records.append({"candidate": candidate, "summary": summary})
+
+    if not records:
+        return None
+
+    valid_count = sum(1 for record in records if record["summary"].get("final_plan_valid"))
+
+    def key(record: dict[str, Any]) -> tuple[Any, ...]:
+        candidate = record["candidate"]
+        summary = record["summary"]
+        final_valid = bool(summary.get("final_plan_valid"))
+        action_count = len(candidate.get("actions", []))
+        first_valid = summary.get("first_valid_prefix_length") or 0
+        return (
+            final_valid,
+            not bool(candidate.get("truncated")),
+            bool(candidate.get("near_final_marker")),
+            int(candidate.get("source_index", 0)),
+            -len(candidate.get("format_issues", [])),
+            -action_count if final_valid else first_valid,
+            -action_count,
+        )
+
+    selected = max(records, key=key)
+    selected["candidate_count"] = len(candidates)
+    selected["valid_candidate_count"] = valid_count
+    return selected
 
 
 def build_task_spec(task_family: str, tier: str, instance_id: str, domain_file: str, problem_file: str) -> TaskSpec:
@@ -673,6 +727,10 @@ def run_generation_loop(
                     "reasoning_first_valid_plan_text": None,
                     "reasoning_final_plan_valid": None,
                     "reasoning_extra_actions_after_first_valid": None,
+                    "reasoning_candidate_count": None,
+                    "reasoning_valid_candidate_count": None,
+                    "reasoning_selected_candidate_index": None,
+                    "reasoning_selected_candidate_truncated": None,
                     "feedback_to_next_iteration": None,
                 }
             )
@@ -717,6 +775,17 @@ def run_generation_loop(
             generation.get("reasoning_text", ""),
             task_inputs.get("domain_text"),
         )
+        reasoning_selection = _select_reasoning_candidate(
+            validator,
+            task_spec,
+            _extract_reasoning_candidates(generation.get("reasoning_text", ""), task_inputs.get("domain_text")),
+        )
+        if reasoning_selection:
+            selected_candidate = reasoning_selection["candidate"]
+            reasoning_plan = parsed_plan.setdefault("reasoning", {})
+            reasoning_plan["actions"] = selected_candidate.get("actions", [])
+            reasoning_plan["format_issues"] = selected_candidate.get("format_issues", [])
+            reasoning_plan.setdefault("source_ref", {"artifact": "raw", "field": "generation.reasoning_text"})
         last_parsed_plan = parsed_plan
         actions = _raw_actions(parsed_plan)
         action_count = len(actions) if isinstance(actions, list) else 0
@@ -742,16 +811,15 @@ def run_generation_loop(
             "reasoning_first_valid_plan_text": None,
             "reasoning_final_plan_valid": None,
             "reasoning_extra_actions_after_first_valid": None,
+            "reasoning_candidate_count": reasoning_selection.get("candidate_count") if reasoning_selection else None,
+            "reasoning_valid_candidate_count": reasoning_selection.get("valid_candidate_count") if reasoning_selection else None,
+            "reasoning_selected_candidate_index": reasoning_selection["candidate"].get("source_index") if reasoning_selection else None,
+            "reasoning_selected_candidate_truncated": reasoning_selection["candidate"].get("truncated") if reasoning_selection else None,
             "feedback_to_next_iteration": None,
         }
 
-        reasoning_actions = [action for action in _reasoning_actions(parsed_plan) if isinstance(action, str)]
-        if reasoning_actions:
-            reasoning_summary = _validate_action_prefixes(
-                validator=validator,
-                task_spec=task_spec,
-                actions=reasoning_actions,
-            )
+        reasoning_summary = reasoning_selection["summary"] if reasoning_selection else None
+        if reasoning_summary:
             attempt_record["reasoning_validation_result"] = reasoning_summary["validation_result"]
             attempt_record["reasoning_first_valid_prefix_length"] = reasoning_summary["first_valid_prefix_length"]
             attempt_record["reasoning_first_valid_plan_text"] = reasoning_summary["first_valid_plan_text"]

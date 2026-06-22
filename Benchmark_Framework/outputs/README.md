@@ -70,6 +70,16 @@ Only `raw.actions` is official for validation, repair, metrics, and `solved`.
 `reasoning_validation_result` fields are diagnostic and never repair or replace
 the final answer.
 
+Scored attempts may also include reasoning-candidate metadata:
+
+- `reasoning_candidate_count`
+- `reasoning_valid_candidate_count`
+- `reasoning_selected_candidate_index`
+- `reasoning_selected_candidate_truncated`
+
+These fields explain which decoded reasoning candidate was selected after
+individual validation. They do not affect official scoring.
+
 ## Cleanup
 
 Generated outputs can be listed and removed interactively with:

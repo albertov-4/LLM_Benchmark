@@ -11,7 +11,9 @@ LIST_PREFIX_PATTERN = re.compile(r"^\s*(?:[-*+]\s+|\d+[\).\]:-]?\s+)")
 PLAN_MARKER_PATTERNS = (
     re.compile(r"^\s*(?:final\s+plan|final\s+answer|plan|actions?|action\s+sequence|answer)\s*:?\s*(.*)$", re.IGNORECASE),
 )
+FINAL_MARKER_PATTERN = re.compile(r"\bfinal\s+(?:answer|plan|action\s+sequence)\b|\bnow\s+produce\s+final\b", re.IGNORECASE)
 SOURCE_REF = {"artifact": "raw", "field": "generation.reasoning_text"}
+WORD_COUNTS = {"once": 1, "twice": 2, "thrice": 3}
 
 
 class ParsedPlan:
@@ -107,14 +109,19 @@ def _normalize_action(action_text: str, schemas: dict[str, dict[str, Any]] | Non
 def _repeat_count(line: str, start: int, end: int) -> int:
     before = line[:start].lower()
     after = line[end:].lower()
+    word_pattern = "|".join(WORD_COUNTS)
     patterns = (
-        re.search(r"(?:repeat\s+exactly|repeat(?:ed)?)\s+(\d+)\s+times?\s*$", before),
+        re.search(r"\(?\s*(?:repeat\s+exactly|repeat(?:ed)?)\s+(\d+)\s+times?\s*\)?\s*$", before),
+        re.search(r"(\d+)\s+times?\s*$", before),
+        re.search(r"\b(" + word_pattern + r")\s*$", before),
         re.search(r"^\s*(?:x|\*)\s*(\d+)\b", after),
         re.search(r"^\s*(?:repeated\s+|for\s+)?(\d+)\s+times?\b", after),
+        re.search(r"^\s*(" + word_pattern + r")\b", after),
     )
     for match in patterns:
         if match:
-            return max(1, int(match.group(1)))
+            value = match.group(1)
+            return WORD_COUNTS[value] if value in WORD_COUNTS else max(1, int(value))
     return 1
 
 
@@ -216,7 +223,9 @@ def _line_actions(
     alias_map: dict[str, str],
     current_object: str | None,
 ) -> tuple[list[str], list[str], str | None]:
-    stripped = _strip_list_prefix(line)
+    stripped = re.sub(r"^\s*\d+\s*-\s*\d+\s*:\s*", "", line.strip())
+    if not re.match(r"^\d+\s+times?\b", stripped, re.IGNORECASE):
+        stripped = _strip_list_prefix(stripped)
     matches = list(ACTION_PATTERN.finditer(stripped))
     actions: list[str] = []
     issues: list[str] = []
@@ -256,9 +265,112 @@ def _line_actions(
     return compressed, compressed_issues, current_object
 
 
+def _line_has_truncated_action(line: str, schemas: dict[str, dict[str, Any]] | None) -> bool:
+    stripped = line.strip()
+    if stripped.count("(") <= stripped.count(")"):
+        return False
+    fragment = stripped[stripped.rfind("(") + 1 :].strip()
+    if not fragment:
+        return True
+    action_name = fragment.split()[0].lower()
+    return schemas is None or action_name in schemas
+
+
 def _leading_list_number(line: str) -> int | None:
+    if re.match(r"^\s*\d+\s+times?\b", line, re.IGNORECASE):
+        return None
     match = re.match(r"^\s*(\d+)[\).\]:-]?\s+", line)
     return int(match.group(1)) if match else None
+
+
+def _candidate(
+    actions: list[str],
+    issues: list[str],
+    source_index: int,
+    near_final_marker: bool,
+    truncated: bool = False,
+    numbered: bool = False,
+) -> dict[str, Any]:
+    candidate_issues = list(issues)
+    if truncated:
+        candidate_issues.append("truncated_reasoning_candidate")
+    return {
+        "actions": list(actions),
+        "format_issues": _dedupe_preserve_order(candidate_issues),
+        "source_index": source_index,
+        "near_final_marker": near_final_marker,
+        "truncated": truncated,
+        "numbered": numbered,
+    }
+
+
+def _extract_action_candidates(
+    text: str,
+    schemas: dict[str, dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    issues: list[str] = []
+    candidates: list[dict[str, Any]] = []
+    current_segment: list[str] = []
+    current_issues: list[str] = []
+    current_numbered_segment: list[str] = []
+    current_numbered_issues: list[str] = []
+    current_near_final = False
+    numbered_near_final = False
+    expected_number: int | None = None
+    current_object: str | None = None
+    alias_map = _build_alias_map(schemas)
+
+    def flush_segment(truncated: bool = False) -> None:
+        nonlocal current_segment, current_issues, current_near_final
+        if current_segment:
+            candidates.append(_candidate(current_segment, current_issues, len(candidates), current_near_final, truncated))
+        current_segment = []
+        current_issues = []
+        current_near_final = False
+
+    def flush_numbered(truncated: bool = False) -> None:
+        nonlocal current_numbered_segment, current_numbered_issues, numbered_near_final
+        if current_numbered_segment:
+            candidates.append(
+                _candidate(current_numbered_segment, current_numbered_issues, len(candidates), numbered_near_final, truncated, True)
+            )
+        current_numbered_segment = []
+        current_numbered_issues = []
+        numbered_near_final = False
+
+    marker_pending = False
+    for line in text.splitlines():
+        marker_pending = marker_pending or bool(FINAL_MARKER_PATTERN.search(line))
+        line_actions, line_issues, current_object = _line_actions(line, schemas, alias_map, current_object)
+        issues.extend(line_issues)
+        line_number = _leading_list_number(line)
+        if line_actions:
+            current_segment.extend(line_actions)
+            current_issues.extend(line_issues)
+            current_near_final = current_near_final or marker_pending
+            if line_number is not None:
+                if expected_number is not None and line_number != expected_number:
+                    flush_numbered()
+                current_numbered_segment.extend(line_actions)
+                current_numbered_issues.extend(line_issues)
+                numbered_near_final = numbered_near_final or marker_pending
+                expected_number = line_number + 1
+            elif current_numbered_segment:
+                flush_numbered()
+                expected_number = None
+            marker_pending = False
+            continue
+
+        truncated = _line_has_truncated_action(line, schemas)
+        if current_segment:
+            flush_segment(truncated)
+        if truncated:
+            flush_numbered(True)
+            expected_number = None
+
+    flush_segment()
+    flush_numbered()
+    return candidates, _dedupe_preserve_order(issues)
 
 
 def _extract_actions(
@@ -267,53 +379,40 @@ def _extract_actions(
     *,
     select_candidate: bool = False,
 ) -> tuple[list[str], list[str]]:
-    actions: list[str] = []
-    issues: list[str] = []
-    segments: list[list[str]] = []
-    numbered_segments: list[list[str]] = []
-    current_segment: list[str] = []
-    current_numbered_segment: list[str] = []
-    expected_number: int | None = None
-    current_object: str | None = None
-    alias_map = _build_alias_map(schemas)
+    candidates, issues = _extract_action_candidates(text, schemas)
+    unnumbered = [candidate for candidate in candidates if not candidate.get("numbered")] or candidates
+    actions = [action for candidate in unnumbered for action in candidate["actions"]]
 
-    for line in text.splitlines():
-        line_actions, line_issues, current_object = _line_actions(line, schemas, alias_map, current_object)
-        issues.extend(line_issues)
-        line_number = _leading_list_number(line)
-        if line_actions:
-            actions.extend(line_actions)
-            current_segment.extend(line_actions)
-            if line_number is not None:
-                if expected_number is not None and line_number != expected_number:
-                    if current_numbered_segment:
-                        numbered_segments.append(current_numbered_segment)
-                    current_numbered_segment = []
-                current_numbered_segment.extend(line_actions)
-                expected_number = line_number + 1
-            elif current_numbered_segment:
-                numbered_segments.append(current_numbered_segment)
-                current_numbered_segment = []
-                expected_number = None
-            continue
-        if current_segment:
-            segments.append(current_segment)
-            current_segment = []
-    if current_segment:
-        segments.append(current_segment)
-    if current_numbered_segment:
-        numbered_segments.append(current_numbered_segment)
-
-    if select_candidate and (numbered_segments or segments):
-        candidate_segments = numbered_segments or segments
-        if len(candidate_segments) > 1:
+    if select_candidate and candidates:
+        candidate_pool = [candidate for candidate in candidates if candidate.get("numbered")] or candidates
+        if len(candidate_pool) > 1:
             issues.append("multiple_reasoning_candidate_plans")
-        best_index, best_segment = max(enumerate(candidate_segments), key=lambda item: (len(item[1]), item[0]))
-        if len(candidate_segments) > 1 and sum(1 for segment in candidate_segments if len(segment) == len(best_segment)) > 1:
+        best = max(
+            candidate_pool,
+            key=lambda candidate: (
+                bool(candidate["near_final_marker"]),
+                int(candidate["source_index"]),
+                len(candidate["actions"]),
+            ),
+        )
+        if len(candidate_pool) > 1 and sum(1 for candidate in candidate_pool if len(candidate["actions"]) == len(best["actions"])) > 1:
             issues.append("ambiguous_reasoning_plan_selection")
-        actions = list(best_segment)
+        actions = list(best["actions"])
+        issues.extend(best["format_issues"])
 
     return actions, _dedupe_preserve_order(issues)
+
+
+def extract_reasoning_candidates(reasoning_text: str, domain_text: str | None = None) -> list[dict[str, Any]]:
+    """Return domain-valid reasoning plan candidates without selecting one."""
+    if not reasoning_text or not reasoning_text.strip():
+        return []
+    schemas = _parse_domain_actions(domain_text)
+    cleaned_text, fence_issues = _strip_markdown_fences(reasoning_text)
+    candidates, shared_issues = _extract_action_candidates(cleaned_text, schemas)
+    for candidate in candidates:
+        candidate["format_issues"] = _dedupe_preserve_order(fence_issues + shared_issues + candidate["format_issues"])
+    return candidates
 
 
 def _split_reasoning_and_plan(text: str) -> tuple[str, str, list[str]]:

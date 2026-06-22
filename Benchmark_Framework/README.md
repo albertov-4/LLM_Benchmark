@@ -48,6 +48,7 @@ Benchmark_Framework/
 |-- tasks/                PDDL domains and benchmark instances
 |-- tests/                unit and integration-style tests
 |-- utils/                bundled VAL binaries for Linux and Windows
+|-- advanced_planning_evaluation_sp.py
 |-- clear_outputs.py
 `-- run_benchmark.py
 ```
@@ -112,10 +113,11 @@ selected models x selected protocols x selected task cases
    entries, filters the matrix, optionally preflights PDDL files with VAL, and
    starts each job.
 3. `runner/run_case.py` builds messages, calls the selected model adapter,
-   parses candidate PDDL actions, validates every non-empty action prefix, and
-   computes metrics.
+   parses `raw_text` with the task domain, validates every non-empty prefix of
+   `parsed_plan.raw.actions`, and computes metrics.
 4. `evaluators/` normalizes parser, validator, error, and metric payloads so
-   all backends can be compared.
+   all backends can be compared. `parsed_plan.reasoning` is diagnostic only and
+   never replaces the raw final answer for scoring.
 5. `outputs/` receives per-case artifacts and suite summaries. Top-level
    analysis notebooks and reports read those artifacts later.
 
@@ -240,6 +242,20 @@ Generated outputs and NVIDIA lane logs can be removed interactively with:
 
 ```powershell
 python Benchmark_Framework/clear_outputs.py
+```
+
+## Advanced Evaluation Reports
+
+`advanced_planning_evaluation_sp.py` is the reusable script version of the
+advanced planning evaluation notebook. It reads completed artifacts from
+`outputs/raw`, `outputs/parsed`, and `outputs/scored`, then writes model-centric
+JSON reports and optional plot folders under the repository-level `results/`
+directory.
+
+Run it from the repository root:
+
+```powershell
+python Benchmark_Framework/advanced_planning_evaluation_sp.py
 ```
 
 ## Additional Documentation

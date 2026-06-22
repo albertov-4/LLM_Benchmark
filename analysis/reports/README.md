@@ -4,7 +4,9 @@ This folder stores exported benchmark reports and report assets. It may contain
 LaTeX sources, generated PDFs, figures, and supporting files.
 
 Current report artifacts are generated from benchmark outputs and domain
-complexity summaries. They are useful for sharing final tables and plots, but
+complexity summaries. Machine-readable advanced-evaluation JSON reports and
+plot folders are generated separately under the repository-level `results/`
+folder. Report artifacts are useful for sharing final tables and plots, but
 they are not used by the runner.
 
 Recommended organization:

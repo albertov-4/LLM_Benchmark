@@ -8,17 +8,11 @@ models, starting with `hf_local` entries.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from dataclasses import dataclass
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
-
-
-HF_REPO_ID_PATTERN = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
-)
 
 
 @dataclass(slots=True)
@@ -50,14 +44,27 @@ def _framework_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _load_config_loader():
-    module_path = _framework_root() / "utils" / "config_loader.py"
-    spec = spec_from_file_location("benchmark_framework_prepare_models_config_loader", module_path)
+def _load_framework_module(module_key: str, relative_path: str):
+    module_path = _framework_root() / relative_path
+    spec = spec_from_file_location(module_key, module_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load module from {module_path}")
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_config_loader():
+    return _load_framework_module(
+        "benchmark_framework_prepare_models_config_loader",
+        "utils/config_loader.py",
+    )
+
+
+_hf_paths = _load_framework_module(
+    "benchmark_framework_prepare_models_hf_paths",
+    "models/adapters/hf_paths.py",
+)
 
 
 def resolve_framework_path(path_value: str | Path, framework_root: Path) -> Path:
@@ -91,43 +98,19 @@ def load_model_registry(model_registry_path: str | Path) -> list[ModelRegistryEn
 
 
 def looks_like_hf_repo_id(value: str) -> bool:
-    text = value.strip()
-    if not text or "\\" in text or text.startswith(("/", ".")):
-        return False
-    if ":" in text or " " in text:
-        return False
-    return HF_REPO_ID_PATTERN.match(text) is not None
-
-
-def _candidate_local_paths(path_text: str, registry_path: Path, framework_root: Path) -> list[Path]:
-    raw_path = Path(path_text).expanduser()
-    if raw_path.is_absolute():
-        return [raw_path]
-
-    return [
-        Path.cwd() / raw_path,
-        registry_path.parent / raw_path,
-        framework_root / raw_path,
-    ]
+    return _hf_paths.looks_like_hf_repo_id(value)
 
 
 def is_existing_local_model(path_text: str, registry_path: Path, framework_root: Path) -> Path | None:
-    if not path_text.strip():
-        return None
-
-    for candidate in _candidate_local_paths(path_text, registry_path, framework_root):
-        if candidate.exists() and candidate.is_dir():
-            return candidate.resolve()
-    return None
+    return _hf_paths.existing_local_model_path(path_text, framework_root, registry_path.parent)
 
 
 def local_dir_for_hf_repo(models_dir: Path, repo_id: str) -> Path:
-    safe_name = repo_id.replace("/", "__")
-    return models_dir / safe_name
+    return _hf_paths.local_dir_for_hf_repo(models_dir, repo_id)
 
 
 def is_prepared_model_dir(path_value: Path) -> bool:
-    return path_value.exists() and path_value.is_dir() and any(path_value.iterdir())
+    return _hf_paths.is_prepared_model_dir(path_value)
 
 
 def download_hf_snapshot(repo_id: str, local_dir: Path) -> Path:

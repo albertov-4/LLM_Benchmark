@@ -8,7 +8,6 @@ before falling back to the Hub. The standard `HF_HUB_OFFLINE` and
 Hugging Face libraries.
 """
 
-import re
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -18,20 +17,24 @@ from typing import Any
 import sys
 
 
-HF_REPO_ID_PATTERN = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
-)
-THINKING_TAG_PATTERN = re.compile(
-    r"<(?P<tag>think|thinking|reasoning|analysis)\b[^>]*>(?P<body>.*?)</(?P=tag)>",
-    re.IGNORECASE | re.DOTALL,
-)
-OPEN_THINKING_TAG_PATTERN = re.compile(
-    r"^\s*<(?P<tag>think|thinking|reasoning|analysis)\b[^>]*>(?P<body>.*)$",
-    re.IGNORECASE | re.DOTALL,
-)
-FINAL_MARKER_PATTERN = re.compile(
-    r"(?im)^\s*(?:final\s+answer|final\s+plan|answer|plan|actions?)\s*:?\s*$"
-)
+try:
+    from models.adapters.hf_paths import (
+        candidate_local_paths,
+        existing_local_model_path,
+        is_prepared_model_dir,
+        local_dir_for_hf_repo,
+        looks_like_hf_repo_id,
+    )
+    from models.adapters.text_utils import extract_reasoning_from_text
+except ModuleNotFoundError:  # pragma: no cover - depends on launch cwd
+    from Benchmark_Framework.models.adapters.hf_paths import (
+        candidate_local_paths,
+        existing_local_model_path,
+        is_prepared_model_dir,
+        local_dir_for_hf_repo,
+        looks_like_hf_repo_id,
+    )
+    from Benchmark_Framework.models.adapters.text_utils import extract_reasoning_from_text
 
 
 def _install_transformers_generation_compatibility_shim() -> None:
@@ -48,82 +51,6 @@ def _install_transformers_generation_compatibility_shim() -> None:
     for legacy_name in ("GreedySearchDecoderOnlyOutput", "SampleDecoderOnlyOutput"):
         if not hasattr(generation_module, legacy_name):
             setattr(generation_module, legacy_name, generate_decoder_only_output)
-
-
-def _clean_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
-def _join_nonempty(parts: list[str]) -> str:
-    return "\n\n".join(part.strip() for part in parts if part and part.strip()).strip()
-
-
-def _normalize_text(text: str) -> str:
-    lines = [line.rstrip() for line in text.strip().splitlines()]
-    normalized: list[str] = []
-    previous_blank = False
-    for line in lines:
-        is_blank = not line.strip()
-        if is_blank and previous_blank:
-            continue
-        normalized.append(line)
-        previous_blank = is_blank
-    return "\n".join(normalized).strip()
-
-
-def _extract_reasoning_from_text(raw_text: Any, explicit_reasoning: Any = "") -> dict[str, Any]:
-    answer_text = _clean_text(raw_text)
-    reasoning_parts: list[str] = []
-    notes: list[str] = []
-
-    provider_reasoning = _clean_text(explicit_reasoning)
-    if provider_reasoning:
-        reasoning_parts.append(provider_reasoning)
-        notes.append("provider reasoning captured separately from raw_text.")
-
-    inline_reasoning_parts: list[str] = []
-
-    def replace_thinking_block(match: re.Match[str]) -> str:
-        inline_reasoning = _clean_text(match.group("body"))
-        if inline_reasoning:
-            inline_reasoning_parts.append(inline_reasoning)
-        return "\n"
-
-    answer_text = THINKING_TAG_PATTERN.sub(replace_thinking_block, answer_text)
-
-    if inline_reasoning_parts:
-        reasoning_parts.extend(inline_reasoning_parts)
-        notes.append("inline reasoning extracted from raw_text.")
-    else:
-        open_match = OPEN_THINKING_TAG_PATTERN.match(answer_text)
-        if open_match:
-            body = _clean_text(open_match.group("body"))
-            marker = FINAL_MARKER_PATTERN.search(body)
-            if marker:
-                inline_reasoning = _clean_text(body[: marker.start()])
-                final_answer = _clean_text(body[marker.end() :])
-                if inline_reasoning and final_answer:
-                    reasoning_parts.append(inline_reasoning)
-                    answer_text = final_answer
-                    notes.append("inline reasoning extracted from raw_text.")
-
-    return {
-        "raw_text": _normalize_text(answer_text),
-        "reasoning_text": _join_nonempty(reasoning_parts),
-        "notes": notes,
-    }
-
-
-def looks_like_hf_repo_id(value: str) -> bool:
-    """Return whether a value has the shape of a Hugging Face repo id."""
-    text = value.strip()
-    if not text or "\\" in text or text.startswith(("/", ".")):
-        return False
-    if ":" in text or " " in text:
-        return False
-    return HF_REPO_ID_PATTERN.match(text) is not None
 
 
 @dataclass(slots=True)
@@ -182,33 +109,20 @@ class HFLocalAdapter:
 
     def _candidate_local_paths(self, path_text: str) -> list[Path]:
         """Return plausible local paths for a registry path value."""
-        raw_path = Path(path_text).expanduser()
-        if raw_path.is_absolute():
-            return [raw_path]
-
-        return [
-            Path.cwd() / raw_path,
-            self._framework_root() / raw_path,
-        ]
+        return candidate_local_paths(path_text, self._framework_root())
 
     def _existing_local_model_path(self, path_text: str) -> Path | None:
         """Return an existing local model path for a registry path, if any."""
-        if not path_text.strip():
-            return None
-
-        for candidate in self._candidate_local_paths(path_text):
-            if candidate.exists() and candidate.is_dir():
-                return candidate.resolve()
-        return None
+        return existing_local_model_path(path_text, self._framework_root())
 
     def _prepared_model_path_for_repo(self, repo_id: str) -> Path:
         """Return the models_cache directory used by prepare_models.py."""
-        return self._models_cache_dir() / repo_id.replace("/", "__")
+        return local_dir_for_hf_repo(self._models_cache_dir(), repo_id)
 
     def _existing_prepared_model_path(self, repo_id: str) -> Path | None:
         """Return a prepared models_cache path for a repo id, if present."""
         candidate = self._prepared_model_path_for_repo(repo_id)
-        if candidate.exists() and candidate.is_dir() and any(candidate.iterdir()):
+        if is_prepared_model_dir(candidate):
             return candidate.resolve()
         return None
 
@@ -578,7 +492,7 @@ class HFLocalAdapter:
 
         generated_tokens = self._extract_generated_tokens(generation_output, prompt_token_count)
         raw_text = tokenizer_like.decode(generated_tokens, skip_special_tokens=True).strip()
-        extracted = _extract_reasoning_from_text(raw_text)
+        extracted = extract_reasoning_from_text(raw_text)
         raw_text = extracted["raw_text"]
         completion_tokens = self._count_tokens(generated_tokens)
 

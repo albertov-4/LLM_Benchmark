@@ -84,7 +84,9 @@ prompting:
 ```
 
 The runner combines this text with validator output, including status, error
-type, failed step, failed action, and validator feedback when available. The
+type, failed step, failed action, and validator feedback when available. If the
+provider reasoning contains a decoded valid plan while the raw final answer does
+not, the repair message can include that decoded action sequence as a hint. The
 model is asked to return a complete corrected plan.
 
 ## Protocol Assembly
@@ -127,3 +129,9 @@ previous messages
 ```
 
 Each attempt is saved in the output artifacts.
+
+Repair feedback may include raw parse issues such as unknown actions, wrong
+arity, reasoning mixed into the final answer, or missing domain-valid actions.
+It must still ask for a complete corrected sequence of PDDL actions, one per
+line. Provider-side reasoning is not official scoring input, but a decoded valid
+reasoning plan may be echoed as a repair hint when raw output fails.

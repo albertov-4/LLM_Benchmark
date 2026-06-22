@@ -41,9 +41,34 @@ outputs/scored/<run_id>/suite_results/<model_id>__<task_family>.json
 ## What Each Layer Means
 
 - `raw`: what was sent to the model and what the adapter returned.
-- `parsed`: what the parser extracted from model text.
-- `scored`: what VAL and the metric layer concluded.
+- `parsed`: `parsed_plan.raw` official actions plus `parsed_plan.reasoning` diagnostic actions.
+- `scored`: what VAL and the metric layer concluded from `parsed_plan.raw.actions`.
 - `logs`: stdout routed from parallel NVIDIA model lanes, when enabled.
+
+## Parsed Plan Schema
+
+Parsed artifacts store attempts as:
+
+```json
+"parsed_plan": {
+  "raw": {
+    "actions": [],
+    "format_issues": [],
+    "contains_reasoning": false,
+    "source_kind": "clean_raw_plan"
+  },
+  "reasoning": {
+    "actions": [],
+    "format_issues": [],
+    "source_ref": {"artifact": "raw", "field": "generation.reasoning_text"}
+  }
+}
+```
+
+Only `raw.actions` is official for validation, repair, metrics, and `solved`.
+`reasoning.actions` is validated in scored artifacts when present, but those
+`reasoning_validation_result` fields are diagnostic and never repair or replace
+the final answer.
 
 ## Cleanup
 

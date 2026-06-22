@@ -35,6 +35,8 @@ loads an explicit registry and takes precedence over `--adapter`.
 - `provider`: descriptive provider/runtime label.
 - `enabled`: included in full runs when no `--model-id` is supplied.
 - `reasoning_notes`: setup notes, expected limitations, or model behavior.
+  Provider-side reasoning is diagnostic only; benchmark scoring uses the final
+  plan extracted from adapter `raw_text`.
 - `temperature`, `top_p`, `max_tokens`, `timeout_seconds`: generation/runtime
   settings used where the adapter supports them.
 
@@ -56,7 +58,8 @@ Important fields:
 
 The adapter resolves model sources in this order: explicit local path,
 `models_cache/<namespace>__<repo>` for prepared Hub models, then the original
-repo id or configured value.
+repo id or configured value. Runtime loading and `scripts/prepare_models.py`
+use the same repo-id detection and cache-directory naming rules.
 
 Prepare local models with:
 

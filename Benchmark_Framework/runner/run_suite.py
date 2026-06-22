@@ -52,7 +52,6 @@ _config_loader = _load_framework_module(
 )
 
 
-TIERS = _suite_discovery.TIERS
 DiscoveredTaskCase = _suite_discovery.DiscoveredTaskCase
 SuiteJob = _suite_discovery.SuiteJob
 discover_task_cases = _suite_discovery.discover_task_cases
@@ -63,32 +62,21 @@ summarize_suite_inputs = _suite_discovery.summarize_suite_inputs
 _task_case_key = _suite_discovery.task_case_key
 
 LoadedProtocolConfig = _suite_config.LoadedProtocolConfig
-LoadedPromptBundle = _suite_config.LoadedPromptBundle
-load_model_registry_entries = _suite_config.load_model_registry_entries
+load_model_registry_entries = _config_loader.load_model_registry_entries
 load_protocol_config = _suite_config.load_protocol_config
 load_prompt_bundle = _suite_config.load_prompt_bundle
-_read_text_if_exists = _suite_config._read_text_if_exists
-_read_required_text = _suite_config._read_required_text
 
-_UnavailableAdapter = _suite_adapters._UnavailableAdapter
-_parse_optional_int = _suite_adapters._parse_optional_int
 build_model_adapter = _suite_adapters.build_model_adapter
 
-_UnavailableValidator = _suite_validators._UnavailableValidator
 _resolve_validate_command = _suite_validators._resolve_validate_command
-build_real_val_validator = _suite_validators.build_real_val_validator
 build_validator = _suite_validators.build_validator
 run_task_preflights = _suite_validators.run_task_preflights
 _build_preflight_error_payloads = _suite_validators._build_preflight_error_payloads
 
 _normalize_record = _suite_aggregation._normalize_record
 _build_suite_result_summary = _suite_aggregation._build_suite_result_summary
-_new_aggregate_bucket = _suite_aggregation._new_aggregate_bucket
-_update_aggregate_bucket = _suite_aggregation._update_aggregate_bucket
-_finalize_aggregate_bucket = _suite_aggregation._finalize_aggregate_bucket
 aggregate_suite_results = _suite_aggregation.aggregate_suite_results
 
-_parse_scalar = _config_loader.parse_scalar
 
 
 class _ThreadLocalStdout:

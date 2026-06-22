@@ -1,8 +1,60 @@
 # LLM_Benchmark
 
-## Couple of Notes
-- Ho organizzato la cartella riferimenti con le repo date dalla prof, consiglio di installare github desktop a tutti e scaricare la repo e farsi github desktop collegandolo a vscode come ho fatto io (basta aprire vscode selezionando come folder attiva quella della repo), in tal modo si lavora solo da vs code per qualsiasi cosa, ricordarsi di installare i pacchetti dalla cartella requirements del benchmark.
-- Avevo ipotizzato che visto che dobbiamo creare un benchmark per testare capacita di planning di LLM si possono avere tre diversi domini di planning di cui due sono quelli gia implementati da alessandro gentili (repo si trova nella cartella refs) che sono planning urbano/logico (citycar) e planning spaziale (tetris) si potrebbe aggiungere un terzo planning e cioè un planning temporale, cosi avremmo un benchmark piu serio e scelti alcuni LLM confrontare i risultati OPPURE ho aggiunto un'altra cartella che ci ha dato la de filippo che contiene diversi domini di planning che sono diventatui standard per testare LLM e quindi potremmo vedere di prendere qualcuno di quelli, le istanze sono tutte in Pddl (quanto odio quella merda). io ora non riesco a vedere oltre visto che devo volare a òvaoro porcoddddue.
-- Visto che c'era l'eventualità di avere LLM che girino in locale e simo spezia mi ha accennato a delle repo github contenenti diversi dati si potrebbero analizzare tali dati e inserire quelli utili nella nostra repo
-- Bisognerebbe anche creare una cartella nella repo con dentro i papers consigliati dalla de filippo nelle ultime mail; se riesco lo faccio ora prima di condividervi la repo
-- Prossimi passi da intraprendere potrebbero essere quelli di capire la gerarchia di cartelle dentro alla repo di alessandro gentili (quella fatta meglio delle due) utilizzancdo anche i file readme e comprendere scopo e definizione di tutte le funzioni nei files, si puo fare direttamente da vscode come citato prima
+This repository contains a benchmark for evaluating language models on PDDL
+planning tasks. The active execution framework builds prompts, calls model
+backends, parses candidate plans, validates them with VAL, and writes comparable
+raw, parsed, and scored artifacts for later analysis.
+
+## Repository Layout
+
+```text
+LLM_Benchmark/
+|-- Benchmark_Framework/   benchmark runner, tasks, adapters, prompts, tests
+|-- analysis/              notebooks, reports, and domain-complexity summaries
+|-- results/               generated advanced-evaluation JSON and plots
+`-- archive/               papers, reference repos, and historical material
+```
+
+`Benchmark_Framework/` is the runnable benchmark. `analysis/` reads completed
+benchmark outputs and explains the analysis workflow. `results/` stores generated
+advanced-evaluation JSON reports and plot folders. `archive/` is kept for
+background material and is not part of the execution path.
+
+## Quick Start
+
+From the repository root:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r Benchmark_Framework/requirements/leonardo-our-env.txt
+```
+
+Run a benchmark with the real VAL validator:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --use-real-validator
+```
+
+Run a narrower smoke-style benchmark:
+
+```powershell
+python Benchmark_Framework/run_benchmark.py --protocol-id direct_plan --task-family fo-sailing --tier easy --instance-id pfile1 --use-real-validator
+```
+
+Run the test suite:
+
+```powershell
+python -m unittest discover -s Benchmark_Framework/tests -p "test_*.py"
+```
+
+## Documentation
+
+- [Benchmark Framework](Benchmark_Framework/README.md): execution flow, task
+  matrix, adapters, protocols, outputs, and subsystem links.
+- [Setup](Benchmark_Framework/SETUP.md): local, API, VAL, and Leonardo/HPC
+  setup details.
+- [Analysis](analysis/README.md): how notebooks and reports consume benchmark
+  artifacts.
+- [Archive](archive/README.md): reference repositories, papers, and historical
+  planning-domain material.

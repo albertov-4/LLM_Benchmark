@@ -2,8 +2,8 @@
 
 This folder contains the analysis layer for benchmark results. It is separate
 from execution: benchmark runs write artifacts under
-`Benchmark_Framework/outputs/`, and analysis notebooks or reports read those
-artifacts afterward.
+`Benchmark_Framework/outputs/`, and analysis notebooks, reports, or the advanced
+evaluation CLI read those artifacts afterward.
 
 ## Contents
 
@@ -14,9 +14,11 @@ analysis/
 `-- reports/             exported reports, figures, LaTeX sources, and PDFs
 ```
 
+Generated advanced-evaluation JSON reports and plot folders are written at the
+repository root under `results/` by `Benchmark_Framework/advanced_planning_evaluation_sp.py`.
 Use `notebooks/` when inspecting raw benchmark behavior, comparing models,
-building aggregate tables, or preparing plots. Use `reports/` for shareable
-outputs derived from completed runs.
+building aggregate tables, or preparing plots interactively. Use `reports/` for
+shareable exported documents derived from completed runs.
 
 ## Data Sources
 
@@ -40,10 +42,18 @@ Domain complexity inputs, when needed for plots or tables, come from
 ## Workflow
 
 1. Run one or more benchmark suites.
-2. Open a notebook under `analysis/notebooks/`.
-3. Point the notebook at the relevant `run_id` or output folder.
-4. Generate tables and figures.
-5. Save final report artifacts under `analysis/reports/`.
+2. Inspect results in notebooks under `analysis/notebooks/`, or run the reusable
+   advanced evaluation CLI:
 
-Do not treat notebooks or reports as the canonical benchmark data. They are
-derived views over the JSON artifacts written by the runner.
+```powershell
+python Benchmark_Framework/advanced_planning_evaluation_sp.py
+```
+
+3. Point the notebook or CLI at the relevant `run_id` or output folder.
+4. Generate tables, figures, JSON reports, and optional plots.
+5. Save final report artifacts under `analysis/reports/` or generated evaluation
+   outputs under `results/`.
+
+Do not treat notebooks, PDFs, plots, or `results/` JSON as the canonical
+benchmark data. They are derived views over the JSON artifacts written by the
+runner.

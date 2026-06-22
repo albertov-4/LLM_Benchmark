@@ -6,7 +6,7 @@ runs.
 
 ## Components
 
-- `parser.py`: extracts candidate PDDL actions from raw model output.
+- `parser.py`: extracts domain-valid PDDL actions from raw and reasoning text.
 - `validator.py`: defines the validator interface and the VAL adapter.
 - `preflight.py`: checks PDDL domain/problem pairs before model generation.
 - `metrics.py`: computes normalized per-run metrics.
@@ -14,24 +14,48 @@ runs.
 
 ## Parser
 
-The parser turns model text into a `ParsedPlan` with:
+The parser turns model text into a `ParsedPlan` with two sections:
 
-- `actions`
-- `reasoning`
-- `format_issues`
+- `raw`: the official plan extracted from `raw_text`.
+- `reasoning`: a diagnostic plan extracted from provider `reasoning_text`.
 
-It handles common model-output patterns such as reasoning before the plan,
-Markdown fences, numbered lists, bullet lists, and parenthesized actions inside
-verbose text. The parser does not decide whether a plan is correct; it only
-extracts the candidate action sequence for validation.
+Each section has `actions` and `format_issues`. `raw` also records
+`contains_reasoning` and `source_kind`; `reasoning` records a `source_ref` back
+to `generation.reasoning_text` in the raw artifact.
 
-Typical parser issues include:
+When `domain_text` is available, the parser accepts only parenthesized forms
+whose first token is an action declared in the domain and whose arity matches
+that action. Predicates, goals, fluent expressions, and unknown actions are not
+scored as plan actions. The parser does not check preconditions or simulate
+state.
 
-- `empty_output`
-- `markdown_fences_removed`
-- `reasoning_before_plan_removed`
-- `actions_embedded_in_text`
-- `no_parenthesized_actions_found`
+Safe local repeats are expanded when attached to a valid action, including
+`repeat N times (action ...)`, `(action ...) xN`, `(action ...) *N`,
+`(action ...) N times`, and `(action ...) repeated N times`. The parser also
+accepts parenthesized local repeat shorthand such as `(repeat up 2 times)` or
+`(repeat go_south 59 times)` only when a previous one-argument action already
+established the current object. For one-argument actions, the parser also
+supports safe domain-derived compression such as `b4 up 2` and progressive
+numbered compressed lists such as `1 b4 up 2`.
+
+Parser issues:
+
+- `empty_output`: `raw_text` was empty or whitespace only.
+- `reasoning_text_empty`: provider `reasoning_text` was empty or missing.
+- `markdown_fences_removed`: Markdown code fences were removed before parsing.
+- `plan_section_marker_removed`: a plan marker such as `Plan:` or `Final answer:` was removed.
+- `reasoning_before_plan_removed`: text before the detected raw plan section was separated from the plan.
+- `raw_text_contains_reasoning_like_content`: `raw_text` appears to include reasoning or prose around the actions.
+- `actions_embedded_in_text`: a valid action appeared on a line that also contained non-action text.
+- `empty_parenthesized_expression_found`: an empty `()` expression was found.
+- `unknown_action_names_found`: a parenthesized expression did not start with an action from the domain.
+- `wrong_action_arity`: a known domain action had the wrong number of arguments.
+- `ambiguous_compressed_action`: a compressed alias was missing or did not map to exactly one one-argument domain action.
+- `compressed_actions_expanded`: a repeat or compressed action form was expanded into grounded actions.
+- `multiple_reasoning_candidate_plans`: more than one candidate action sequence was found in `reasoning_text`.
+- `ambiguous_reasoning_plan_selection`: multiple reasoning candidates tied under the selection heuristic.
+- `no_valid_domain_actions_found`: no domain-valid actions were found when `domain_text` was available.
+- `no_parenthesized_actions_found`: no parenthesized actions were found in legacy parsing without `domain_text`.
 
 ## Validator
 
@@ -84,4 +108,6 @@ Core metrics are computed from normalized run data:
 - `hit_iteration_limit`
 
 Metrics are intentionally separated from raw model text so reports can compare
-models and protocols without re-parsing provider-specific output.
+models and protocols without re-parsing provider-specific output. Plan length is
+computed from validator output first, then from `parsed_plan.raw.actions`; legacy
+`parsed_plan.actions` is only a compatibility fallback for older artifacts.

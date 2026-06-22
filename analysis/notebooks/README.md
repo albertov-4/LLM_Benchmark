@@ -3,7 +3,7 @@
 This folder contains notebooks for inspecting benchmark outputs and preparing
 figures or tables.
 
-## Available notebooks
+## Available Notebooks
 
 - `Results Analysis.ipynb`: baseline inspection of benchmark results.
 - `advanced_planning_evaluation.ipynb`: advanced planning metrics using the
@@ -11,6 +11,11 @@ figures or tables.
 - `advanced_planning_evaluation_run_aware.ipynb`: run-aware advanced analysis.
   Use this when `outputs/parsed` and `outputs/scored` contain two or more
   benchmark runs, or when you want to inspect run-to-run variability.
+
+The reusable script version of the advanced workflow is
+`Benchmark_Framework/advanced_planning_evaluation_sp.py`. It reads the same
+benchmark artifacts and writes model-centric JSON reports and optional plots
+under the repository-level `results/` folder.
 
 Use scored artifacts for quantitative analysis:
 

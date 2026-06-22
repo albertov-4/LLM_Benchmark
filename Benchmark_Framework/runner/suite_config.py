@@ -24,27 +24,6 @@ class LoadedPromptBundle:
     feedback_prompt: str
 
 
-def load_model_registry_entries(model_registry_path: str | Path) -> list[dict[str, Any]]:
-    """Extract model entries from the `models:` section of a registry file."""
-    registry_path = Path(model_registry_path)
-    if not registry_path.exists():
-        return []
-
-    loaded = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
-    if not isinstance(loaded, dict):
-        return []
-
-    models = loaded.get("models", [])
-    if not isinstance(models, list):
-        return []
-
-    return [
-        dict(entry)
-        for entry in models
-        if isinstance(entry, dict)
-    ]
-
-
 def load_protocol_config(
     protocol_id: str,
     protocols_root: str | Path,

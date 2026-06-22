@@ -1,8 +1,50 @@
 """Unit tests for the shared benchmark parser."""
 
+from __future__ import annotations
+
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
+
+
+TOY_DOMAIN = """
+(define (domain toy)
+  (:predicates (at ?x))
+  (:action move
+    :parameters (?from ?to)
+    :precondition (and (at ?from))
+    :effect (and (at ?to))
+  )
+  (:action pick
+    :parameters (?box ?room)
+    :precondition (and)
+    :effect (and)
+  )
+)
+"""
+
+BLOCK_DOMAIN = """
+(define (domain blocks)
+  (:action move_block_up :parameters (?b))
+  (:action move_block_right :parameters (?b))
+)
+"""
+
+SAILING_DOMAIN = """
+(define (domain sailing)
+  (:action accelerate :parameters (?b))
+  (:action go_south :parameters (?b))
+  (:action decelerate :parameters (?b))
+  (:action save_person :parameters (?b ?p))
+)
+"""
+
+ROVER_DOMAIN = """
+(define (domain rover)
+  (:action navigate :parameters (?r ?from ?to))
+)
+"""
 
 
 def _load_module(module_name: str, path: Path):
@@ -10,6 +52,7 @@ def _load_module(module_name: str, path: Path):
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load module from {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -24,45 +67,233 @@ class ParserTest(unittest.TestCase):
         )
 
     def test_parse_empty_output(self) -> None:
-        result = self.parser_module.parse_plan_text("")
+        result = self.parser_module.parse_plan_text("", domain_text=TOY_DOMAIN)
 
-        self.assertEqual(result.actions, [])
-        self.assertEqual(result.reasoning, "")
-        self.assertEqual(result.format_issues, ["empty_output"])
+        self.assertEqual(result.raw["actions"], [])
+        self.assertEqual(result.raw["format_issues"], ["empty_output"])
+        self.assertEqual(result.reasoning["format_issues"], ["reasoning_text_empty"])
 
-    def test_parse_extracts_reasoning_and_actions(self) -> None:
+    def test_parse_extracts_raw_and_reasoning_actions(self) -> None:
         raw_text = "I will first think through the problem.\n(move a b)\n(pick box1 room2)"
+        reasoning_text = "Try one option.\n(move c d)\nNo.\n\nFinal list:\n(move a b)\n(pick box1 room2)"
 
-        result = self.parser_module.parse_plan_text(raw_text)
+        result = self.parser_module.parse_plan_text(raw_text, reasoning_text=reasoning_text, domain_text=TOY_DOMAIN)
 
-        self.assertEqual(result.reasoning, "I will first think through the problem.")
-        self.assertEqual(result.actions, ["(move a b)", "(pick box1 room2)"])
-        self.assertIn("reasoning_before_plan_removed", result.format_issues)
+        self.assertEqual(result.raw["actions"], ["(move a b)", "(pick box1 room2)"])
+        self.assertTrue(result.raw["contains_reasoning"])
+        self.assertIn("raw_text_contains_reasoning_like_content", result.raw["format_issues"])
+        self.assertEqual(result.reasoning["actions"], ["(move a b)", "(pick box1 room2)"])
+        self.assertIn("multiple_reasoning_candidate_plans", result.reasoning["format_issues"])
 
     def test_parse_removes_markdown_fences_and_numbering(self) -> None:
         raw_text = "```text\n1. (move a b)\n2. (pick box1 room2)\n```"
 
-        result = self.parser_module.parse_plan_text(raw_text)
+        result = self.parser_module.parse_plan_text(raw_text, domain_text=TOY_DOMAIN)
 
-        self.assertEqual(result.actions, ["(move a b)", "(pick box1 room2)"])
-        self.assertEqual(result.reasoning, "")
-        self.assertIn("markdown_fences_removed", result.format_issues)
+        self.assertEqual(result.raw["actions"], ["(move a b)", "(pick box1 room2)"])
+        self.assertIn("markdown_fences_removed", result.raw["format_issues"])
 
-    def test_parse_extracts_actions_embedded_in_text(self) -> None:
-        raw_text = "Plan: first do (move a b), then do (pick box1 room2)."
+    def test_domain_filter_rejects_predicates_unknown_actions_and_wrong_arity(self) -> None:
+        raw_text = "(at a)\n(fly a b)\n(move a)\n(move a b)"
 
-        result = self.parser_module.parse_plan_text(raw_text)
+        result = self.parser_module.parse_plan_text(raw_text, domain_text=TOY_DOMAIN)
 
-        self.assertEqual(result.actions, ["(move a b)", "(pick box1 room2)"])
-        self.assertIn("plan_section_marker_removed", result.format_issues)
-        self.assertIn("actions_embedded_in_text", result.format_issues)
+        self.assertEqual(result.raw["actions"], ["(move a b)"])
+        self.assertIn("unknown_action_names_found", result.raw["format_issues"])
+        self.assertIn("wrong_action_arity", result.raw["format_issues"])
 
     def test_parse_reports_missing_actions(self) -> None:
-        result = self.parser_module.parse_plan_text("This is a detailed explanation, but not a plan.")
+        result = self.parser_module.parse_plan_text("This is a detailed explanation, but not a plan.", domain_text=TOY_DOMAIN)
 
-        self.assertEqual(result.actions, [])
-        self.assertEqual(result.reasoning, "This is a detailed explanation, but not a plan.")
-        self.assertIn("no_parenthesized_actions_found", result.format_issues)
+        self.assertEqual(result.raw["actions"], [])
+        self.assertIn("no_valid_domain_actions_found", result.raw["format_issues"])
+
+    def test_parse_expands_explicit_repeat(self) -> None:
+        result = self.parser_module.parse_plan_text("repeat 3 times (move a b)", domain_text=TOY_DOMAIN)
+
+        self.assertEqual(result.raw["actions"], ["(move a b)", "(move a b)", "(move a b)"])
+        self.assertIn("compressed_actions_expanded", result.raw["format_issues"])
+
+    def test_parse_expands_repeat_after_action(self) -> None:
+        for text in (
+            "(move a b) repeated 3 times",
+            "(move a b) for 3 times",
+            "repeated 3 times (move a b)",
+        ):
+            with self.subTest(text=text):
+                result = self.parser_module.parse_plan_text(text, domain_text=TOY_DOMAIN)
+
+                self.assertEqual(result.raw["actions"], ["(move a b)", "(move a b)", "(move a b)"])
+                self.assertIn("compressed_actions_expanded", result.raw["format_issues"])
+
+    def test_parse_expands_repeat_after_action_in_reasoning(self) -> None:
+        reasoning_text = "Final plan:\n(move a b) repeated 3 times\n(pick box1 room2)"
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=TOY_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            ["(move a b)", "(move a b)", "(move a b)", "(pick box1 room2)"],
+        )
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_reasoning_expands_parenthesized_repeat_with_current_object(self) -> None:
+        reasoning_text = """(accelerate b0)
+(accelerate b0)
+(repeat go_south 3 times)
+(decelerate b0)
+(save_person b0 p0)
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=SAILING_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            [
+                "(accelerate b0)",
+                "(accelerate b0)",
+                "(go_south b0)",
+                "(go_south b0)",
+                "(go_south b0)",
+                "(decelerate b0)",
+                "(save_person b0 p0)",
+            ],
+        )
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_parenthesized_repeat_does_not_invent_missing_object(self) -> None:
+        result = self.parser_module.parse_plan_text("", reasoning_text="(repeat go_south 3 times)", domain_text=SAILING_DOMAIN)
+
+        self.assertEqual(result.reasoning["actions"], [])
+        self.assertIn("ambiguous_compressed_action", result.reasoning["format_issues"])
+
+    def test_parenthesized_repeat_uses_safe_alias_with_current_object(self) -> None:
+        reasoning_text = """(move_block_right b1)
+(repeat up 2 times)
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=BLOCK_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            ["(move_block_right b1)", "(move_block_up b1)", "(move_block_up b1)"],
+        )
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_repeat_after_action_still_rejects_invalid_domain_actions(self) -> None:
+        unknown = self.parser_module.parse_plan_text("(fly a b) repeated 3 times", domain_text=TOY_DOMAIN)
+        wrong_arity = self.parser_module.parse_plan_text("(move a) repeated 3 times", domain_text=TOY_DOMAIN)
+
+        self.assertEqual(unknown.raw["actions"], [])
+        self.assertIn("unknown_action_names_found", unknown.raw["format_issues"])
+        self.assertEqual(wrong_arity.raw["actions"], [])
+        self.assertIn("wrong_action_arity", wrong_arity.raw["format_issues"])
+
+    def test_reasoning_prefers_progressive_numbered_action_list(self) -> None:
+        reasoning_text = """Summary: b1 up 2, b2 up 2.
+
+Actions:
+1 (move_block_up b1)
+2 (move_block_up b1)
+
+b2 moves:
+3 (move_block_right b2)
+4 (move_block_right b2)
+5 (move_block_up b2)
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=BLOCK_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            [
+                "(move_block_up b1)",
+                "(move_block_up b1)",
+                "(move_block_right b2)",
+                "(move_block_right b2)",
+                "(move_block_up b2)",
+            ],
+        )
+
+    def test_reasoning_expands_numbered_compressed_list(self) -> None:
+        reasoning_text = """Actions:
+1 b1 up 2
+2 right 1
+3 b2 right 2
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=BLOCK_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            [
+                "(move_block_up b1)",
+                "(move_block_up b1)",
+                "(move_block_right b1)",
+                "(move_block_right b2)",
+                "(move_block_right b2)",
+            ],
+        )
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_reasoning_numbered_compressed_list_survives_headings(self) -> None:
+        reasoning_text = """1 b1 up 2
+
+Continue b1:
+2 right 1
+
+Move b2:
+3 b2 up 1
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=BLOCK_DOMAIN)
+
+        self.assertEqual(
+            result.reasoning["actions"],
+            [
+                "(move_block_up b1)",
+                "(move_block_up b1)",
+                "(move_block_right b1)",
+                "(move_block_up b2)",
+            ],
+        )
+
+    def test_numbered_compression_does_not_invent_unknown_or_ambiguous_aliases(self) -> None:
+        ambiguous_domain = """
+(define (domain ambiguous)
+  (:action move_left :parameters (?b))
+  (:action slide_left :parameters (?b))
+)
+"""
+
+        unknown = self.parser_module.parse_plan_text("", reasoning_text="1 b1 sideways 2", domain_text=BLOCK_DOMAIN)
+        ambiguous = self.parser_module.parse_plan_text("", reasoning_text="1 b1 left 2", domain_text=ambiguous_domain)
+
+        self.assertEqual(unknown.reasoning["actions"], [])
+        self.assertIn("ambiguous_compressed_action", unknown.reasoning["format_issues"])
+        self.assertEqual(ambiguous.reasoning["actions"], [])
+        self.assertIn("ambiguous_compressed_action", ambiguous.reasoning["format_issues"])
+
+    def test_numbered_compression_does_not_reconstruct_multi_argument_actions(self) -> None:
+        result = self.parser_module.parse_plan_text("", reasoning_text="1 rover1 navigate 2", domain_text=ROVER_DOMAIN)
+
+        self.assertEqual(result.reasoning["actions"], [])
+        self.assertIn("no_valid_domain_actions_found", result.reasoning["format_issues"])
+
+    def test_parse_expands_safe_one_argument_compression(self) -> None:
+        result = self.parser_module.parse_plan_text("b4 up 2\nb4 right 1", domain_text=BLOCK_DOMAIN)
+
+        self.assertEqual(
+            result.raw["actions"],
+            ["(move_block_up b4)", "(move_block_up b4)", "(move_block_right b4)"],
+        )
+        self.assertIn("compressed_actions_expanded", result.raw["format_issues"])
+
+    def test_parse_does_not_invent_missing_arguments_for_other_domains(self) -> None:
+        result = self.parser_module.parse_plan_text("rover1 goes to wp2", domain_text=ROVER_DOMAIN)
+
+        self.assertEqual(result.raw["actions"], [])
+        self.assertIn("no_valid_domain_actions_found", result.raw["format_issues"])
 
 
 if __name__ == "__main__":

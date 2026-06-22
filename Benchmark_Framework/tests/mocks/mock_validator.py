@@ -1,5 +1,7 @@
 """Mock validator utilities for benchmark smoke tests."""
 
+from __future__ import annotations
+
 
 class MockValidator:
     """Simulate validator behavior with optional repair-loop support."""

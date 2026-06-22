@@ -1,9 +1,9 @@
-"""Mock adapter utilities for benchmark smoke tests."""
+﻿"""Mock adapter utilities for benchmark smoke tests."""
 
 from dataclasses import dataclass, field
 
 
-@dataclass(slots=True)
+@dataclass
 class MockAdapter:
     """Return scripted outputs across successive generate calls."""
 

@@ -47,6 +47,12 @@ The matrix can be restricted with:
 Progress is printed as `START`, `DONE`, or `ERROR` for each job. The suite
 summary stays compact and points to per-job artifacts.
 
+Known adapter names are constructed fail-fast. If an `hf_local`, `ollama`,
+`nvidia_api`, or `llama_cpp_cli` entry has bad config or missing adapter code,
+the runner reports an orchestration error instead of silently substituting an
+unavailable adapter. Unknown or empty adapter names still use the
+unavailable-adapter placeholder for dry orchestration paths.
+
 ## NVIDIA Model Lanes
 
 The default suite execution is sequential. Passing `--parallel-nvidia-models`
@@ -73,8 +79,8 @@ For each job, `run_case.py`:
 1. Reads the PDDL domain and problem.
 2. Builds chat-style messages from the selected protocol and prompt files.
 3. Calls the model adapter.
-4. Parses raw model text into candidate PDDL actions.
-5. Validates each non-empty action prefix with VAL or the configured validator.
+4. Parses `raw_text` and provider `reasoning_text` into separate plan sections.
+5. Validates each non-empty prefix of `parsed_plan.raw.actions` with VAL or the configured validator.
 6. Adds validator feedback for iterative repair protocols.
 7. Computes normalized metrics.
 8. Writes `raw`, `parsed`, and `scored` artifacts when an output root is set.
@@ -106,6 +112,10 @@ outputs/parsed/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_
 outputs/scored/<run_id>/<model_id>/<protocol_id>/<task_family>/<tier>/<instance_id>.json
 ```
 
-`raw` stores prompts and generation payloads. `parsed` stores parser output and
-format issues. `scored` stores validation results, repair feedback, metrics,
-and artifact paths.
+`raw` stores prompts and generation payloads, including adapter-provided
+`raw_text` and optional `reasoning_text`. `parsed` stores `parsed_plan.raw` for
+the official extracted plan and `parsed_plan.reasoning` for diagnostic reasoning
+plan extraction; the reasoning section stores only a `source_ref`, not the full
+reasoning text. `scored` stores official raw validation plus diagnostic
+`reasoning_validation_result` fields when a reasoning plan was decoded. Metrics,
+repair, and `solved` still use only `parsed_plan.raw`. If a decoded reasoning plan validates while raw fails, repair feedback may include that decoded reasoning action sequence as a hint for the next final answer.

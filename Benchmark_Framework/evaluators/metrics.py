@@ -1,10 +1,12 @@
 """Benchmark metric computation."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class RunMetrics:
     validity_at_1: bool
     validity_at_k: bool
@@ -27,6 +29,12 @@ def _extract_plan_length(
 
     if not parsed_plan:
         return None
+
+    raw_plan = parsed_plan.get("raw")
+    if isinstance(raw_plan, dict):
+        raw_actions = raw_plan.get("actions")
+        if isinstance(raw_actions, list):
+            return len(raw_actions)
 
     actions = parsed_plan.get("actions")
     if isinstance(actions, list):

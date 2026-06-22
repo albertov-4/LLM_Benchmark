@@ -4,7 +4,10 @@ This module runs the smallest benchmark unit: one model, one protocol,
 one task instance.
 """
 
+from __future__ import annotations
+
 import json
+import sys
 import traceback
 from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import lru_cache
@@ -14,7 +17,7 @@ from time import perf_counter
 from typing import Any, TypedDict
 
 
-@dataclass(slots=True)
+@dataclass
 class TaskSpec:
     task_family: str
     tier: str
@@ -28,7 +31,7 @@ class TaskSpec:
         return f"{self.task_family}_{self.tier}_{self.instance_id}"
 
 
-@dataclass(slots=True)
+@dataclass
 class ProtocolSpec:
     protocol_id: str
     max_iterations: int
@@ -37,7 +40,7 @@ class ProtocolSpec:
     include_chain_of_thought: bool = False
 
 
-@dataclass(slots=True)
+@dataclass
 class ResultRecord:
     """Normalized result for one model x protocol x task run."""
 
@@ -85,6 +88,7 @@ def _load_framework_module(module_key: str, relative_path: str):
         raise ImportError(f"Unable to load module from {module_path}")
 
     module = module_from_spec(spec)
+    sys.modules[module_key] = module
     spec.loader.exec_module(module)
     return module
 
@@ -189,21 +193,77 @@ def _build_scored_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any
                 "first_valid_plan_text": attempt.get("first_valid_plan_text"),
                 "final_plan_valid": attempt.get("final_plan_valid"),
                 "extra_actions_after_first_valid": attempt.get("extra_actions_after_first_valid"),
+                "reasoning_validation_result": attempt.get("reasoning_validation_result"),
+                "reasoning_first_valid_prefix_length": attempt.get("reasoning_first_valid_prefix_length"),
+                "reasoning_first_valid_plan_text": attempt.get("reasoning_first_valid_plan_text"),
+                "reasoning_final_plan_valid": attempt.get("reasoning_final_plan_valid"),
+                "reasoning_extra_actions_after_first_valid": attempt.get("reasoning_extra_actions_after_first_valid"),
                 "feedback_to_next_iteration": attempt.get("feedback_to_next_iteration"),
             }
         )
     return scored_attempts
 
 
-def _parse_generation_output(raw_text: str) -> dict[str, Any]:
-    """Parse raw model text using the shared benchmark parser."""
+def _parse_generation_output(
+    raw_text: str,
+    generation_reasoning: Any = "",
+    domain_text: str | None = None,
+) -> dict[str, Any]:
+    """Parse raw text and provider-side reasoning into separate plan sections."""
     parser_module = _load_framework_module(
         "benchmark_framework_parser",
         "evaluators/parser.py",
     )
-    parsed_plan = parser_module.parse_plan_text(raw_text)
+    reasoning_text = "" if generation_reasoning is None else str(generation_reasoning)
+    parsed_plan = parser_module.parse_plan_text(
+        raw_text,
+        reasoning_text=reasoning_text,
+        domain_text=domain_text,
+    )
     normalized = _normalize_payload(parsed_plan)
-    return normalized or {"actions": [], "reasoning": "", "format_issues": []}
+    return normalized or {
+        "raw": {"actions": [], "format_issues": ["empty_output"], "contains_reasoning": False, "source_kind": "empty_raw_plan"},
+        "reasoning": {"actions": [], "format_issues": ["reasoning_text_empty"], "source_ref": {"artifact": "raw", "field": "generation.reasoning_text"}},
+    }
+
+
+def _raw_actions(parsed_plan: dict[str, Any] | None) -> list[Any]:
+    if not parsed_plan:
+        return []
+    raw_plan = parsed_plan.get("raw")
+    if isinstance(raw_plan, dict) and isinstance(raw_plan.get("actions"), list):
+        return raw_plan["actions"]
+    actions = parsed_plan.get("actions")
+    return actions if isinstance(actions, list) else []
+
+
+def _reasoning_actions(parsed_plan: dict[str, Any] | None) -> list[Any]:
+    if not parsed_plan:
+        return []
+    reasoning_plan = parsed_plan.get("reasoning")
+    if isinstance(reasoning_plan, dict) and isinstance(reasoning_plan.get("actions"), list):
+        return reasoning_plan["actions"]
+    return []
+
+
+def _raw_format_issues(parsed_plan: dict[str, Any] | None) -> list[str]:
+    if not parsed_plan:
+        return []
+    raw_plan = parsed_plan.get("raw")
+    issues = raw_plan.get("format_issues") if isinstance(raw_plan, dict) else parsed_plan.get("format_issues")
+    return [issue for issue in issues if isinstance(issue, str)] if isinstance(issues, list) else []
+
+
+def _attach_raw_format_issues(
+    validation_result: dict[str, Any],
+    parsed_plan: dict[str, Any],
+) -> dict[str, Any]:
+    issues = _raw_format_issues(parsed_plan)
+    if issues:
+        details = validation_result.setdefault("details", {})
+        if isinstance(details, dict):
+            details["raw_format_issues"] = issues
+    return validation_result
 
 
 def _build_parse_failure_result(
@@ -211,7 +271,7 @@ def _build_parse_failure_result(
     parsed_plan: dict[str, Any],
 ) -> dict[str, Any]:
     """Create a normalized validation-style error for parser failures."""
-    format_issues = parsed_plan.get("format_issues", [])
+    format_issues = _raw_format_issues(parsed_plan)
     has_text = bool(raw_text and raw_text.strip())
 
     if has_text:
@@ -238,7 +298,7 @@ def _build_parse_failure_result(
         "plan_length": 0,
         "validation_time_ms": None,
         "raw_validator_output": None,
-        "details": {"format_issues": format_issues},
+        "details": {"raw_format_issues": format_issues},
     }
 
 
@@ -466,6 +526,8 @@ def build_messages(
 def build_repair_feedback(
     validation_result: dict[str, Any],
     feedback_prompt: str = "",
+    reasoning_validation_result: dict[str, Any] | None = None,
+    reasoning_plan_text: str | None = None,
 ) -> str:
     """Convert validator output into a user-facing repair message.
 
@@ -477,6 +539,8 @@ def build_repair_feedback(
     feedback_text = validation_result.get("feedback_text", "Unknown validation error.")
     failed_step = validation_result.get("failed_step")
     failed_action = validation_result.get("failed_action")
+    details = validation_result.get("details")
+    raw_format_issues = details.get("raw_format_issues") if isinstance(details, dict) else None
 
     lines: list[str] = []
     if feedback_prompt.strip():
@@ -493,6 +557,20 @@ def build_repair_feedback(
         lines.append(f"Failed step: {failed_step}")
     if failed_action:
         lines.append(f"Failed action: {failed_action}")
+    if isinstance(raw_format_issues, list) and raw_format_issues:
+        lines.append("Raw parse issues: " + ", ".join(str(issue) for issue in raw_format_issues))
+    if (
+        isinstance(reasoning_validation_result, dict)
+        and reasoning_validation_result.get("valid")
+        and reasoning_plan_text
+    ):
+        lines.extend(
+            [
+                "A valid action sequence was decoded from the reasoning text, but the final answer/raw plan did not validate.",
+                "In the next answer, output exactly this decoded reasoning plan as the final action sequence, with no explanation:",
+                reasoning_plan_text.strip(),
+            ]
+        )
     lines.append(f"Feedback: {feedback_text}")
     lines.append("Please provide a corrected action sequence.")
     return "\n".join(lines)
@@ -590,6 +668,11 @@ def run_generation_loop(
                     "first_valid_plan_text": None,
                     "final_plan_valid": False,
                     "extra_actions_after_first_valid": None,
+                    "reasoning_validation_result": None,
+                    "reasoning_first_valid_prefix_length": None,
+                    "reasoning_first_valid_plan_text": None,
+                    "reasoning_final_plan_valid": None,
+                    "reasoning_extra_actions_after_first_valid": None,
                     "feedback_to_next_iteration": None,
                 }
             )
@@ -629,9 +712,13 @@ def run_generation_loop(
         raw_text = generation.get("raw_text", "")
         raw_text = raw_text if isinstance(raw_text, str) else str(raw_text)
 
-        parsed_plan = _parse_generation_output(raw_text)
+        parsed_plan = _parse_generation_output(
+            raw_text,
+            generation.get("reasoning_text", ""),
+            task_inputs.get("domain_text"),
+        )
         last_parsed_plan = parsed_plan
-        actions = parsed_plan.get("actions", [])
+        actions = _raw_actions(parsed_plan)
         action_count = len(actions) if isinstance(actions, list) else 0
         print(
             f"[PARSE DONE] model={model_label} protocol={protocol_spec.protocol_id} "
@@ -650,8 +737,26 @@ def run_generation_loop(
             "first_valid_plan_text": None,
             "final_plan_valid": False,
             "extra_actions_after_first_valid": None,
+            "reasoning_validation_result": None,
+            "reasoning_first_valid_prefix_length": None,
+            "reasoning_first_valid_plan_text": None,
+            "reasoning_final_plan_valid": None,
+            "reasoning_extra_actions_after_first_valid": None,
             "feedback_to_next_iteration": None,
         }
+
+        reasoning_actions = [action for action in _reasoning_actions(parsed_plan) if isinstance(action, str)]
+        if reasoning_actions:
+            reasoning_summary = _validate_action_prefixes(
+                validator=validator,
+                task_spec=task_spec,
+                actions=reasoning_actions,
+            )
+            attempt_record["reasoning_validation_result"] = reasoning_summary["validation_result"]
+            attempt_record["reasoning_first_valid_prefix_length"] = reasoning_summary["first_valid_prefix_length"]
+            attempt_record["reasoning_first_valid_plan_text"] = reasoning_summary["first_valid_plan_text"]
+            attempt_record["reasoning_final_plan_valid"] = reasoning_summary["final_plan_valid"]
+            attempt_record["reasoning_extra_actions_after_first_valid"] = reasoning_summary["extra_actions_after_first_valid"]
 
         if not isinstance(actions, list) or not actions:
             validation_result = _build_parse_failure_result(raw_text, parsed_plan)
@@ -664,7 +769,12 @@ def run_generation_loop(
                 flush=True,
             )
             if protocol_spec.include_external_feedback:
-                feedback = build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
+                feedback = build_repair_feedback(
+                    validation_result,
+                    feedback_prompt=feedback_prompt,
+                    reasoning_validation_result=attempt_record.get("reasoning_validation_result"),
+                    reasoning_plan_text=attempt_record.get("reasoning_first_valid_plan_text"),
+                )
                 feedback_messages.append(feedback)
                 attempt_record["feedback_to_next_iteration"] = feedback
             attempts.append(attempt_record)
@@ -681,7 +791,7 @@ def run_generation_loop(
             task_spec=task_spec,
             actions=normalized_actions,
         )
-        validation_result = prefix_validation_summary["validation_result"]
+        validation_result = _attach_raw_format_issues(prefix_validation_summary["validation_result"], parsed_plan)
         last_validation_result = validation_result
         attempt_record["validation_result"] = validation_result
         attempt_record["first_valid_prefix_length"] = prefix_validation_summary["first_valid_prefix_length"]
@@ -715,7 +825,12 @@ def run_generation_loop(
             }
 
         if protocol_spec.include_external_feedback:
-            feedback = build_repair_feedback(validation_result, feedback_prompt=feedback_prompt)
+            feedback = build_repair_feedback(
+                validation_result,
+                feedback_prompt=feedback_prompt,
+                reasoning_validation_result=attempt_record.get("reasoning_validation_result"),
+                reasoning_plan_text=attempt_record.get("reasoning_first_valid_plan_text"),
+            )
             feedback_messages.append(feedback)
             attempt_record["feedback_to_next_iteration"] = feedback
         attempts.append(attempt_record)

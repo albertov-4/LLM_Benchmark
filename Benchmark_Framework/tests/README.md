@@ -21,6 +21,8 @@ APIs, or large model downloads.
   llama.cpp.
 - `test_prepare_models.py`: model preparation behavior without real downloads.
 - `test_clear_outputs.py`: output cleanup behavior.
+- `test_advanced_planning_evaluation.py`: advanced evaluation report helpers,
+  run selection, JSON naming, metric tables, and plot output behavior.
 - `run_mock_suite.py`: manual smoke run with mock components.
 
 ## Commands

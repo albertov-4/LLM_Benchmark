@@ -1,6 +1,9 @@
 """Smoke test for `runner/run_case.py`."""
 
+from __future__ import annotations
+
 import importlib.util
+import sys
 import json
 import tempfile
 import unittest
@@ -12,6 +15,7 @@ def _load_module(module_name: str, path: Path):
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load module from {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -59,7 +63,18 @@ class RunCaseSmokeTest(unittest.TestCase):
         tmp_path = Path(tmp_dir.name)
         domain_file = tmp_path / "domain.pddl"
         problem_file = tmp_path / "problem.pddl"
-        domain_file.write_text("(define (domain toy))", encoding="utf-8")
+        domain_file.write_text(
+            """
+(define (domain toy)
+  (:action move
+    :parameters (?from ?to)
+    :precondition (and)
+    :effect (and)
+  )
+)
+""",
+            encoding="utf-8",
+        )
         problem_file.write_text("(define (problem toy-problem))", encoding="utf-8")
 
         task_spec = run_case_module.TaskSpec(
@@ -304,7 +319,7 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertEqual(raw_payload["attempts"][0]["generation"]["raw_text"], "(move wrong target)")
             self.assertEqual(raw_payload["attempts"][1]["generation"]["raw_text"], "")
             self.assertIn("TimeoutError", raw_payload["attempts"][1]["generation"]["stream_error"])
-            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["actions"], ["(move wrong target)"])
+            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["raw"]["actions"], ["(move wrong target)"])
             self.assertIsNone(parsed_payload["attempts"][1]["parsed_plan"])
             self.assertEqual(scored_payload["attempts"][1]["validation_result"]["status"], "generation_error")
             self.assertEqual(scored_payload["attempts"][1]["validation_result"]["error_type"], "TimeoutError")
@@ -405,6 +420,79 @@ class RunCaseSmokeTest(unittest.TestCase):
         self.assertIn("USE FEEDBACK.", first_attempt["feedback_to_next_iteration"])
         self.assertIn("invalid_precondition", first_attempt["feedback_to_next_iteration"])
 
+    def test_repair_feedback_uses_valid_reasoning_plan_as_hint(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_feedback_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        feedback = run_case_module.build_repair_feedback(
+            {
+                "valid": False,
+                "status": "invalid",
+                "error_type": "unsatisfied_goal",
+                "feedback_text": "Goal not satisfied.",
+                "details": {},
+            },
+            reasoning_validation_result={"valid": True},
+            reasoning_plan_text="(move a b)\n(pick box1 room2)",
+        )
+
+        self.assertIn("valid action sequence was decoded from the reasoning text", feedback)
+        self.assertIn("final answer/raw plan did not validate", feedback)
+        self.assertIn("(move a b)\n(pick box1 room2)", feedback)
+
+    def test_run_case_stores_reasoning_plan_separately(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            model_id = "reasoning-model"
+
+            def generate(self, messages):
+                return {
+                    "model_id": self.model_id,
+                    "raw_text": "Visible parser reasoning\n(move a b)",
+                    "reasoning_text": "Thinking.\n(move a b)",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        adapter = ReasoningAdapter()
+        validator = PrefixLengthValidator(valid_prefix_length=1)
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            result = run_case_module.run_case(
+                model_id="mock_model",
+                adapter=adapter,
+                validator=validator,
+                task_spec=task_spec,
+                protocol_spec=protocol_spec,
+                output_root=tmp_dir,
+                run_id="test-reasoning",
+            )
+
+            parsed_payload = json.loads(Path(result.parsed_output_path or "").read_text(encoding="utf-8"))
+            parsed_plan = parsed_payload["attempts"][0]["parsed_plan"]
+
+            self.assertTrue(result.solved)
+            scored_payload = json.loads(Path(result.scored_output_path or "").read_text(encoding="utf-8"))
+            scored_attempt = scored_payload["attempts"][0]
+
+            self.assertEqual(result.attempts[0]["parsed_plan"]["reasoning"]["actions"], ["(move a b)"])
+            self.assertEqual(parsed_plan["reasoning"]["actions"], ["(move a b)"])
+            self.assertEqual(parsed_plan["reasoning"]["source_ref"], {"artifact": "raw", "field": "generation.reasoning_text"})
+            self.assertTrue(parsed_plan["raw"]["contains_reasoning"])
+            self.assertTrue(scored_attempt["validation_result"]["valid"])
+            self.assertTrue(scored_attempt["reasoning_validation_result"]["valid"])
+            self.assertEqual(scored_attempt["reasoning_first_valid_prefix_length"], 1)
+            self.assertTrue(scored_attempt["reasoning_final_plan_valid"])
+
     def test_run_case_persists_raw_parsed_and_scored_outputs(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_case_module = _load_module(
@@ -478,7 +566,7 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertNotIn("validation_result", raw_payload["attempts"][0])
             self.assertNotIn("parsed_plan", parsed_payload)
             self.assertIn("generation_time_seconds", parsed_payload["attempts"][0])
-            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["actions"], ["(move a b)"])
+            self.assertEqual(parsed_payload["attempts"][0]["parsed_plan"]["raw"]["actions"], ["(move a b)"])
             self.assertNotIn("validation_result", parsed_payload["attempts"][0])
             self.assertTrue(scored_payload["solved"])
             self.assertIn("metrics", scored_payload)
@@ -496,6 +584,8 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertEqual(scored_payload["attempts"][0]["first_valid_plan_text"], "(move a b)")
             self.assertEqual(scored_payload["attempts"][0]["final_plan_valid"], True)
             self.assertEqual(scored_payload["attempts"][0]["extra_actions_after_first_valid"], 0)
+            self.assertIsNone(scored_payload["attempts"][0]["reasoning_validation_result"])
+            self.assertIsNone(scored_payload["attempts"][0]["reasoning_first_valid_prefix_length"])
             self.assertNotIn("messages", scored_payload["attempts"][0])
 
 

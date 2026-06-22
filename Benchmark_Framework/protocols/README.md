@@ -73,14 +73,16 @@ fails before querying the model.
 1. Build the initial prompt from system, task-family, examples, domain, and
    problem text.
 2. Generate a candidate plan.
-3. Parse parenthesized PDDL actions.
-4. Validate extracted action prefixes with VAL.
+3. Parse domain-valid PDDL actions from `raw_text`; decode `reasoning_text` only for diagnostics.
+4. Validate extracted `parsed_plan.raw.actions` prefixes with VAL.
 5. Stop if a valid plan is found.
 6. Build concise feedback from the validation result.
 7. Add the feedback to the next prompt.
 8. Repeat until success or `max_iterations`.
 
-The base repair prompt is `prompts/feedback.txt`.
+The base repair prompt is `prompts/feedback.txt`. Repair feedback is based on
+validator output and raw parse issues only; reasoning text is not used to fix or
+score a final answer.
 
 ## Outputs
 

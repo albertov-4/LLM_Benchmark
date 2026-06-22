@@ -6,7 +6,10 @@ not part of the per-case execution loop.
 ## `prepare_models.py`
 
 Prepares enabled Hugging Face model entries so local or HPC benchmark jobs can
-load weights from disk instead of downloading during GPU runs.
+load weights from disk instead of downloading during GPU runs. It uses the same
+Hugging Face repo-id detection, local-path checks, and
+`models_cache/<namespace>__<repo>` naming rules as the runtime `hf_local`
+adapter.
 
 Common commands:
 

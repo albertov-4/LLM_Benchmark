@@ -507,20 +507,71 @@ class TestPreconditionMetrics(unittest.TestCase):
 
 class TestCotAlignment(unittest.TestCase):
 
-    def test_full_coverage(self):
-        dinfo   = _make_domain_info()
-        pinfo   = _make_problem_info()
+    def test_semantic_support_full_coverage(self):
+        dinfo = _make_domain_info()
+        pinfo = _make_problem_info()
         actions = ["(pick b1 loc1)", "(place b1 loc2)"]
-        cot     = "I will pick b1 from loc1 then place b1 at loc2"
-        r = ape.compute_cot_alignment(cot, actions, dinfo, pinfo)
-        self.assertGreater(r["cot_alignment_score"], 0.5)
+        cot = "I will pick b1 from loc1 then place b1 at loc2"
+        r = ape.compute_cot_semantic_support(cot, actions, dinfo, pinfo)
+        self.assertGreater(r["cot_semantic_support_score"], 0.5)
 
-    def test_empty_cot(self):
-        dinfo   = _make_domain_info()
-        pinfo   = _make_problem_info()
+    def test_empty_cot_semantic_support(self):
+        dinfo = _make_domain_info()
+        pinfo = _make_problem_info()
         actions = ["(pick b1 loc1)"]
-        r = ape.compute_cot_alignment("", actions, dinfo, pinfo)
-        self.assertEqual(r["cot_alignment_score"], 0.0)
+        r = ape.compute_cot_semantic_support("", actions, dinfo, pinfo)
+        self.assertEqual(r["cot_semantic_support_score"], 0.0)
+
+    def test_exact_match_both_invalid_keeps_alignment_one(self):
+        parsed = {
+            "iteration": 1,
+            "parsed_plan": {
+                "raw": {"actions": ["(pick b1 loc1)", "(place b1 loc2)"]},
+                "reasoning": {"actions": ["(pick b1 loc1)", "(place b1 loc2)"]},
+            },
+        }
+        scored = {"final_plan_valid": False, "reasoning_final_plan_valid": False}
+        raw = {"generation": {"reasoning_text": "pick b1 loc1 then place b1 loc2"}}
+        r = ape.compute_cot_alignment_for_attempt(parsed, scored, raw, _make_domain_info(), _make_problem_info())
+        self.assertEqual(r["cot_plan_alignment_score"], 1.0)
+        self.assertIsNone(r["cot_plan_alignment_proxy_score"])
+        self.assertEqual(r["cot_alignment_status"], "comparable_but_both_invalid")
+
+    def test_semantic_proxy_is_capped(self):
+        parsed = {"iteration": 1, "parsed_plan": {"raw": {"actions": ["(pick b1 loc1)"]}, "reasoning": {"actions": []}}}
+        scored = {"final_plan_valid": True, "reasoning_final_plan_valid": None}
+        raw = {"generation": {"reasoning_text": "pick b1 loc1"}}
+        r = ape.compute_cot_alignment_for_attempt(parsed, scored, raw, _make_domain_info(), _make_problem_info())
+        self.assertIsNone(r["cot_plan_alignment_score"])
+        self.assertLessEqual(r["cot_plan_alignment_proxy_score"], 0.35)
+        self.assertEqual(r["cot_alignment_status"], "semantic_proxy_only")
+        self.assertEqual(r["cot_alignment_confidence"], "low")
+
+    def test_adjacent_swap_detection(self):
+        r = ape.compute_sequence_alignment(["A", "B", "C", "D"], ["A", "C", "B", "D"])
+        self.assertFalse(r["exact_sequence_match"])
+        self.assertEqual(r["first_mismatch_index"], 1)
+        self.assertEqual(r["adjacent_swap_count"], 1)
+        self.assertLess(r["structural_alignment"], 1.0)
+
+    def test_shorter_valid_prefix_is_diagnostic_only(self):
+        actions = ["(pick b1 loc1)", "(place b1 loc2)"]
+        parsed = {"iteration": 1, "parsed_plan": {"raw": {"actions": actions}, "reasoning": {"actions": actions}}}
+        scored = {
+            "final_plan_valid": True,
+            "reasoning_final_plan_valid": True,
+            "first_valid_prefix_length": 1,
+            "reasoning_first_valid_prefix_length": 1,
+        }
+        raw = {"generation": {"reasoning_text": "pick b1 loc1 place b1 loc2"}}
+        r = ape.compute_cot_alignment_for_attempt(parsed, scored, raw, _make_domain_info(), _make_problem_info())
+        self.assertEqual(r["cot_plan_alignment_score"], 1.0)
+        self.assertTrue(r["raw_has_shorter_valid_prefix"])
+        self.assertTrue(r["reasoning_has_shorter_valid_prefix"])
+
+    def test_old_parsed_plan_actions_fallback(self):
+        parsed_plan = {"actions": ["(move loc1 loc2)"]}
+        self.assertEqual(ape.parsed_plan_raw_actions(parsed_plan), ["(move loc1 loc2)"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

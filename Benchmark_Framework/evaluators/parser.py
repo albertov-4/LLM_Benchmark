@@ -11,9 +11,42 @@ LIST_PREFIX_PATTERN = re.compile(r"^\s*(?:[-*+]\s+|\d+[\).\]:-]?\s+)")
 PLAN_MARKER_PATTERNS = (
     re.compile(r"^\s*(?:final\s+plan|final\s+answer|plan|actions?|action\s+sequence|answer)\s*:?\s*(.*)$", re.IGNORECASE),
 )
-FINAL_MARKER_PATTERN = re.compile(r"\bfinal\s+(?:answer|plan|action\s+sequence)\b|\bnow\s+produce\s+final\b", re.IGNORECASE)
+FINAL_MARKER_PATTERN = re.compile(r"\bfinal\s+(?:answer|plan|list|action\s+sequence)\b|\bnow\s+produce\s+final\b", re.IGNORECASE)
 SOURCE_REF = {"artifact": "raw", "field": "generation.reasoning_text"}
-WORD_COUNTS = {"once": 1, "twice": 2, "thrice": 3}
+WORD_COUNTS = {
+    "once": 1,
+    "twice": 2,
+    "thrice": 3,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+    "hundred": 100,
+    "one hundred": 100,
+}
 
 
 class ParsedPlan:
@@ -109,7 +142,7 @@ def _normalize_action(action_text: str, schemas: dict[str, dict[str, Any]] | Non
 def _repeat_count(line: str, start: int, end: int) -> int:
     before = line[:start].lower()
     after = line[end:].lower()
-    word_pattern = "|".join(WORD_COUNTS)
+    word_pattern = "|".join(re.escape(word) for word in sorted(WORD_COUNTS, key=len, reverse=True))
     patterns = (
         re.search(r"\(?\s*(?:repeat\s+exactly|repeat(?:ed)?)\s+(\d+)\s+times?\s*\)?\s*$", before),
         re.search(r"(\d+)\s+times?\s*$", before),
@@ -123,6 +156,21 @@ def _repeat_count(line: str, start: int, end: int) -> int:
             value = match.group(1)
             return WORD_COUNTS[value] if value in WORD_COUNTS else max(1, int(value))
     return 1
+
+
+def _parse_count(text: str) -> int | None:
+    cleaned = re.sub(r"[-_]+", " ", text.lower()).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    if cleaned.isdigit():
+        return max(1, int(cleaned))
+    if cleaned in WORD_COUNTS:
+        return WORD_COUNTS[cleaned]
+    parts = cleaned.split()
+    if len(parts) == 2 and parts[0] in WORD_COUNTS and parts[1] == "hundred":
+        return max(1, WORD_COUNTS[parts[0]] * 100)
+    if len(parts) == 2 and parts[0] in WORD_COUNTS and parts[1] in WORD_COUNTS:
+        return max(1, WORD_COUNTS[parts[0]] + WORD_COUNTS[parts[1]])
+    return None
 
 
 def _build_alias_map(schemas: dict[str, dict[str, Any]] | None) -> dict[str, str]:
@@ -160,18 +208,48 @@ def _parenthesized_repeat_actions(
         return None, []
 
     inner = re.sub(r"\s+", " ", expression[1:-1].strip())
-    match = re.match(r"^repeat\s+([A-Za-z][\w-]*)\s+(\d+)\s+times?$", inner, re.IGNORECASE)
+    match = re.match(r"^repeat\s+([A-Za-z][\w-]*)\s+(.+?)\s+times?$", inner, re.IGNORECASE)
     if not match:
         return None, []
 
     action_name = alias_map.get(match.group(1).lower())
-    if action_name is None or current_object is None:
+    count = _parse_count(match.group(2))
+    if action_name is None or current_object is None or count is None:
         return [], ["ambiguous_compressed_action"]
 
-    count = max(1, int(match.group(2)))
     issues = ["compressed_actions_expanded"] if count > 1 else []
     return [f"({action_name} {current_object})"] * count, issues
 
+
+def _non_parenthesized_repeat_actions(
+    line: str,
+    schemas: dict[str, dict[str, Any]] | None,
+) -> tuple[list[str], list[str]]:
+    if not schemas:
+        return [], []
+
+    stripped = line.strip(" \t.;")
+    prefix = re.match(r"^(?:repeat\s+)?(.+?)\s+times?\s+(.+)$", stripped, re.IGNORECASE)
+    if prefix:
+        pairs = [(prefix.group(2), prefix.group(1))]
+    else:
+        repeated = re.match(r"^(.+?)\s+repeated\s+(.+?)\s+times?$", stripped, re.IGNORECASE)
+        pairs = [(repeated.group(1), repeated.group(2))] if repeated else []
+        tokens = stripped.split()
+        for tail_size in (2, 1):
+            if len(tokens) > tail_size + 1 and tokens[-1].lower().startswith("time"):
+                pairs.append((" ".join(tokens[:-tail_size - 1]), " ".join(tokens[-tail_size - 1:-1])))
+
+    for action_text, count_text in pairs:
+        count = _parse_count(count_text)
+        if count is None:
+            continue
+        action, _action_issues = _normalize_action(f"({action_text})", schemas)
+        if action is None:
+            continue
+        issues = ["compressed_actions_expanded"] if count > 1 else []
+        return [action] * count, issues
+    return [], []
 
 def _compressed_line_actions(
     line: str,
@@ -201,15 +279,15 @@ def _compressed_line_actions(
     issues: list[str] = []
     for part in re.split(r"[,;]", rest):
         step = part.strip(" \t.")
-        step_match = re.match(r"^([A-Za-z][\w-]*)\s+(\d+)\s*(?:times?)?$", step, re.IGNORECASE)
+        step_match = re.match(r"^([A-Za-z][\w-]*)\s+(?:x|\*)?\s*(.+?)\s*(?:times?)?$", step, re.IGNORECASE)
         if not step_match:
             continue
         alias = step_match.group(1).lower()
         action_name = alias_map.get(alias)
-        if action_name is None:
+        count = _parse_count(step_match.group(2))
+        if action_name is None or count is None:
             issues.append("ambiguous_compressed_action")
             continue
-        count = max(1, int(step_match.group(2)))
         actions.extend([f"({action_name} {obj})"] * count)
         if count > 1:
             issues.append("compressed_actions_expanded")
@@ -224,6 +302,7 @@ def _line_actions(
     current_object: str | None,
 ) -> tuple[list[str], list[str], str | None]:
     stripped = re.sub(r"^\s*\d+\s*-\s*\d+\s*:\s*", "", line.strip())
+    word_pattern = "|".join(re.escape(word) for word in sorted(WORD_COUNTS, key=len, reverse=True))
     if not re.match(r"^\d+\s+times?\b", stripped, re.IGNORECASE):
         stripped = _strip_list_prefix(stripped)
     matches = list(ACTION_PATTERN.finditer(stripped))
@@ -251,10 +330,16 @@ def _line_actions(
         remainder = ACTION_PATTERN.sub("", stripped).strip(" \t-:;,.>")
         remainder = re.sub(r"(?:repeat\s+exactly|repeat(?:ed)?|for)\s+\d+\s+times?", "", remainder, flags=re.IGNORECASE).strip()
         remainder = re.sub(r"\d+\s+times?", "", remainder, flags=re.IGNORECASE).strip()
+        remainder = re.sub(r"(?:" + word_pattern + r")\s+times?", "", remainder, flags=re.IGNORECASE).strip()
         remainder = re.sub(r"^(?:x|\*)\s*\d+\b", "", remainder, flags=re.IGNORECASE).strip()
         if remainder:
             issues.append("actions_embedded_in_text")
         return actions, issues, current_object
+
+    repeated, repeat_issues = _non_parenthesized_repeat_actions(stripped, schemas)
+    if repeated:
+        current_object = _one_arg_action_object(repeated[-1], schemas) or current_object
+        return repeated, repeat_issues, current_object
 
     compressed, compressed_issues, current_object = _compressed_line_actions(
         stripped,
@@ -281,6 +366,12 @@ def _leading_list_number(line: str) -> int | None:
         return None
     match = re.match(r"^\s*(\d+)[\).\]:-]?\s+", line)
     return int(match.group(1)) if match else None
+
+
+BOUNDARY_PATTERN = re.compile(
+    r"\b(?:alternative|maybe|could|try|instead|check|verify|count|wrong|invalid)\b",
+    re.IGNORECASE,
+)
 
 
 def _candidate(
@@ -314,8 +405,12 @@ def _extract_action_candidates(
     current_issues: list[str] = []
     current_numbered_segment: list[str] = []
     current_numbered_issues: list[str] = []
+    composite_segment: list[str] = []
+    composite_issues: list[str] = []
     current_near_final = False
     numbered_near_final = False
+    composite_near_final = False
+    composite_start_index = 0
     expected_number: int | None = None
     current_object: str | None = None
     alias_map = _build_alias_map(schemas)
@@ -338,13 +433,33 @@ def _extract_action_candidates(
         current_numbered_issues = []
         numbered_near_final = False
 
+    def flush_composite(truncated: bool = False) -> None:
+        nonlocal composite_segment, composite_issues, composite_near_final, composite_start_index
+        if composite_segment and not any(candidate["actions"] == composite_segment for candidate in candidates):
+            candidate = _candidate(composite_segment, composite_issues, composite_start_index, composite_near_final, truncated)
+            candidate["composite"] = True
+            candidates.append(candidate)
+        composite_segment = []
+        composite_issues = []
+        composite_near_final = False
+        composite_start_index = len(candidates)
+
     marker_pending = False
     for line in text.splitlines():
-        marker_pending = marker_pending or bool(FINAL_MARKER_PATTERN.search(line))
+        has_boundary = bool(BOUNDARY_PATTERN.search(line))
+        has_final_marker = bool(FINAL_MARKER_PATTERN.search(line))
+        if (has_boundary or has_final_marker) and composite_segment:
+            flush_composite()
+        marker_pending = marker_pending or has_final_marker
         line_actions, line_issues, current_object = _line_actions(line, schemas, alias_map, current_object)
         issues.extend(line_issues)
         line_number = _leading_list_number(line)
         if line_actions:
+            if not composite_segment:
+                composite_start_index = len(candidates)
+            composite_segment.extend(line_actions)
+            composite_issues.extend(line_issues)
+            composite_near_final = composite_near_final or marker_pending
             current_segment.extend(line_actions)
             current_issues.extend(line_issues)
             current_near_final = current_near_final or marker_pending
@@ -362,6 +477,8 @@ def _extract_action_candidates(
             continue
 
         truncated = _line_has_truncated_action(line, schemas)
+        if truncated and composite_segment:
+            flush_composite(True)
         if current_segment:
             flush_segment(truncated)
         if truncated:
@@ -370,8 +487,8 @@ def _extract_action_candidates(
 
     flush_segment()
     flush_numbered()
+    flush_composite()
     return candidates, _dedupe_preserve_order(issues)
-
 
 def _extract_actions(
     text: str,
@@ -380,19 +497,19 @@ def _extract_actions(
     select_candidate: bool = False,
 ) -> tuple[list[str], list[str]]:
     candidates, issues = _extract_action_candidates(text, schemas)
-    unnumbered = [candidate for candidate in candidates if not candidate.get("numbered")] or candidates
+    unnumbered = [candidate for candidate in candidates if not candidate.get("numbered") and not candidate.get("composite")] or candidates
     actions = [action for candidate in unnumbered for action in candidate["actions"]]
 
     if select_candidate and candidates:
-        candidate_pool = [candidate for candidate in candidates if candidate.get("numbered")] or candidates
+        candidate_pool = candidates
         if len(candidate_pool) > 1:
             issues.append("multiple_reasoning_candidate_plans")
         best = max(
             candidate_pool,
             key=lambda candidate: (
                 bool(candidate["near_final_marker"]),
-                int(candidate["source_index"]),
                 len(candidate["actions"]),
+                int(candidate["source_index"]),
             ),
         )
         if len(candidate_pool) > 1 and sum(1 for candidate in candidate_pool if len(candidate["actions"]) == len(best["actions"])) > 1:

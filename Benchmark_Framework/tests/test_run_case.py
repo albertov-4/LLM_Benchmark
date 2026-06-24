@@ -493,6 +493,69 @@ class RunCaseSmokeTest(unittest.TestCase):
             self.assertEqual(scored_attempt["reasoning_first_valid_prefix_length"], 1)
             self.assertTrue(scored_attempt["reasoning_final_plan_valid"])
 
+
+    def test_run_case_selects_valid_composite_reasoning_candidate_for_feedback(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_composite_reasoning_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class CompositeReasoningAdapter:
+            model_id = "reasoning-model"
+
+            def generate(self, messages):
+                return {
+                    "model_id": self.model_id,
+                    "raw_text": "(move_block_up b9)",
+                    "reasoning_text": "b1 up x2:\n(move_block_up b1) twice\n\nb2 up x3:\n(move_block_up b2) three times",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            domain_file = tmp_path / "domain.pddl"
+            problem_file = tmp_path / "problem.pddl"
+            domain_file.write_text(
+                """
+(define (domain blocks)
+  (:action move_block_up :parameters (?b))
+)
+""",
+                encoding="utf-8",
+            )
+            problem_file.write_text("(define (problem blocks-problem))", encoding="utf-8")
+            task_spec = run_case_module.TaskSpec(
+                task_family="blocks",
+                tier="easy",
+                instance_id="pfile1",
+                domain_file=str(domain_file),
+                problem_file=str(problem_file),
+            )
+            protocol_spec = run_case_module.ProtocolSpec(
+                protocol_id="iterative_repair",
+                max_iterations=1,
+                require_final_plan_only=True,
+                include_external_feedback=True,
+            )
+
+            result = run_case_module.run_case(
+                model_id="mock_model",
+                adapter=CompositeReasoningAdapter(),
+                validator=PrefixLengthValidator(valid_prefix_length=5),
+                task_spec=task_spec,
+                protocol_spec=protocol_spec,
+            )
+
+        attempt = result.attempts[0]
+        self.assertFalse(result.solved)
+        self.assertTrue(attempt["reasoning_final_plan_valid"])
+        self.assertEqual(attempt["reasoning_first_valid_prefix_length"], 5)
+        self.assertEqual(len(attempt["parsed_plan"]["reasoning"]["actions"]), 5)
+        self.assertIn("valid action sequence was decoded from the reasoning text", attempt["feedback_to_next_iteration"])
+        self.assertIn("(move_block_up b2)", attempt["feedback_to_next_iteration"])
+
     def test_run_case_persists_raw_parsed_and_scored_outputs(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_case_module = _load_module(

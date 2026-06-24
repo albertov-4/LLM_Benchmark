@@ -146,6 +146,9 @@ def build_protocol_spec(protocol_config: LoadedProtocolConfig):
     prompting_config = protocol_config.raw_config.get("prompting", {})
     if not isinstance(prompting_config, dict):
         prompting_config = {}
+    repair_feedback = protocol_config.raw_config.get("repair_feedback", {})
+    if not isinstance(repair_feedback, dict):
+        repair_feedback = {}
 
     return run_case_module.ProtocolSpec(
         protocol_id=protocol_config.protocol_id,
@@ -153,6 +156,7 @@ def build_protocol_spec(protocol_config: LoadedProtocolConfig):
         require_final_plan_only=protocol_config.require_final_plan_only,
         include_external_feedback=bool(prompting_config.get("include_external_feedback", False)),
         include_chain_of_thought=bool(prompting_config.get("include_chain_of_thought", False)),
+        repair_feedback=repair_feedback,
     )
 
 

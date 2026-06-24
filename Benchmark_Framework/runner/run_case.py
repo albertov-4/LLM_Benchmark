@@ -38,6 +38,7 @@ class ProtocolSpec:
     require_final_plan_only: bool
     include_external_feedback: bool = False
     include_chain_of_thought: bool = False
+    repair_feedback: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -576,58 +577,53 @@ def build_messages(
 
     return messages
 
+def _load_repair_feedback_module():
+    return _load_framework_module(
+        "benchmark_framework_repair_feedback",
+        "evaluators/repair_feedback.py",
+    )
+
+
+def _next_feedback_messages(
+    feedback_messages: list[str],
+    feedback: str,
+    config: dict[str, Any] | None,
+) -> list[str]:
+    mode = "last_only"
+    if isinstance(config, dict):
+        mode = str(config.get("history_mode", mode))
+    return [*feedback_messages, feedback] if mode in {"append", "all"} else [feedback]
+
 
 def build_repair_feedback(
-    validation_result: dict[str, Any],
+    validation_result: dict[str, Any] | None = None,
     feedback_prompt: str = "",
     reasoning_validation_result: dict[str, Any] | None = None,
     reasoning_plan_text: str | None = None,
+    *,
+    attempt_record: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> str:
-    """Convert validator output into a user-facing repair message.
-
-    In a future implementation this could delegate to a domain-specific
-    feedback module.
-    """
-    status = validation_result.get("status", "invalid")
-    error_type = validation_result.get("error_type", "unknown")
-    feedback_text = validation_result.get("feedback_text", "Unknown validation error.")
-    failed_step = validation_result.get("failed_step")
-    failed_action = validation_result.get("failed_action")
-    details = validation_result.get("details")
-    raw_format_issues = details.get("raw_format_issues") if isinstance(details, dict) else None
-
-    lines: list[str] = []
-    if feedback_prompt.strip():
-        lines.append(feedback_prompt.strip())
-
-    lines.extend(
-        [
-            "The previous plan did not validate.",
-            f"Validation status: {status}",
-            f"Error type: {error_type}",
-        ]
+    """Build model-facing repair feedback from the previous attempt."""
+    repair_feedback = _load_repair_feedback_module()
+    if attempt_record is None:
+        attempt_record = {
+            "generation": {"raw_text": "", "reasoning_text": ""},
+            "raw_output": "",
+            "parsed_plan": {},
+            "validation_result": validation_result or {},
+            "reasoning_validation_result": reasoning_validation_result,
+            "reasoning_first_valid_plan_text": reasoning_plan_text,
+            "reasoning_final_plan_valid": bool(
+                isinstance(reasoning_validation_result, dict)
+                and reasoning_validation_result.get("valid")
+            ),
+        }
+    return repair_feedback.build_repair_feedback(
+        attempt_record=attempt_record,
+        feedback_prompt=feedback_prompt,
+        config=config,
     )
-    if failed_step is not None:
-        lines.append(f"Failed step: {failed_step}")
-    if failed_action:
-        lines.append(f"Failed action: {failed_action}")
-    if isinstance(raw_format_issues, list) and raw_format_issues:
-        lines.append("Raw parse issues: " + ", ".join(str(issue) for issue in raw_format_issues))
-    if (
-        isinstance(reasoning_validation_result, dict)
-        and reasoning_validation_result.get("valid")
-        and reasoning_plan_text
-    ):
-        lines.extend(
-            [
-                "A valid action sequence was decoded from the reasoning text, but the final answer/raw plan did not validate.",
-                "In the next answer, output exactly this decoded reasoning plan as the final action sequence, with no explanation:",
-                reasoning_plan_text.strip(),
-            ]
-        )
-    lines.append(f"Feedback: {feedback_text}")
-    lines.append("Please provide a corrected action sequence.")
-    return "\n".join(lines)
 
 
 def run_generation_loop(
@@ -838,12 +834,11 @@ def run_generation_loop(
             )
             if protocol_spec.include_external_feedback:
                 feedback = build_repair_feedback(
-                    validation_result,
+                    attempt_record=attempt_record,
                     feedback_prompt=feedback_prompt,
-                    reasoning_validation_result=attempt_record.get("reasoning_validation_result"),
-                    reasoning_plan_text=attempt_record.get("reasoning_first_valid_plan_text"),
+                    config=protocol_spec.repair_feedback,
                 )
-                feedback_messages.append(feedback)
+                feedback_messages = _next_feedback_messages(feedback_messages, feedback, protocol_spec.repair_feedback)
                 attempt_record["feedback_to_next_iteration"] = feedback
             attempts.append(attempt_record)
             continue
@@ -894,12 +889,11 @@ def run_generation_loop(
 
         if protocol_spec.include_external_feedback:
             feedback = build_repair_feedback(
-                validation_result,
+                attempt_record=attempt_record,
                 feedback_prompt=feedback_prompt,
-                reasoning_validation_result=attempt_record.get("reasoning_validation_result"),
-                reasoning_plan_text=attempt_record.get("reasoning_first_valid_plan_text"),
+                config=protocol_spec.repair_feedback,
             )
-            feedback_messages.append(feedback)
+            feedback_messages = _next_feedback_messages(feedback_messages, feedback, protocol_spec.repair_feedback)
             attempt_record["feedback_to_next_iteration"] = feedback
         attempts.append(attempt_record)
 

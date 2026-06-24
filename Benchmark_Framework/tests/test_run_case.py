@@ -441,7 +441,7 @@ class RunCaseSmokeTest(unittest.TestCase):
 
         self.assertIn("valid action sequence was decoded from the reasoning text", feedback)
         self.assertIn("final answer/raw plan did not validate", feedback)
-        self.assertIn("(move a b)\n(pick box1 room2)", feedback)
+        self.assertNotIn("(move a b)\n(pick box1 room2)", feedback)
 
     def test_run_case_stores_reasoning_plan_separately(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
@@ -791,6 +791,47 @@ Final answer:
         self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)", "(move b c)"])
 
 
+
+    def test_repair_feedback_starts_on_second_iteration_and_defaults_last_only(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_repair_history_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class CapturingAdapter:
+            model_id = "capture-model"
+
+            def __init__(self) -> None:
+                self.outputs = ["(move a b)", "(move b c)", "(move c d)"]
+                self.messages_by_call = []
+
+            def generate(self, messages):
+                self.messages_by_call.append([dict(message) for message in messages])
+                raw_text = self.outputs[len(self.messages_by_call) - 1]
+                return {"raw_text": raw_text, "usage": {}, "latency_s": 0.0}
+
+        adapter = CapturingAdapter()
+        validator = PrefixLengthValidator(valid_prefix_length=None)
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=3)
+        protocol_spec.include_external_feedback = True
+
+        run_case_module.run_case(
+            model_id="mock_model",
+            adapter=adapter,
+            validator=validator,
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        self.assertEqual(len(adapter.messages_by_call), 3)
+        self.assertEqual(len(adapter.messages_by_call[0]), 1)
+        second_feedback = adapter.messages_by_call[1][-1]["content"]
+        third_feedback = adapter.messages_by_call[2][-1]["content"]
+        self.assertIn("[PREVIOUS FINAL ANSWER]", second_feedback)
+        self.assertIn("(move a b)", second_feedback)
+        self.assertIn("(move b c)", third_feedback)
+        self.assertNotIn("(move a b)", third_feedback)
 
 if __name__ == "__main__":
     unittest.main()

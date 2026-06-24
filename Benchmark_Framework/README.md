@@ -35,6 +35,7 @@ files under `protocols/`, and prompt text under `prompts/`.
 ```text
 Benchmark_Framework/
 |-- docs/                 operational notes that do not belong in quickstart docs
+|-- reporting/            post-run report helpers such as CoT alignment and plots
 |-- evaluators/           parser, VAL adapter, metrics, error taxonomy
 |-- Leonardo_script/      SLURM scripts for Leonardo/HPC runs
 |-- models/               model registries and backend adapters
@@ -248,11 +249,12 @@ python Benchmark_Framework/clear_outputs.py
 
 ## Advanced Evaluation Reports
 
-`advanced_planning_evaluation_sp.py` is the reusable script version of the
+`advanced_planning_evaluation_sp.py` is the executable script version of the
 advanced planning evaluation notebook. It reads completed artifacts from
 `outputs/raw`, `outputs/parsed`, and `outputs/scored`, then writes model-centric
 JSON reports and optional plot folders under the repository-level `results/`
-directory. The report keeps four CoT concepts separate: `cot_plan_alignment_score`
+directory. Reusable post-run helpers live in `reporting/`: CoT plan alignment
+in `reporting/cot_alignment.py` and report plotting in `reporting/plots.py`. The report keeps four CoT concepts separate: `cot_plan_alignment_score`
 compares the final raw action sequence with the reasoning action sequence,
 `cot_semantic_support_score` measures lexical support from reasoning text,
 `cot_plan_alignment_proxy_score` is a capped low-confidence fallback when no

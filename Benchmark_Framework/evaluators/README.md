@@ -2,7 +2,8 @@
 
 The evaluator layer is shared by all model backends and protocols. Its purpose
 is to keep parsing, validation, error categories, and metrics comparable across
-runs.
+runs. Post-run report helpers live in `../reporting/`; this directory is for
+benchmark-time parsing, validation, and metric normalization.
 
 ## Components
 

@@ -333,6 +333,54 @@ Final answer:
         self.assertIn("truncated_reasoning_candidate", result.reasoning["format_issues"])
 
 
+    def test_reasoning_composes_nearby_compressed_fragments(self) -> None:
+        block_domain = """
+(define (domain blocks)
+  (:action move_block_left :parameters (?b))
+  (:action move_block_up :parameters (?b))
+)
+"""
+        reasoning_text = """b1 left x3:
+(move_block_left b1) three times
+
+b2 left x2:
+(move_block_left b2) twice
+
+b2 up x9:
+(move_block_up b2) nine times
+
+b4 up x6:
+(move_block_up b4) six times
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=block_domain)
+        candidates = self.parser_module.extract_reasoning_candidates(reasoning_text, domain_text=block_domain)
+
+        self.assertEqual(len(result.reasoning["actions"]), 20)
+        self.assertTrue(any(len(candidate["actions"]) == 20 for candidate in candidates))
+        self.assertEqual(result.reasoning["actions"].count("(move_block_left b1)"), 3)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_left b2)"), 2)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_up b2)"), 9)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_up b4)"), 6)
+
+    def test_non_parenthesized_repeat_expands_domain_valid_actions(self) -> None:
+        for text in ("58 times go_south b0", "repeat 58 times go_south b0", "go_south b0 repeated 58 times", "go_south b0 58 times"):
+            with self.subTest(text=text):
+                result = self.parser_module.parse_plan_text("", reasoning_text=text, domain_text=SAILING_DOMAIN)
+                self.assertEqual(result.reasoning["actions"], ["(go_south b0)"] * 58)
+
+    def test_composite_candidates_stop_at_alternative_boundary(self) -> None:
+        reasoning_text = """b1 up 2
+alternative:
+b2 right 3
+"""
+
+        candidates = self.parser_module.extract_reasoning_candidates(reasoning_text, domain_text=BLOCK_DOMAIN)
+
+        self.assertFalse(any(len(candidate["actions"]) == 5 for candidate in candidates))
+        self.assertTrue(any(candidate["actions"] == ["(move_block_up b1)", "(move_block_up b1)"] for candidate in candidates))
+        self.assertTrue(any(candidate["actions"] == ["(move_block_right b2)"] * 3 for candidate in candidates))
+
 
 if __name__ == "__main__":
     unittest.main()

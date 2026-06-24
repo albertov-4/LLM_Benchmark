@@ -236,7 +236,9 @@ outputs/scored/<run_id>/suite_results/<model_id>__<task_family>.json
 and parser issues, and `scored` stores validation results, repair feedback,
 metrics, and artifact paths. During validation the runner checks action
 prefixes, records the first valid prefix when present, and distinguishes it from
-the validity of the full generated plan.
+the validity of the full generated plan. Reasoning plans, when extracted, stay
+diagnostic: they can be analyzed later, but they do not replace the official raw
+plan for validation, repair, metrics, or `solved`.
 
 Generated outputs and NVIDIA lane logs can be removed interactively with:
 
@@ -250,7 +252,13 @@ python Benchmark_Framework/clear_outputs.py
 advanced planning evaluation notebook. It reads completed artifacts from
 `outputs/raw`, `outputs/parsed`, and `outputs/scored`, then writes model-centric
 JSON reports and optional plot folders under the repository-level `results/`
-directory.
+directory. The report keeps four CoT concepts separate: `cot_plan_alignment_score`
+compares the final raw action sequence with the reasoning action sequence,
+`cot_semantic_support_score` measures lexical support from reasoning text,
+`cot_plan_alignment_proxy_score` is a capped low-confidence fallback when no
+reasoning plan is extractable, and validation fields answer whether either plan
+solves the PDDL task. Prefix-validity fields are diagnostics and do not reduce
+plan-alignment scores.
 
 Run it from the repository root:
 

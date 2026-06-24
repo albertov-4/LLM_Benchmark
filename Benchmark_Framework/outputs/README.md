@@ -68,7 +68,11 @@ Parsed artifacts store attempts as:
 Only `raw.actions` is official for validation, repair, metrics, and `solved`.
 `reasoning.actions` is validated in scored artifacts when present, but those
 `reasoning_validation_result` fields are diagnostic and never repair or replace
-the final answer.
+the final answer. Analysis reports may compare `raw.actions` and
+`reasoning.actions` for CoT plan alignment; that comparison is separate from PDDL
+validity. Older parsed artifacts that only contain `parsed_plan.actions` are read
+as a compatibility fallback for the raw plan, and missing nested reasoning or
+validation fields are treated as unavailable rather than fatal.
 
 Scored attempts may also include reasoning-candidate metadata:
 
@@ -78,7 +82,9 @@ Scored attempts may also include reasoning-candidate metadata:
 - `reasoning_selected_candidate_truncated`
 
 These fields explain which decoded reasoning candidate was selected after
-individual validation. They do not affect official scoring.
+individual validation. Candidate counts may include parser-created composite
+candidates from nearby compressed reasoning fragments. They do not affect
+official scoring.
 
 ## Cleanup
 
@@ -91,3 +97,14 @@ python Benchmark_Framework/clear_outputs.py
 The cleanup script targets generated children under `raw`, `parsed`, `scored`,
 `runs`, and `logs` while preserving the folder structure and `.gitkeep` files.
 Review the printed deletion plan before confirming.
+
+## CoT Alignment Inputs
+
+`advanced_planning_evaluation_sp.py` reads these fields when available:
+
+- parsed attempts: `parsed_plan.raw.actions`, `parsed_plan.reasoning.actions`, and their `format_issues`
+- scored attempts: `final_plan_valid`, `first_valid_prefix_length`, `reasoning_final_plan_valid`, `reasoning_first_valid_prefix_length`, `validation_result`, and `reasoning_validation_result`
+- raw attempts: `generation.reasoning_text` for semantic-support scoring
+
+The script does not rerun the validator. It uses scored validation fields only as
+diagnostics around alignment.

@@ -12,7 +12,7 @@ import json
 import math
 import re
 import warnings
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -100,7 +100,16 @@ ROW_METRIC_COLUMNS = [
     "mean_temporal_distance",
     "cot_action_coverage",
     "cot_object_coverage",
-    "cot_alignment_score",
+    "cot_term_coverage",
+    "cot_semantic_support_score",
+    "cot_plan_alignment_score",
+    "cot_plan_alignment_proxy_score",
+    "cot_alignment_status",
+    "cot_alignment_confidence",
+    "cot_reasoning_plan_available",
+    "cot_exact_sequence_match",
+    "strict_or_proxy_alignment_value",
+    "cot_alignment",
     "_iter1",
     "_iwsr_contrib",
 ]
@@ -441,7 +450,7 @@ def parse_action(action_str: str) -> tuple[Optional[str], list[str]]:
     string splitting that would break on nested parentheses or extra whitespace.
     Code purpose: lowest-level tokeniser for a single plan step; called in
     ``compute_hallucination_metrics`` and ``compute_precondition_metrics``.
-    Detail: ``_ACT_RE = re.compile(r"\(\s*([^\s()]+)((?:\s+[^\s()]+)*)\s*\)")``
+    Detail: ``_ACT_RE`` matches one parenthesized PDDL action atom.
     captures the head token as group 1 and the argument token list as group 2.
     Returns ``(None, [])`` if the string does not match PDDL atom syntax.
     """
@@ -453,6 +462,22 @@ def parse_action(action_str: str) -> tuple[Optional[str], list[str]]:
     return name, args
 
 
+def safe_get(data: Any, path: str | Iterable[Any], default: Any = None) -> Any:
+    parts = path.split(".") if isinstance(path, str) else list(path)
+    current = data
+    missing = object()
+    for part in parts:
+        if isinstance(current, dict):
+            current = current.get(part, missing)
+        elif isinstance(current, list) and isinstance(part, int) and 0 <= part < len(current):
+            current = current[part]
+        else:
+            return default
+        if current is missing:
+            return default
+    return current
+
+
 def parsed_plan_raw_actions(parsed_plan: dict[str, Any]) -> list[str]:
     raw_plan = parsed_plan.get("raw")
     if isinstance(raw_plan, dict) and isinstance(raw_plan.get("actions"), list):
@@ -461,9 +486,23 @@ def parsed_plan_raw_actions(parsed_plan: dict[str, Any]) -> list[str]:
     return actions if isinstance(actions, list) else []
 
 
+def parsed_plan_reasoning_actions(parsed_plan: dict[str, Any]) -> list[str]:
+    reasoning = parsed_plan.get("reasoning")
+    if isinstance(reasoning, dict) and isinstance(reasoning.get("actions"), list):
+        return reasoning["actions"]
+    return []
+
+
 def parsed_plan_reasoning_text(parsed_plan: dict[str, Any]) -> str:
     reasoning = parsed_plan.get("reasoning")
     return reasoning if isinstance(reasoning, str) else ""
+
+
+def raw_attempt_reasoning_text(raw_attempt: dict[str, Any] | None) -> str:
+    value = safe_get(raw_attempt or {}, "generation.reasoning_text", "")
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
 
 
 def extract_pddl_actions_from_text(text: str) -> list[str]:
@@ -652,6 +691,7 @@ def load_artifact_rows(
     """
     parsed_dir = framework_root / "outputs" / "parsed"
     scored_dir = framework_root / "outputs" / "scored"
+    raw_dir = framework_root / "outputs" / "raw"
     protocol_cot = load_protocol_cot_flags(framework_root / "protocols", warnings_out)
 
     rows: list[dict[str, Any]] = []
@@ -674,20 +714,29 @@ def load_artifact_rows(
             if parsed_data is None:
                 continue
             attempts = parsed_data.get("attempts", [])
+            attempts = attempts if isinstance(attempts, list) else []
+
+            raw_path = raw_dir / run_id / model / protocol / domain / difficulty / filename
+            raw_data = read_json_file(raw_path, warnings_out, "raw_read_error") if raw_path.exists() else None
+            raw_attempts = raw_data.get("attempts", []) if isinstance(raw_data, dict) else []
+            raw_attempts = raw_attempts if isinstance(raw_attempts, list) else []
 
             actions: list[str] = []
             cot_text = ""
-            for attempt in reversed(attempts):
+            for attempt_index in range(len(attempts) - 1, -1, -1):
+                attempt = attempts[attempt_index]
                 parsed_plan = attempt.get("parsed_plan") or {}
                 candidate = parsed_plan_raw_actions(parsed_plan)
                 if candidate:
                     actions = candidate
-                    cot_text = parsed_plan_reasoning_text(parsed_plan)
+                    raw_attempt = raw_attempts[attempt_index] if attempt_index < len(raw_attempts) else None
+                    cot_text = raw_attempt_reasoning_text(raw_attempt) or parsed_plan_reasoning_text(parsed_plan)
                     break
             if not actions and attempts:
                 parsed_plan = attempts[-1].get("parsed_plan") or {}
                 actions = parsed_plan_raw_actions(parsed_plan)
-                cot_text = parsed_plan_reasoning_text(parsed_plan)
+                raw_attempt = raw_attempts[-1] if raw_attempts else None
+                cot_text = raw_attempt_reasoning_text(raw_attempt) or parsed_plan_reasoning_text(parsed_plan)
 
             scored_path = scored_dir / run_id / model / protocol / domain / difficulty / filename
             scored = read_json_file(scored_path, warnings_out, "scored_read_error") if scored_path.exists() else None
@@ -701,9 +750,12 @@ def load_artifact_rows(
                     )
                 is_valid = False
                 iterations = len(attempts)
+                scored_attempts: list[dict[str, Any]] = []
             else:
                 is_valid = bool(scored.get("solved", False))
                 iterations = scored.get("iterations_used", len(attempts))
+                scored_attempts = scored.get("attempts", [])
+                scored_attempts = scored_attempts if isinstance(scored_attempts, list) else []
 
             rows.append(
                 {
@@ -716,9 +768,12 @@ def load_artifact_rows(
                     "Valid": is_valid,
                     "Length": len(actions),
                     "Iterations": iterations,
-                    "Chain_of_Thought": protocol_cot.get(protocol, False) or bool(cot_text.strip()),
+                    "Chain_of_Thought": protocol_cot.get(protocol, False) or bool(cot_text.strip()) or any(parsed_plan_reasoning_actions((attempt.get("parsed_plan") or {})) for attempt in attempts if isinstance(attempt, dict)),
                     "_actions": actions,
                     "_cot_text": cot_text,
+                    "_parsed_attempts": attempts,
+                    "_scored_attempts": scored_attempts,
+                    "_raw_attempts": raw_attempts,
                     "_file_path": str(json_file),
                     "parsed_file_path": str(json_file),
                 }
@@ -740,6 +795,9 @@ def load_artifact_rows(
                 "Chain_of_Thought",
                 "_actions",
                 "_cot_text",
+                "_parsed_attempts",
+                "_scored_attempts",
+                "_raw_attempts",
                 "_file_path",
                 "parsed_file_path",
             ]
@@ -1045,27 +1103,154 @@ def compute_precondition_metrics(actions: list[str], d_info: dict[str, Any], p_i
         return nan_result
 
 
-def compute_cot_alignment(cot_text: str, actions: list[str], d_info: dict[str, Any], p_info: dict[str, Any]) -> dict[str, Any]:
-    """Compute the CoT alignment score measuring how well the reasoning trace covers plan vocabulary.
+def normalize_action_sequence(actions: list[Any], lowercase: bool = True) -> list[str]:
+    result: list[str] = []
+    for action in actions or []:
+        if not isinstance(action, str):
+            continue
+        normalized = " ".join(action.strip().split())
+        if lowercase:
+            normalized = normalized.lower()
+        if normalized:
+            result.append(normalized)
+    return result
 
-    Metric correlation: ``cot_alignment_score`` (CoT) — used in composite scoring
-    (optional +0.05 bonus when finite) and as a Genuine Planner threshold (CoT > 0.70).
-    Rationale (double-intersection design): a naive overlap between CoT tokens and
-    plan tokens is inflated by verbose reasoning that mentions domain objects
-    repeatedly. The denominator is restricted to the plan's own vocabulary
-    (plan_action_names ∩ legal_actions, plan_objects ∩ legal_objects) rather than
-    the full domain or CoT vocabulary. This penalises post-hoc rationalisation that
-    describes the domain generally without connecting to the specific actions taken.
-    Action coverage: fraction of plan action names mentioned in the CoT.
-    Object coverage: fraction of plan object tokens mentioned in the CoT.
-    Score = (action_cov + object_cov) / 2.
-    Code purpose: per-row metric, called only when Chain_of_Thought=True; returns
-    NaN for all three values otherwise (handled upstream in ``compute_row_metrics``).
-    Detail: CoT tokens are extracted with ``re.findall(r"[a-z][a-z0-9_-]*", …)``
-    after lowercasing; denominators are floored at 1 to avoid division-by-zero for
-    empty plans. The intersection with ``legal_*`` sets filters out stop-words and
-    generic tokens before the plan coverage fraction is computed.
-    """
+
+def common_prefix_length(left: list[str], right: list[str]) -> int:
+    count = 0
+    for left_item, right_item in zip(left, right):
+        if left_item != right_item:
+            break
+        count += 1
+    return count
+
+
+def lcs_length(left: list[str], right: list[str]) -> int:
+    if not left or not right:
+        return 0
+    previous = [0] * (len(right) + 1)
+    for left_item in left:
+        current = [0]
+        for index, right_item in enumerate(right, start=1):
+            current.append(previous[index - 1] + 1 if left_item == right_item else max(previous[index], current[-1]))
+        previous = current
+    return previous[-1]
+
+
+def action_bag_overlap_score(left: list[str], right: list[str]) -> float:
+    if not left or not right:
+        return 0.0
+    overlap = sum((Counter(left) & Counter(right)).values())
+    return overlap / max(len(left), len(right), 1)
+
+
+def contiguous_repetition_blocks(actions: list[str]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    start = 0
+    while start < len(actions):
+        end = start
+        while end + 1 < len(actions) and actions[end + 1] == actions[start]:
+            end += 1
+        if end > start:
+            blocks.append({"action": actions[start], "start": start, "end": end, "length": end - start + 1})
+        start = end + 1
+    return blocks
+
+
+def repetition_similarity(left: list[str], right: list[str]) -> float:
+    left_repeated = sum(count - 1 for count in Counter(left).values() if count > 1)
+    right_repeated = sum(count - 1 for count in Counter(right).values() if count > 1)
+    denominator = max(left_repeated, right_repeated, 1)
+    return 1.0 - (abs(left_repeated - right_repeated) / denominator)
+
+
+def detect_adjacent_swaps(left: list[str], right: list[str]) -> list[dict[str, Any]]:
+    swaps: list[dict[str, Any]] = []
+    max_index = min(len(left), len(right)) - 1
+    index = 0
+    while index < max_index:
+        if left[index] == right[index + 1] and left[index + 1] == right[index] and left[index] != left[index + 1]:
+            swaps.append({"index": index, "raw_pair": [left[index], left[index + 1]], "reasoning_pair": [right[index], right[index + 1]]})
+            index += 2
+        else:
+            index += 1
+    return swaps
+
+
+def compute_sequence_alignment(raw_actions: list[Any], reasoning_actions: list[Any]) -> dict[str, Any]:
+    raw = normalize_action_sequence(raw_actions)
+    reasoning = normalize_action_sequence(reasoning_actions)
+    max_len = max(len(raw), len(reasoning), 1)
+    min_len = min(len(raw), len(reasoning))
+    prefix = common_prefix_length(raw, reasoning)
+    lcs = lcs_length(raw, reasoning)
+    length_ratio = min_len / max_len
+    prefix_ratio = prefix / max(min_len, 1)
+    lcs_ratio = lcs / max_len
+    bag_score = action_bag_overlap_score(raw, reasoning)
+    repeat_similarity = repetition_similarity(raw, reasoning)
+    adjacent_swaps = detect_adjacent_swaps(raw, reasoning)
+
+    first_mismatch_index = None
+    mismatch_examples: list[dict[str, Any]] = []
+    displaced_actions: list[dict[str, Any]] = []
+    for index in range(max(len(raw), len(reasoning))):
+        raw_action = raw[index] if index < len(raw) else None
+        reasoning_action = reasoning[index] if index < len(reasoning) else None
+        if raw_action == reasoning_action:
+            continue
+        if first_mismatch_index is None:
+            first_mismatch_index = index
+        if len(mismatch_examples) < 5:
+            mismatch_examples.append({"index": index, "raw_action": raw_action, "reasoning_action": reasoning_action})
+        if raw_action in reasoning or reasoning_action in raw:
+            displaced_actions.append({"index": index, "raw_action": raw_action, "reasoning_action": reasoning_action})
+
+    raw_counts = Counter(raw)
+    reasoning_counts = Counter(reasoning)
+    structural_alignment = (
+        0.35 * lcs_ratio
+        + 0.25 * prefix_ratio
+        + 0.20 * bag_score
+        + 0.10 * length_ratio
+        + 0.10 * repeat_similarity
+    )
+    raw_blocks = contiguous_repetition_blocks(raw)
+    reasoning_blocks = contiguous_repetition_blocks(reasoning)
+    return {
+        "raw_actions": raw,
+        "reasoning_actions": reasoning,
+        "raw_plan_length": len(raw),
+        "reasoning_plan_length": len(reasoning),
+        "length_ratio": length_ratio,
+        "exact_sequence_match": raw == reasoning,
+        "common_prefix_length": prefix,
+        "common_prefix_ratio": prefix_ratio,
+        "lcs_length": lcs,
+        "lcs_ratio": lcs_ratio,
+        "action_bag_overlap_score": bag_score,
+        "repetition_similarity": repeat_similarity,
+        "structural_alignment": float(np.clip(structural_alignment, 0, 1)),
+        "raw_distinct_action_count": len(raw_counts),
+        "reasoning_distinct_action_count": len(reasoning_counts),
+        "raw_action_frequencies": dict(raw_counts),
+        "reasoning_action_frequencies": dict(reasoning_counts),
+        "raw_repeated_action_total": sum(count - 1 for count in raw_counts.values() if count > 1),
+        "reasoning_repeated_action_total": sum(count - 1 for count in reasoning_counts.values() if count > 1),
+        "raw_repetition_block_count": len(raw_blocks),
+        "reasoning_repetition_block_count": len(reasoning_blocks),
+        "raw_repetition_blocks": raw_blocks,
+        "reasoning_repetition_blocks": reasoning_blocks,
+        "adjacent_swaps": adjacent_swaps,
+        "adjacent_swap_count": len(adjacent_swaps),
+        "displaced_actions": displaced_actions,
+        "displaced_action_count": len(displaced_actions),
+        "first_mismatch_index": first_mismatch_index,
+        "mismatch_examples": mismatch_examples,
+    }
+
+
+def compute_cot_semantic_support(cot_text: str, actions: list[str], d_info: dict[str, Any], p_info: dict[str, Any]) -> dict[str, Any]:
     legal_action_names = d_info.get("action_names", set())
     legal_objects = p_info.get("objects", set())
     cot_tokens = set(re.findall(r"[a-z][a-z0-9_-]*", (cot_text or "").lower()))
@@ -1078,14 +1263,161 @@ def compute_cot_alignment(cot_text: str, actions: list[str], d_info: dict[str, A
             plan_action_names.add(name)
             plan_objects.update(args)
 
+    plan_terms = plan_action_names | plan_objects
     cot_action_mentioned = cot_tokens & legal_action_names
     cot_object_mentioned = cot_tokens & legal_objects
     cot_action_cov = len(cot_action_mentioned & plan_action_names) / max(len(plan_action_names), 1)
     cot_object_cov = len(cot_object_mentioned & plan_objects) / max(len(plan_objects), 1)
+    cot_term_cov = len(cot_tokens & plan_terms) / max(len(plan_terms), 1)
     return {
         "cot_action_coverage": cot_action_cov,
         "cot_object_coverage": cot_object_cov,
-        "cot_alignment_score": (cot_action_cov + cot_object_cov) / 2,
+        "cot_term_coverage": cot_term_cov,
+        "cot_semantic_support_score": (cot_action_cov + cot_object_cov) / 2,
+    }
+
+
+def compute_cot_alignment(cot_text: str, actions: list[str], d_info: dict[str, Any], p_info: dict[str, Any]) -> dict[str, Any]:
+    return compute_cot_semantic_support(cot_text, actions, d_info, p_info)
+
+
+def _bool_or_none(value: Any) -> Optional[bool]:
+    return value if isinstance(value, bool) else None
+
+
+def _prefix_ratio(prefix: Any, length: int) -> Optional[float]:
+    if isinstance(prefix, int) and length > 0:
+        return prefix / length
+    return None
+
+
+def compute_cot_alignment_for_attempt(
+    parsed_attempt: dict[str, Any],
+    scored_attempt: dict[str, Any] | None,
+    raw_attempt: dict[str, Any] | None,
+    d_info: dict[str, Any],
+    p_info: dict[str, Any],
+    semantic_proxy_cap: float = 0.35,
+) -> dict[str, Any]:
+    parsed_plan = parsed_attempt.get("parsed_plan") if isinstance(parsed_attempt, dict) else {}
+    parsed_plan = parsed_plan if isinstance(parsed_plan, dict) else {}
+    scored_attempt = scored_attempt if isinstance(scored_attempt, dict) else {}
+    raw_actions = normalize_action_sequence(parsed_plan_raw_actions(parsed_plan))
+    reasoning_actions = normalize_action_sequence(parsed_plan_reasoning_actions(parsed_plan))
+    reasoning_text = raw_attempt_reasoning_text(raw_attempt) or parsed_plan_reasoning_text(parsed_plan)
+    semantic = (
+        compute_cot_semantic_support(reasoning_text, raw_actions, d_info, p_info)
+        if reasoning_text.strip()
+        else {
+            "cot_action_coverage": None,
+            "cot_object_coverage": None,
+            "cot_term_coverage": None,
+            "cot_semantic_support_score": None,
+        }
+    )
+
+    raw_valid = _bool_or_none(safe_get(scored_attempt, "final_plan_valid"))
+    raw_valid_inferred = False
+    if raw_valid is None:
+        raw_valid = _bool_or_none(safe_get(scored_attempt, "validation_result.valid"))
+        raw_valid_inferred = raw_valid is not None
+    reasoning_valid = _bool_or_none(safe_get(scored_attempt, "reasoning_final_plan_valid"))
+    raw_prefix = safe_get(scored_attempt, "first_valid_prefix_length")
+    reasoning_prefix = safe_get(scored_attempt, "reasoning_first_valid_prefix_length")
+
+    sequence: dict[str, Any] = {}
+    plan_score = None
+    proxy_score = None
+    exact_match = None
+    confidence = "none"
+    status = "no_reasoning_text"
+    basis = "none"
+
+    if not reasoning_text.strip() and not reasoning_actions:
+        status = "no_reasoning_text"
+    elif not raw_actions:
+        status = "no_raw_plan"
+        confidence = "low"
+    elif raw_actions and reasoning_actions:
+        sequence = compute_sequence_alignment(raw_actions, reasoning_actions)
+        plan_score = sequence["structural_alignment"]
+        exact_match = sequence["exact_sequence_match"]
+        confidence = "high"
+        if raw_valid is True and reasoning_valid is True:
+            status = "comparable_and_both_valid"
+        elif raw_valid is False and reasoning_valid is False:
+            status = "comparable_but_both_invalid"
+        elif raw_valid is False:
+            status = "comparable_but_raw_invalid"
+        elif reasoning_valid is False:
+            status = "comparable_but_reasoning_invalid"
+        else:
+            status = "comparable_plans"
+    else:
+        score = semantic.get("cot_semantic_support_score")
+        proxy_score = score * semantic_proxy_cap if isinstance(score, (int, float)) and math.isfinite(score) else None
+        status = "semantic_proxy_only"
+        confidence = "low"
+
+    if raw_actions and reasoning_actions:
+        if raw_valid is True and reasoning_valid is False:
+            basis = "raw"
+        elif raw_valid is False and reasoning_valid is True:
+            basis = "reasoning"
+        elif raw_valid is True and reasoning_valid is True:
+            basis = "raw" if len(raw_actions) <= len(reasoning_actions) else "reasoning"
+        elif raw_valid is False and reasoning_valid is False:
+            basis = "reasoning"
+        else:
+            basis = "raw"
+
+    raw_prefix_ratio = _prefix_ratio(raw_prefix, len(raw_actions))
+    reasoning_prefix_ratio = _prefix_ratio(reasoning_prefix, len(reasoning_actions))
+    iteration = parsed_attempt.get("iteration") if isinstance(parsed_attempt, dict) else None
+    result = {
+        "iteration": iteration,
+        "cot_plan_alignment_score": plan_score,
+        "cot_plan_alignment_proxy_score": proxy_score,
+        "cot_alignment_status": status,
+        "cot_alignment_confidence": confidence,
+        "cot_reasoning_plan_available": bool(reasoning_actions),
+        "cot_exact_sequence_match": exact_match,
+        "strict_or_proxy_alignment_value": plan_score if plan_score is not None else proxy_score,
+        "raw_valid": raw_valid,
+        "raw_valid_inferred": raw_valid_inferred,
+        "reasoning_valid": reasoning_valid,
+        "raw_first_valid_prefix_length": raw_prefix,
+        "reasoning_first_valid_prefix_length": reasoning_prefix,
+        "raw_prefix_ratio": raw_prefix_ratio,
+        "reasoning_prefix_ratio": reasoning_prefix_ratio,
+        "raw_has_shorter_valid_prefix": isinstance(raw_prefix, int) and 0 < raw_prefix < len(raw_actions),
+        "reasoning_has_shorter_valid_prefix": isinstance(reasoning_prefix, int) and 0 < reasoning_prefix < len(reasoning_actions),
+        "basis": basis,
+        **semantic,
+        **sequence,
+    }
+    result.setdefault("raw_plan_length", len(raw_actions))
+    result.setdefault("reasoning_plan_length", len(reasoning_actions))
+    return result
+
+
+def select_cot_alignment_attempt(by_iteration: list[dict[str, Any]], solved: bool) -> dict[str, Any]:
+    if not by_iteration:
+        return {"selected_attempt": None, "selected_attempt_reason": "none", "final": {}}
+    if len(by_iteration) == 1:
+        selected_index = 0
+        reason = "only_attempt"
+    elif solved:
+        selected_index = next((index for index, item in enumerate(by_iteration) if item.get("raw_valid") is True), len(by_iteration) - 1)
+        reason = "first_solved_attempt" if selected_index < len(by_iteration) - 1 or by_iteration[selected_index].get("raw_valid") is True else "last_attempt"
+    else:
+        selected_index = len(by_iteration) - 1
+        reason = "last_attempt"
+    final = by_iteration[selected_index]
+    return {
+        "selected_attempt": final.get("iteration") or selected_index + 1,
+        "selected_attempt_reason": reason,
+        "final": final,
     }
 
 
@@ -1104,8 +1436,10 @@ def compute_row_metrics(
     - executability_ratio, sequencing_error_count, state_fabrication_count,
       precondition_awareness_score, mean_temporal_distance
       (via ``compute_precondition_metrics`` + PDDLSimulator)
-    - cot_action_coverage, cot_object_coverage, cot_alignment_score
-      (via ``compute_cot_alignment``, only for CoT=True rows)
+    - cot_action_coverage, cot_object_coverage, cot_semantic_support_score
+      (via ``compute_cot_semantic_support``)
+    - cot_plan_alignment_score and proxy/status diagnostics
+      (via ``compute_cot_alignment_for_attempt``)
     - ``_iter1``: True iff Valid=True AND Iterations=1 — contributes to FASR
     - ``_iwsr_contrib``: 1/Iterations if Valid else 0 — contributes to IWSR
     Rationale: computing all metrics in a single row-level pass avoids repeated
@@ -1153,17 +1487,40 @@ def compute_row_metrics(
         halluc_rows.append(halluc)
         precondition_rows.append(compute_precondition_metrics(actions, d_info, p_info))
 
-        cot_flag = str(row.get("Chain_of_Thought", "")).lower() in {"true", "1", "yes"}
-        if cot_flag:
-            cot_rows.append(compute_cot_alignment(row.get("_cot_text", ""), actions, d_info, p_info))
-        else:
-            cot_rows.append(
-                {
-                    "cot_action_coverage": float("nan"),
-                    "cot_object_coverage": float("nan"),
-                    "cot_alignment_score": float("nan"),
-                }
-            )
+        parsed_attempts = row.get("_parsed_attempts", [])
+        scored_attempts = row.get("_scored_attempts", [])
+        raw_attempts = row.get("_raw_attempts", [])
+        parsed_attempts = parsed_attempts if isinstance(parsed_attempts, list) else []
+        scored_attempts = scored_attempts if isinstance(scored_attempts, list) else []
+        raw_attempts = raw_attempts if isinstance(raw_attempts, list) else []
+        if not parsed_attempts and actions:
+            parsed_attempts = [{"iteration": 1, "parsed_plan": {"actions": actions}}]
+
+        by_iteration: list[dict[str, Any]] = []
+        for attempt_index in range(max(len(parsed_attempts), len(scored_attempts), len(raw_attempts))):
+            parsed_attempt = parsed_attempts[attempt_index] if attempt_index < len(parsed_attempts) else {"iteration": attempt_index + 1, "parsed_plan": {}}
+            scored_attempt = scored_attempts[attempt_index] if attempt_index < len(scored_attempts) else {}
+            raw_attempt = raw_attempts[attempt_index] if attempt_index < len(raw_attempts) else {}
+            by_iteration.append(compute_cot_alignment_for_attempt(parsed_attempt, scored_attempt, raw_attempt, d_info, p_info))
+
+        selected = select_cot_alignment_attempt(by_iteration, bool(row.get("Valid", False)))
+        final = selected.get("final", {})
+        cot_rows.append(
+            {
+                "cot_action_coverage": final.get("cot_action_coverage"),
+                "cot_object_coverage": final.get("cot_object_coverage"),
+                "cot_term_coverage": final.get("cot_term_coverage"),
+                "cot_semantic_support_score": final.get("cot_semantic_support_score"),
+                "cot_plan_alignment_score": final.get("cot_plan_alignment_score"),
+                "cot_plan_alignment_proxy_score": final.get("cot_plan_alignment_proxy_score"),
+                "cot_alignment_status": final.get("cot_alignment_status"),
+                "cot_alignment_confidence": final.get("cot_alignment_confidence"),
+                "cot_reasoning_plan_available": final.get("cot_reasoning_plan_available"),
+                "cot_exact_sequence_match": final.get("cot_exact_sequence_match"),
+                "strict_or_proxy_alignment_value": final.get("strict_or_proxy_alignment_value"),
+                "cot_alignment": {**selected, "by_iteration": by_iteration},
+            }
+        )
 
     df = pd.concat(
         [
@@ -1196,8 +1553,8 @@ def compute_composite_score(model_stats: dict[str, Any], weights: dict[str, floa
       first precondition failure, independent of global success.
     - one_minus_halluc (0.20): schema grounding — using only legal action names.
     - PAS (0.15): precondition awareness — sequencing understanding vs. fabrication.
-    CoT bonus (0.05): if the CoT alignment score is finite (CoT was enabled and
-    the alignment is computable), the five weights are renormalised to sum to 1.0
+    CoT bonus (0.05): if the strict CoT plan alignment score is finite, the five
+    weights are renormalised to sum to 1.0
     after adding the bonus, so PS remains in [0, 1].
     Rationale: FASR is weighted highest because first-attempt success is the only
     measure that cannot be inflated by retries. IWSR and Exec capture different
@@ -1292,7 +1649,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
       ranking and the PS stacked bar.
     - ``by_difficulty``: one row per (model, difficulty level) — feeds FASR-by-
       difficulty bar chart.
-    - ``cot_summary``: SR and CoT alignment split by CoT flag.
+    - ``cot_summary``: SR and CoT plan alignment split by CoT flag.
     - ``failure_breakdown``: total and proportional sequencing vs. fabrication errors
       per model — feeds failure type stacked bar.
     - ``retry_gap``: SR, FASR, IWSR, and RG (= SR − FASR) sorted by RG.
@@ -1336,10 +1693,18 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         Object_Halluc=("object_hallucination_rate", "mean"),
         IHR=("inverse_hallucination_rate", "mean"),
         PAS=("precondition_awareness_score", lambda x: nanmean_or_default(x, 0.5)),
-        CoT_Alignment=("cot_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        CoT_Alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
         Temporal_Distance=("mean_temporal_distance", lambda x: nanmean_or_default(x, float("nan"))),
         Avg_Length=("Length", "mean"),
         Avg_Iterations=("Iterations", "mean"),
+        strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
+        mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
+        cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
+        cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
     overall["Retry_Gap"] = overall["Success_Rate"] - overall["FASR"]
 
@@ -1355,10 +1720,18 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         Object_Halluc=("object_hallucination_rate", "mean"),
         IHR=("inverse_hallucination_rate", "mean"),
         PAS=("precondition_awareness_score", lambda x: nanmean_or_default(x, 0.5)),
-        CoT_Alignment=("cot_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        CoT_Alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
         Temporal_Distance=("mean_temporal_distance", lambda x: nanmean_or_default(x, float("nan"))),
         Avg_Length=("Length", "mean"),
         Avg_Iterations=("Iterations", "mean"),
+        strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
+        mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
+        cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
+        cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
     by_domain["Retry_Gap"] = by_domain["Success_Rate"] - by_domain["FASR"]
 
@@ -1371,12 +1744,23 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         Halluc=("hallucination_rate", "mean"),
         IHR=("inverse_hallucination_rate", "mean"),
         PAS=("precondition_awareness_score", lambda x: nanmean_or_default(x, 0.5)),
+        strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
+        mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
     ).reset_index()
 
     cot_summary = df_metrics.groupby(["Model", "Chain_of_Thought"], dropna=False).agg(
         N=("Problem", "count"),
         Success_Rate=("Valid", "mean"),
-        CoT_Alignment=("cot_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        CoT_Alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
+        inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
+        mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
+        cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
+        cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
 
     failure_breakdown = df_metrics.groupby("Model", dropna=False).agg(
@@ -1420,7 +1804,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
                     if math.isfinite(scalar_float(row.get("hallucination_rate", float("nan"))))
                     else 0.5,
                     "pas": scalar_float(row.get("precondition_awareness_score", 0.5), 0.5),
-                    "cot_alignment": scalar_float(row.get("cot_alignment_score", float("nan"))),
+                    "cot_alignment": scalar_float(row.get("cot_plan_alignment_score", float("nan"))),
                 }
             ),
             axis=1,
@@ -1757,9 +2141,9 @@ PLOT_DESCRIPTIONS = {
     "failure_type_breakdown": "Sequencing errors versus state fabrications per model.",
     "executability_vs_length": "Executability ratio against plan length, faceted by domain.",
     "temporal_distance_by_model": "Mean temporal distance for sequencing errors per model.",
-    "cot_alignment_by_model_domain": "Mean CoT alignment score by model and domain.",
+    "cot_alignment_by_model_domain": "Mean CoT plan alignment score by model and domain.",
     "cot_success_rate": "Success rate split by CoT flag.",
-    "cot_alignment_validity": "CoT alignment distribution for valid versus invalid plans.",
+    "cot_alignment_validity": "CoT plan alignment distribution for valid versus invalid plans.",
     "fasr_by_model_domain": "First-attempt success rate by model and domain.",
     "sr_vs_fasr": "Overall success rate compared with first-attempt success rate.",
     "fasr_by_difficulty": "First-attempt success rate by difficulty tier.",
@@ -1791,7 +2175,7 @@ def maybe_make_plots(
     """Generate all benchmark visualisation plots and optionally save / display them.
 
     Metric correlation: all 27 plots cover every computed metric — hallucination
-    (strict, fuzzy, object), executability, PAS, temporal distance, CoT alignment,
+    (strict, fuzzy, object), executability, PAS, temporal distance, CoT plan alignment,
     FASR, IWSR, SR, Retry Gap, PS, within-domain rank, cross-model correlation,
     and the iteration profile.
     Rationale: generating plots inside the main script rather than a notebook
@@ -1895,12 +2279,12 @@ def maybe_make_plots(
             fig.tight_layout()
             register("temporal_distance_by_model", fig, models_td)
 
-    if not df_metrics["cot_alignment_score"].isna().all():
-        cot_sub = df_metrics.dropna(subset=["cot_alignment_score"])
-        agg = cot_sub.groupby(["Model", "Domain"])["cot_alignment_score"].mean().reset_index()
+    if not df_metrics["cot_plan_alignment_score"].isna().all():
+        cot_sub = df_metrics.dropna(subset=["cot_plan_alignment_score"])
+        agg = cot_sub.groupby(["Model", "Domain"])["cot_plan_alignment_score"].mean().reset_index()
         fig, ax = plt.subplots(figsize=(9, 5))
-        sns.barplot(data=agg, x="Model", y="cot_alignment_score", hue="Domain", ax=ax, palette="Set2")
-        ax.set_title("Mean CoT Alignment Score by Model and Domain")
+        sns.barplot(data=agg, x="Model", y="cot_plan_alignment_score", hue="Domain", ax=ax, palette="Set2")
+        ax.set_title("Mean CoT Plan Alignment Score by Model and Domain")
         ax.tick_params(axis="x", rotation=30)
         register("cot_alignment_by_model_domain", fig)
 
@@ -1917,8 +2301,8 @@ def maybe_make_plots(
         cot_valid = cot_sub.copy()
         cot_valid["Validity"] = cot_valid["Valid"].map({True: "Valid", False: "Invalid"})
         fig, ax = plt.subplots(figsize=(9, 5))
-        sns.violinplot(data=cot_valid, x="Model", y="cot_alignment_score", hue="Validity", ax=ax, palette="Set1", inner="quart", dodge=True, cut=0, bw_adjust=0.8)
-        ax.set_title("CoT Alignment Distribution: Valid vs Invalid Plans")
+        sns.violinplot(data=cot_valid, x="Model", y="cot_plan_alignment_score", hue="Validity", ax=ax, palette="Set1", inner="quart", dodge=True, cut=0, bw_adjust=0.8)
+        ax.set_title("CoT Plan Alignment Distribution: Valid vs Invalid Plans")
         ax.tick_params(axis="x", rotation=30)
         register("cot_alignment_validity", fig)
 

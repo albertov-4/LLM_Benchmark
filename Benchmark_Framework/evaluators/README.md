@@ -21,7 +21,9 @@ The parser turns model text into a `ParsedPlan` with two sections:
 
 Each section has `actions` and `format_issues`. `raw` also records
 `contains_reasoning` and `source_kind`; `reasoning` records a `source_ref` back
-to `generation.reasoning_text` in the raw artifact.
+to `generation.reasoning_text` in the raw artifact. The reasoning section is
+kept so analysis can compare the plan the model appeared to think through with
+the plan it finally wrote; it is not an alternate official answer.
 
 When `domain_text` is available, the parser accepts only parenthesized forms
 whose first token is an action declared in the domain and whose arity matches
@@ -32,16 +34,20 @@ state.
 Safe local repeats are expanded when attached to a valid action, including
 `repeat N times (action ...)`, `N times (action ...)`, `(repeat N times) (action ...)`,
 `(action ...) xN`, `(action ...) *N`, `(action ...) N times`, `(action ...) repeated N times`,
-and word counts such as `(action ...) twice`. The parser also accepts parenthesized local repeat
-shorthand such as `(repeat up 2 times)` or `(repeat go_south 59 times)` only when a previous
-one-argument action already established the current object. For one-argument actions, the parser
-also supports safe domain-derived compression such as `b4 up 2` and progressive numbered compressed
-lists such as `1 b4 up 2`.
+and word counts such as `(action ...) twice`, `(action ...) three times`, or `(action ...) nine times`.
+The parser also accepts complete non-parenthesized repeats such as `58 times go_south b0`,
+`repeat 58 times go_south b0`, and `go_south b0 repeated 58 times` when the action name and arity
+match the domain. Parenthesized local repeat shorthand such as `(repeat up 2 times)` or
+`(repeat go_south 59 times)` is accepted only when a previous one-argument action already established
+the current object. For one-argument actions, the parser also supports safe domain-derived compression
+such as `b4 up 2`, `b2 up x9`, `b2 up nine times`, and progressive numbered compressed lists such as
+`1 b4 up 2`.
 
 Reasoning text can contain multiple candidate plans. The parser exposes those candidates to the
 runner, including whether a candidate is near a final-answer marker and whether it appears truncated.
-The runner validates candidates individually and writes the selected diagnostic candidate back to
-`parsed_plan.reasoning.actions`.
+When nearby compressed fragments look like parts of the same plan, the parser also creates a composite
+candidate while keeping the original smaller candidates. The runner validates candidates individually
+and writes the selected diagnostic candidate back to `parsed_plan.reasoning.actions`.
 
 Parser issues:
 
@@ -85,7 +91,8 @@ Main validation fields:
 
 Technical failures such as missing executables, timeouts, and validator crashes
 are represented as normalized validator results rather than backend-specific
-exceptions.
+exceptions. Reasoning validation fields use the same normalized shape, but they
+are diagnostic inputs for analysis only.
 
 ## Prefix Validation
 
@@ -116,4 +123,6 @@ Core metrics are computed from normalized run data:
 Metrics are intentionally separated from raw model text so reports can compare
 models and protocols without re-parsing provider-specific output. Plan length is
 computed from validator output first, then from `parsed_plan.raw.actions`; legacy
-`parsed_plan.actions` is only a compatibility fallback for older artifacts.
+`parsed_plan.actions` is only a compatibility fallback for older artifacts. CoT
+plan alignment reports use existing parsed and scored data and never call the
+validator again.

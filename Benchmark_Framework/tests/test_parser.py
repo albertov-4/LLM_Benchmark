@@ -381,6 +381,115 @@ b2 right 3
         self.assertTrue(any(candidate["actions"] == ["(move_block_up b1)", "(move_block_up b1)"] for candidate in candidates))
         self.assertTrue(any(candidate["actions"] == ["(move_block_right b2)"] * 3 for candidate in candidates))
 
+    def test_gpt_oss_block_grouping_reasoning_composes_pddl_steps(self) -> None:
+        block_domain = """
+(define (domain blocks)
+  (:action move_block_left :parameters (?b - block))
+  (:action move_block_right :parameters (?b - block))
+  (:action move_block_up :parameters (?b - block))
+  (:action move_block_down :parameters (?b - block))
+)
+"""
+        reasoning_text = """We'll produce actions:
+
+First move b1 left twice, down three times.
+
+Sequence:
+
+(move_block_left b1) -> (19,14)
+(move_block_left b1) -> (18,14)
+(move_block_down b1) -> (18,13)
+(move_block_down b1) -> (18,12)
+(move_block_down b1) -> (18,11) done.
+
+Now b1 at goal.
+
+b2: need left1, up6.
+
+(move_block_left b2) -> (18,5)
+Then six ups:
+
+(move_block_up b2) -> (18,6)
+(move_block_up b2) -> (18,7)
+(move_block_up b2) -> (18,8)
+(move_block_up b2) -> (18,9)
+(move_block_up b2) -> (18,10)
+(move_block_up b2) -> (18,11) done.
+
+b3: right1, down3.
+
+(move_block_right b3) -> (18,14)
+(move_block_down b3) -> (18,13)
+(move_block_down b3) -> (18,12)
+(move_block_down b3) -> (18,11) done.
+
+b4: right1, up3.
+
+(move_block_right b4) -> (18,8)
+(move_block_up b4) -> (18,9)
+(move_block_up b4) -> (18,10)
+(move_block_up b4) -> (18,11) done.
+"""
+
+        result = self.parser_module.parse_plan_text("", reasoning_text=reasoning_text, domain_text=block_domain)
+        candidates = self.parser_module.extract_reasoning_candidates(reasoning_text, domain_text=block_domain)
+
+        self.assertEqual(len(result.reasoning["actions"]), 20)
+        self.assertTrue(any(candidate.get("composite") and len(candidate["actions"]) == 20 for candidate in candidates))
+        self.assertEqual(result.reasoning["actions"].count("(move_block_left b1)"), 2)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_down b1)"), 3)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_up b2)"), 6)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_down b3)"), 3)
+        self.assertEqual(result.reasoning["actions"].count("(move_block_up b4)"), 3)
+
+    def test_non_parenthesized_repeat_infers_unique_problem_object(self) -> None:
+        domain_text = """
+(define (domain sailing)
+  (:types boat person)
+  (:action go_south :parameters (?b - boat))
+)
+"""
+        problem_text = """
+(define (problem p1)
+  (:domain sailing)
+  (:objects b0 - boat p0 - person)
+)
+"""
+
+        result = self.parser_module.parse_plan_text(
+            "",
+            reasoning_text="58 times go_south",
+            domain_text=domain_text,
+            problem_text=problem_text,
+        )
+
+        self.assertEqual(result.reasoning["actions"], ["(go_south b0)"] * 58)
+        self.assertIn("compressed_actions_expanded", result.reasoning["format_issues"])
+
+    def test_non_parenthesized_repeat_does_not_infer_ambiguous_problem_object(self) -> None:
+        domain_text = """
+(define (domain sailing)
+  (:types boat)
+  (:action go_south :parameters (?b - boat))
+)
+"""
+        problem_text = """
+(define (problem p1)
+  (:domain sailing)
+  (:objects b0 b1 - boat)
+)
+"""
+
+        result = self.parser_module.parse_plan_text(
+            "",
+            reasoning_text="58 times go_south",
+            domain_text=domain_text,
+            problem_text=problem_text,
+        )
+
+        self.assertEqual(result.reasoning["actions"], [])
+        self.assertIn("ambiguous_compressed_action", result.reasoning["format_issues"])
+
 
 if __name__ == "__main__":
     unittest.main()

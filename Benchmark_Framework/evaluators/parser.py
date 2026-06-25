@@ -103,6 +103,26 @@ def _strip_pddl_comments(text: str) -> str:
     return re.sub(r";.*", "", text)
 
 
+def _parse_typed_list(text: str, *, variables_only: bool = False) -> list[tuple[str, str | None]]:
+    tokens = re.findall(r"[^\s()]+", text)
+    result: list[tuple[str, str | None]] = []
+    pending: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "-":
+            type_name = tokens[index + 1].lower() if index + 1 < len(tokens) else None
+            result.extend((name, type_name) for name in pending)
+            pending = []
+            index += 2
+            continue
+        if not token.startswith(":") and (not variables_only or token.startswith("?")):
+            pending.append(token)
+        index += 1
+    result.extend((name, None) for name in pending)
+    return result
+
+
 def _parse_domain_actions(domain_text: str | None) -> dict[str, dict[str, Any]] | None:
     if domain_text is None:
         return None
@@ -115,12 +135,74 @@ def _parse_domain_actions(domain_text: str | None) -> dict[str, dict[str, Any]] 
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         block = text[match.start() : end]
         params = re.search(r":parameters\s*\(([^()]*)\)", block, re.IGNORECASE | re.DOTALL)
-        arity = len(re.findall(r"\?[A-Za-z0-9_-]+", params.group(1))) if params else 0
-        actions[name] = {"name": name, "arity": arity}
+        parameter_types = [type_name for _name, type_name in _parse_typed_list(params.group(1), variables_only=True)] if params else []
+        actions[name] = {"name": name, "arity": len(parameter_types), "parameter_types": parameter_types}
     return actions
 
 
-def _normalize_action(action_text: str, schemas: dict[str, dict[str, Any]] | None) -> tuple[str | None, list[str]]:
+def _balanced_section(text: str, marker: str) -> str | None:
+    match = re.search(r"\(" + re.escape(marker) + r"\b", text, re.IGNORECASE)
+    if not match:
+        return None
+    depth = 1
+    index = match.end()
+    while index < len(text):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[match.end() : index]
+        index += 1
+    return text[match.end() :]
+
+
+def _parse_problem_objects(problem_text: str | None) -> dict[str | None, list[str]] | None:
+    if problem_text is None:
+        return None
+
+    section = _balanced_section(_strip_pddl_comments(problem_text), ":objects")
+    if section is None:
+        return None
+
+    objects: dict[str | None, list[str]] = {"*": []}
+    for name, type_name in _parse_typed_list(section):
+        if name.startswith("?"):
+            continue
+        objects.setdefault(type_name, []).append(name)
+        objects["*"].append(name)
+    return objects if objects["*"] else None
+
+
+def _infer_missing_args(
+    action_name: str,
+    args: list[str],
+    schemas: dict[str, dict[str, Any]],
+    objects_by_type: dict[str | None, list[str]] | None,
+) -> list[str] | None:
+    if not objects_by_type:
+        return None
+
+    schema = schemas[action_name]
+    parameter_types = schema.get("parameter_types", [None] * schema["arity"])
+    if len(args) >= schema["arity"]:
+        return None
+
+    inferred = list(args)
+    for type_name in parameter_types[len(args) :]:
+        candidates = objects_by_type.get(type_name) if type_name else objects_by_type.get("*")
+        if not candidates or len(candidates) != 1:
+            return None
+        inferred.append(candidates[0])
+    return inferred
+
+
+def _normalize_action(
+    action_text: str,
+    schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None = None,
+) -> tuple[str | None, list[str]]:
     inner = re.sub(r"\s+", " ", action_text[1:-1].strip())
     if not inner:
         return None, ["empty_parenthesized_expression_found"]
@@ -135,7 +217,11 @@ def _normalize_action(action_text: str, schemas: dict[str, dict[str, Any]] | Non
     if schema is None:
         return None, ["unknown_action_names_found"]
     if len(args) != schema["arity"]:
-        return None, ["wrong_action_arity"]
+        inferred_args = _infer_missing_args(action_name, args, schemas, objects_by_type)
+        if inferred_args is None or len(inferred_args) != schema["arity"]:
+            return None, ["wrong_action_arity"]
+        args = inferred_args
+        return f"({schema['name']} {' '.join(args)})" if args else f"({schema['name']})", ["compressed_actions_expanded"]
     return f"({schema['name']} {' '.join(args)})" if args else f"({schema['name']})", []
 
 
@@ -203,6 +289,7 @@ def _parenthesized_repeat_actions(
     schemas: dict[str, dict[str, Any]] | None,
     alias_map: dict[str, str],
     current_object: str | None,
+    objects_by_type: dict[str | None, list[str]] | None,
 ) -> tuple[list[str] | None, list[str]]:
     if not schemas:
         return None, []
@@ -214,8 +301,14 @@ def _parenthesized_repeat_actions(
 
     action_name = alias_map.get(match.group(1).lower())
     count = _parse_count(match.group(2))
-    if action_name is None or current_object is None or count is None:
+    if action_name is None or count is None:
         return [], ["ambiguous_compressed_action"]
+    if current_object is None:
+        inferred_action, inferred_issues = _normalize_action(f"({action_name})", schemas, objects_by_type)
+        if inferred_action is None:
+            return [], ["ambiguous_compressed_action"]
+        issues = ["compressed_actions_expanded"] if count > 1 else []
+        return [inferred_action] * count, _dedupe_preserve_order(issues + inferred_issues)
 
     issues = ["compressed_actions_expanded"] if count > 1 else []
     return [f"({action_name} {current_object})"] * count, issues
@@ -224,6 +317,7 @@ def _parenthesized_repeat_actions(
 def _non_parenthesized_repeat_actions(
     line: str,
     schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None,
 ) -> tuple[list[str], list[str]]:
     if not schemas:
         return [], []
@@ -244,11 +338,14 @@ def _non_parenthesized_repeat_actions(
         count = _parse_count(count_text)
         if count is None:
             continue
-        action, _action_issues = _normalize_action(f"({action_text})", schemas)
+        action, action_issues = _normalize_action(f"({action_text})", schemas, objects_by_type)
         if action is None:
+            action_name = action_text.split()[0].lower() if action_text.split() else ""
+            if action_name in schemas and "wrong_action_arity" in action_issues:
+                return [], ["ambiguous_compressed_action"]
             continue
         issues = ["compressed_actions_expanded"] if count > 1 else []
-        return [action] * count, issues
+        return [action] * count, _dedupe_preserve_order(issues + action_issues)
     return [], []
 
 def _compressed_line_actions(
@@ -300,8 +397,11 @@ def _line_actions(
     schemas: dict[str, dict[str, Any]] | None,
     alias_map: dict[str, str],
     current_object: str | None,
+    objects_by_type: dict[str | None, list[str]] | None,
 ) -> tuple[list[str], list[str], str | None]:
-    stripped = re.sub(r"^\s*\d+\s*-\s*\d+\s*:\s*", "", line.strip())
+    stripped = line.strip()
+    if not re.match(r"^\d+\s+times?\b", stripped, re.IGNORECASE):
+        stripped = re.sub(r"^\s*\d+\s*-\s*\d+\s*:\s*", "", stripped)
     word_pattern = "|".join(re.escape(word) for word in sorted(WORD_COUNTS, key=len, reverse=True))
     if not re.match(r"^\d+\s+times?\b", stripped, re.IGNORECASE):
         stripped = _strip_list_prefix(stripped)
@@ -310,13 +410,13 @@ def _line_actions(
     issues: list[str] = []
 
     for match in matches:
-        repeated, repeat_issues = _parenthesized_repeat_actions(match.group(0), schemas, alias_map, current_object)
+        repeated, repeat_issues = _parenthesized_repeat_actions(match.group(0), schemas, alias_map, current_object, objects_by_type)
         if repeated is not None:
             actions.extend(repeated)
             issues.extend(repeat_issues)
             continue
 
-        action, action_issues = _normalize_action(match.group(0), schemas)
+        action, action_issues = _normalize_action(match.group(0), schemas, objects_by_type)
         issues.extend(action_issues)
         if action is None:
             continue
@@ -336,10 +436,12 @@ def _line_actions(
             issues.append("actions_embedded_in_text")
         return actions, issues, current_object
 
-    repeated, repeat_issues = _non_parenthesized_repeat_actions(stripped, schemas)
+    repeated, repeat_issues = _non_parenthesized_repeat_actions(stripped, schemas, objects_by_type)
     if repeated:
         current_object = _one_arg_action_object(repeated[-1], schemas) or current_object
         return repeated, repeat_issues, current_object
+    if repeat_issues:
+        return [], repeat_issues, current_object
 
     compressed, compressed_issues, current_object = _compressed_line_actions(
         stripped,
@@ -395,9 +497,24 @@ def _candidate(
     }
 
 
+def _is_composite_clause_line(line: str, line_number: int | None) -> bool:
+    stripped = re.sub(r"^\s*\d+\s*-\s*\d+\s*:\s*", "", line.strip())
+    if line_number is not None:
+        return True
+    if not re.match(r"^\d+\s+times?\b", stripped, re.IGNORECASE):
+        stripped = _strip_list_prefix(stripped)
+    stripped = stripped.strip()
+    if stripped.startswith("("):
+        return True
+    if re.match(r"^(?:repeat\b|\d+\s+times?\b)", stripped, re.IGNORECASE):
+        return True
+    return bool(re.match(r"^[A-Za-z][\w-]*\s*:?\s+[A-Za-z][\w-]*(?:\s+(?:x|\*)?[A-Za-z0-9_-]+(?:\s+times?)?)?(?:\s*[,;]|\s*$)", stripped, re.IGNORECASE))
+
+
 def _extract_action_candidates(
     text: str,
     schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     issues: list[str] = []
     candidates: list[dict[str, Any]] = []
@@ -451,15 +568,16 @@ def _extract_action_candidates(
         if (has_boundary or has_final_marker) and composite_segment:
             flush_composite()
         marker_pending = marker_pending or has_final_marker
-        line_actions, line_issues, current_object = _line_actions(line, schemas, alias_map, current_object)
+        line_actions, line_issues, current_object = _line_actions(line, schemas, alias_map, current_object, objects_by_type)
         issues.extend(line_issues)
         line_number = _leading_list_number(line)
         if line_actions:
-            if not composite_segment:
-                composite_start_index = len(candidates)
-            composite_segment.extend(line_actions)
-            composite_issues.extend(line_issues)
-            composite_near_final = composite_near_final or marker_pending
+            if _is_composite_clause_line(line, line_number):
+                if not composite_segment:
+                    composite_start_index = len(candidates)
+                composite_segment.extend(line_actions)
+                composite_issues.extend(line_issues)
+                composite_near_final = composite_near_final or marker_pending
             current_segment.extend(line_actions)
             current_issues.extend(line_issues)
             current_near_final = current_near_final or marker_pending
@@ -476,6 +594,8 @@ def _extract_action_candidates(
             marker_pending = False
             continue
 
+        if line_issues:
+            current_issues.extend(line_issues)
         truncated = _line_has_truncated_action(line, schemas)
         if truncated and composite_segment:
             flush_composite(True)
@@ -493,10 +613,11 @@ def _extract_action_candidates(
 def _extract_actions(
     text: str,
     schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None = None,
     *,
     select_candidate: bool = False,
 ) -> tuple[list[str], list[str]]:
-    candidates, issues = _extract_action_candidates(text, schemas)
+    candidates, issues = _extract_action_candidates(text, schemas, objects_by_type)
     unnumbered = [candidate for candidate in candidates if not candidate.get("numbered") and not candidate.get("composite")] or candidates
     actions = [action for candidate in unnumbered for action in candidate["actions"]]
 
@@ -520,13 +641,18 @@ def _extract_actions(
     return actions, _dedupe_preserve_order(issues)
 
 
-def extract_reasoning_candidates(reasoning_text: str, domain_text: str | None = None) -> list[dict[str, Any]]:
+def extract_reasoning_candidates(
+    reasoning_text: str,
+    domain_text: str | None = None,
+    problem_text: str | None = None,
+) -> list[dict[str, Any]]:
     """Return domain-valid reasoning plan candidates without selecting one."""
     if not reasoning_text or not reasoning_text.strip():
         return []
     schemas = _parse_domain_actions(domain_text)
+    objects_by_type = _parse_problem_objects(problem_text)
     cleaned_text, fence_issues = _strip_markdown_fences(reasoning_text)
-    candidates, shared_issues = _extract_action_candidates(cleaned_text, schemas)
+    candidates, shared_issues = _extract_action_candidates(cleaned_text, schemas, objects_by_type)
     for candidate in candidates:
         candidate["format_issues"] = _dedupe_preserve_order(fence_issues + shared_issues + candidate["format_issues"])
     return candidates
@@ -564,7 +690,11 @@ def _split_reasoning_and_plan(text: str) -> tuple[str, str, list[str]]:
     return text.strip(), text.strip(), []
 
 
-def _raw_section(raw_text: str, schemas: dict[str, dict[str, Any]] | None) -> dict[str, Any]:
+def _raw_section(
+    raw_text: str,
+    schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None,
+) -> dict[str, Any]:
     if not raw_text or not raw_text.strip():
         return {
             "actions": [],
@@ -575,7 +705,7 @@ def _raw_section(raw_text: str, schemas: dict[str, dict[str, Any]] | None) -> di
 
     cleaned_text, fence_issues = _strip_markdown_fences(raw_text)
     parser_reasoning, plan_text, split_issues = _split_reasoning_and_plan(cleaned_text)
-    actions, extraction_issues = _extract_actions(plan_text or cleaned_text, schemas)
+    actions, extraction_issues = _extract_actions(plan_text or cleaned_text, schemas, objects_by_type)
     format_issues = fence_issues + split_issues + extraction_issues
     contains_reasoning = bool(parser_reasoning) or "actions_embedded_in_text" in extraction_issues
 
@@ -592,7 +722,11 @@ def _raw_section(raw_text: str, schemas: dict[str, dict[str, Any]] | None) -> di
     }
 
 
-def _reasoning_section(reasoning_text: str, schemas: dict[str, dict[str, Any]] | None) -> dict[str, Any]:
+def _reasoning_section(
+    reasoning_text: str,
+    schemas: dict[str, dict[str, Any]] | None,
+    objects_by_type: dict[str | None, list[str]] | None,
+) -> dict[str, Any]:
     if not reasoning_text or not reasoning_text.strip():
         return {
             "actions": [],
@@ -601,7 +735,7 @@ def _reasoning_section(reasoning_text: str, schemas: dict[str, dict[str, Any]] |
         }
 
     cleaned_text, fence_issues = _strip_markdown_fences(reasoning_text)
-    actions, extraction_issues = _extract_actions(cleaned_text, schemas, select_candidate=True)
+    actions, extraction_issues = _extract_actions(cleaned_text, schemas, objects_by_type, select_candidate=True)
     format_issues = fence_issues + extraction_issues
     if not actions:
         format_issues.append("no_valid_domain_actions_found" if schemas is not None else "no_parenthesized_actions_found")
@@ -613,10 +747,16 @@ def _reasoning_section(reasoning_text: str, schemas: dict[str, dict[str, Any]] |
     }
 
 
-def parse_plan_text(raw_text: str, reasoning_text: str = "", domain_text: str | None = None) -> ParsedPlan:
+def parse_plan_text(
+    raw_text: str,
+    reasoning_text: str = "",
+    domain_text: str | None = None,
+    problem_text: str | None = None,
+) -> ParsedPlan:
     """Parse model text into raw-official and reasoning-diagnostic plans."""
     schemas = _parse_domain_actions(domain_text)
+    objects_by_type = _parse_problem_objects(problem_text)
     return ParsedPlan(
-        raw=_raw_section(raw_text, schemas),
-        reasoning=_reasoning_section(reasoning_text, schemas),
+        raw=_raw_section(raw_text, schemas, objects_by_type),
+        reasoning=_reasoning_section(reasoning_text, schemas, objects_by_type),
     )

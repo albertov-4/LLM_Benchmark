@@ -754,6 +754,43 @@ Alternative:
         self.assertFalse(attempt["reasoning_selected_candidate_truncated"])
         self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)"])
 
+
+    def test_reasoning_candidate_selection_promotes_valid_prefix(self) -> None:
+        framework_root = Path(__file__).resolve().parents[1]
+        run_case_module = _load_module(
+            "benchmark_framework_test_run_case_reasoning_prefix_module",
+            framework_root / "runner" / "run_case.py",
+        )
+
+        class ReasoningAdapter:
+            def generate(self, messages):
+                return {
+                    "raw_text": "(move raw bad)",
+                    "reasoning_text": """Final answer:
+(move a b)
+(move b c)
+(move c d)""",
+                    "usage": {},
+                    "latency_s": 0.0,
+                }
+
+        task_spec, protocol_spec = self._build_task_and_protocol(run_case_module, max_iterations=1)
+        result = run_case_module.run_case(
+            model_id="mock_model",
+            adapter=ReasoningAdapter(),
+            validator=PrefixLengthValidator(valid_prefix_length=2),
+            task_spec=task_spec,
+            protocol_spec=protocol_spec,
+        )
+
+        attempt = result.attempts[0]
+        self.assertFalse(result.solved)
+        self.assertFalse(attempt["reasoning_final_plan_valid"])
+        self.assertEqual(attempt["reasoning_first_valid_prefix_length"], 2)
+        self.assertEqual(attempt["reasoning_extra_actions_after_first_valid"], 1)
+        self.assertTrue(attempt["reasoning_validation_result"]["valid"])
+        self.assertEqual(attempt["parsed_plan"]["reasoning"]["actions"], ["(move a b)", "(move b c)"])
+
     def test_reasoning_candidate_selection_keeps_best_invalid_candidate_diagnostic(self) -> None:
         framework_root = Path(__file__).resolve().parents[1]
         run_case_module = _load_module(

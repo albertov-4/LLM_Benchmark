@@ -213,6 +213,7 @@ def _parse_generation_output(
     raw_text: str,
     generation_reasoning: Any = "",
     domain_text: str | None = None,
+    problem_text: str | None = None,
 ) -> dict[str, Any]:
     """Parse raw text and provider-side reasoning into separate plan sections."""
     parser_module = _load_framework_module(
@@ -224,6 +225,7 @@ def _parse_generation_output(
         raw_text,
         reasoning_text=reasoning_text,
         domain_text=domain_text,
+        problem_text=problem_text,
     )
     normalized = _normalize_payload(parsed_plan)
     return normalized or {
@@ -251,14 +253,18 @@ def _reasoning_actions(parsed_plan: dict[str, Any] | None) -> list[Any]:
     return []
 
 
-def _extract_reasoning_candidates(generation_reasoning: Any, domain_text: str | None) -> list[dict[str, Any]]:
+def _extract_reasoning_candidates(
+    generation_reasoning: Any,
+    domain_text: str | None,
+    problem_text: str | None = None,
+) -> list[dict[str, Any]]:
     parser_module = _load_framework_module(
         "benchmark_framework_parser",
         "evaluators/parser.py",
     )
     reasoning_text = "" if generation_reasoning is None else str(generation_reasoning)
     extractor = getattr(parser_module, "extract_reasoning_candidates", None)
-    return extractor(reasoning_text, domain_text=domain_text) if extractor else []
+    return extractor(reasoning_text, domain_text=domain_text, problem_text=problem_text) if extractor else []
 
 
 def _raw_format_issues(parsed_plan: dict[str, Any] | None) -> list[str]:
@@ -475,19 +481,29 @@ def _select_reasoning_candidate(
         candidate = record["candidate"]
         summary = record["summary"]
         final_valid = bool(summary.get("final_plan_valid"))
-        action_count = len(candidate.get("actions", []))
         first_valid = summary.get("first_valid_prefix_length") or 0
+        action_count = len(candidate.get("actions", []))
+        extra_after_valid = summary.get("extra_actions_after_first_valid")
+        extra_penalty = extra_after_valid if extra_after_valid is not None else action_count + 1
         return (
             final_valid,
+            first_valid > 0,
             not bool(candidate.get("truncated")),
             bool(candidate.get("near_final_marker")),
+            -extra_penalty,
             int(candidate.get("source_index", 0)),
             -len(candidate.get("format_issues", [])),
             -action_count if final_valid else first_valid,
             -action_count,
         )
 
-    selected = max(records, key=key)
+    selected = dict(max(records, key=key))
+    summary = selected["summary"]
+    prefix_length = summary.get("first_valid_prefix_length")
+    if prefix_length and not summary.get("final_plan_valid"):
+        candidate = dict(selected["candidate"])
+        candidate["actions"] = list(candidate.get("actions", []))[: int(prefix_length)]
+        selected["candidate"] = candidate
     selected["candidate_count"] = len(candidates)
     selected["valid_candidate_count"] = valid_count
     return selected
@@ -770,11 +786,16 @@ def run_generation_loop(
             raw_text,
             generation.get("reasoning_text", ""),
             task_inputs.get("domain_text"),
+            task_inputs.get("problem_text"),
         )
         reasoning_selection = _select_reasoning_candidate(
             validator,
             task_spec,
-            _extract_reasoning_candidates(generation.get("reasoning_text", ""), task_inputs.get("domain_text")),
+            _extract_reasoning_candidates(
+                generation.get("reasoning_text", ""),
+                task_inputs.get("domain_text"),
+                task_inputs.get("problem_text"),
+            ),
         )
         if reasoning_selection:
             selected_candidate = reasoning_selection["candidate"]

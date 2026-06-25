@@ -26,28 +26,34 @@ to `generation.reasoning_text` in the raw artifact. The reasoning section is
 kept so analysis can compare the plan the model appeared to think through with
 the plan it finally wrote; it is not an alternate official answer.
 
-When `domain_text` is available, the parser accepts only parenthesized forms
-whose first token is an action declared in the domain and whose arity matches
-that action. Predicates, goals, fluent expressions, and unknown actions are not
+When `domain_text` is available, the parser accepts only action forms whose
+first token is an action declared in the domain and whose arity matches that
+action. Predicates, goals, fluent expressions, and unknown actions are not
 scored as plan actions. The parser does not check preconditions or simulate
-state.
+state. When `problem_text` is also available, the parser may fill a missing
+argument only when the domain parameter type maps to exactly one compatible
+object in the problem. Ambiguous object choices are rejected rather than guessed.
 
 Safe local repeats are expanded when attached to a valid action, including
 `repeat N times (action ...)`, `N times (action ...)`, `(repeat N times) (action ...)`,
 `(action ...) xN`, `(action ...) *N`, `(action ...) N times`, `(action ...) repeated N times`,
 and word counts such as `(action ...) twice`, `(action ...) three times`, or `(action ...) nine times`.
 The parser also accepts complete non-parenthesized repeats such as `58 times go_south b0`,
-`repeat 58 times go_south b0`, and `go_south b0 repeated 58 times` when the action name and arity
-match the domain. Parenthesized local repeat shorthand such as `(repeat up 2 times)` or
-`(repeat go_south 59 times)` is accepted only when a previous one-argument action already established
-the current object. For one-argument actions, the parser also supports safe domain-derived compression
-such as `b4 up 2`, `b2 up x9`, `b2 up nine times`, and progressive numbered compressed lists such as
+`repeat 58 times go_south b0`, `go_south b0 repeated 58 times`, and, when the problem has one
+compatible object, `58 times go_south`. Parenthesized local repeat shorthand such as
+`(repeat up 2 times)` or `(repeat go_south 59 times)` is accepted only when a previous
+one-argument action established the current object or the problem supplies one unambiguous object.
+For one-argument actions, the parser also supports safe domain-derived compression such as
+`b4 up 2`, `b2 up x9`, `b2 up nine times`, and progressive numbered compressed lists such as
 `1 b4 up 2`.
 
 Reasoning text can contain multiple candidate plans. The parser exposes those candidates to the
 runner, including whether a candidate is near a final-answer marker and whether it appears truncated.
-When nearby compressed fragments look like parts of the same plan, the parser also creates a composite
-candidate while keeping the original smaller candidates. The runner validates candidates individually
+When nearby action-like fragments look like parts of the same plan, the parser also creates a
+composite candidate while keeping the original smaller candidates. Composite building can bridge
+short descriptive text between action blocks, but it stops at strong boundaries such as
+`alternative`, `maybe`, `instead`, `check`, `verify`, `wrong`, `invalid`, or a new final-plan marker.
+The runner validates candidates individually, may reduce a noisy candidate to its first valid prefix,
 and writes the selected diagnostic candidate back to `parsed_plan.reasoning.actions`.
 
 Parser issues:
@@ -62,7 +68,7 @@ Parser issues:
 - `empty_parenthesized_expression_found`: an empty `()` expression was found.
 - `unknown_action_names_found`: a parenthesized expression did not start with an action from the domain.
 - `wrong_action_arity`: a known domain action had the wrong number of arguments.
-- `ambiguous_compressed_action`: a compressed alias was missing or did not map to exactly one one-argument domain action.
+- `ambiguous_compressed_action`: a compressed alias or missing argument could not be resolved to exactly one domain-valid action.
 - `compressed_actions_expanded`: a repeat or compressed action form was expanded into grounded actions.
 - `multiple_reasoning_candidate_plans`: more than one candidate action sequence was found in `reasoning_text`.
 - `ambiguous_reasoning_plan_selection`: multiple reasoning candidates tied under the selection heuristic.

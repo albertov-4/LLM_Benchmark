@@ -65,10 +65,11 @@ Parsed artifacts store attempts as:
 }
 ```
 
-Only `raw.actions` is official for validation, repair, metrics, and `solved`.
+Only `raw.actions` is official for validation, metrics, and `solved`.
 `reasoning.actions` is validated in scored artifacts when present, but those
-`reasoning_validation_result` fields are diagnostic and never repair or replace
-the final answer. Analysis reports may compare `raw.actions` and
+`reasoning_validation_result` fields are diagnostic and never replace the final
+answer. Iterative repair may use a valid decoded reasoning plan as a hint when
+the raw plan fails. Analysis reports may compare `raw.actions` and
 `reasoning.actions` for CoT plan alignment; that comparison is separate from PDDL
 validity. Older parsed artifacts that only contain `parsed_plan.actions` are read
 as a compatibility fallback for the raw plan, and missing nested reasoning or
@@ -83,8 +84,9 @@ Scored attempts may also include reasoning-candidate metadata:
 
 These fields explain which decoded reasoning candidate was selected after
 individual validation. Candidate counts may include parser-created composite
-candidates from nearby compressed reasoning fragments. They do not affect
-official scoring.
+candidates from nearby compressed reasoning fragments. The stored reasoning
+actions may be the first valid prefix of a longer noisy candidate. They do not
+affect official scoring.
 
 ## Cleanup
 

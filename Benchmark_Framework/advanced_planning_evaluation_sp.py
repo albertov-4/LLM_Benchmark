@@ -284,7 +284,7 @@ def yes_no_prompt(prompt: str, default: bool = False, input_fn: Callable[[str], 
         answer = input_fn(f"{prompt} {suffix}: ").strip().lower()
         if not answer:
             return default
-        if answer in {"y", "yes", "s", "si", "si"}:
+        if answer in {"y", "yes", "s", "si"}:
             return True
         if answer in {"n", "no"}:
             return False
@@ -538,11 +538,17 @@ def parse_problem_pddl(problem_path: Path, warnings_out: list[dict[str, Any]]) -
         init_match = re.search(r"\(:init(.*?)(?=\(:goal|\(:metric|\Z)", text, re.DOTALL)
         if init_match:
             init_text = init_match.group(1)
-            for numeric_match in re.finditer(r"\(=\s*\(\s*([a-z][a-z0-9_-]*)([^)]*)\)\s*([\d.]+)\s*\)", init_text):
-                key = (numeric_match.group(1),) + tuple(numeric_match.group(2).strip().split())
-                result["init_numeric"][key] = float(numeric_match.group(3))
-            for atom_match in re.finditer(r"\(([a-z][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*)*)\)", init_text):
-                tokens = atom_match.group(1).split()
+
+            # pass 1: numeric fluents (note the -? for negative initial values)
+            for m in re.finditer(r"\(=\s*\(\s*([a-z][a-z0-9_-]*)([^)]*)\)\s*(-?[\d.]+)\s*\)", init_text):
+                key = (m.group(1),) + tuple(m.group(2).strip().split())
+                result["init_numeric"][key] = float(m.group(3))
+
+            # pass 2: atoms — strip (= (...) val) first so the inner
+            # function term isn't re-matched as a boolean atom
+            atoms_text = re.sub(r"\(=\s*\([^)]*\)\s*-?[\d.]+\s*\)", " ", init_text)
+            for m in re.finditer(r"\(([a-z][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*)*)\)", atoms_text):
+                tokens = m.group(1).split()
                 if tokens and tokens[0] not in {"=", "not", "and", "or", "increase", "decrease"}:
                     result["init_atoms"].add(tuple(tokens))
     except Exception as exc:
@@ -762,7 +768,7 @@ def compute_hallucination_metrics(actions: list[str], d_info: dict[str, Any], p_
       ``:objects`` block, normalised over total argument count. A high object-halluc
       with low action-halluc signals the model knows the action vocabulary but
       invents new world entities.
-    - ``inverse_hallucination_rate`` (IHR = 1 − hallucination_rate): used in
+    - ``inverse_hallucination_rate`` (IHR = 1 - hallucination_rate): used in
       composite scoring and profile thresholds because higher is better.
     Rationale (Kambhampati 2024, Vafa et al. 2024): hallucination is the most
     basic signal of domain grounding. A model that does not hallucinate has at
@@ -925,14 +931,16 @@ class PDDLSimulator:
             "*",
             "/",
         }
-
-        for numeric_match in re.finditer(r"\((>=|<=|>|<)\s*([^)]+)\s*([0-9.]+)\s*\)", grounded):
-            op, lhs_s, rhs_s = numeric_match.group(1), numeric_match.group(2).strip(), numeric_match.group(3)
+        #modified in order to be able to discriminate both a parethesized fluent and a bare numeric token
+        operand = r"(?:\([^()]*\)|[^()\s]+)"
+        cmp_pattern = r"\((>=|<=|>|<|=)\s*(" + operand + r")\s+(" + operand + r")\s*\)"
+        for numeric_match in re.finditer(cmp_pattern, grounded):
+            op, lhs_s, rhs_s = numeric_match.group(1), numeric_match.group(2).strip(), numeric_match.group(3).strip()
             lhs = self._eval_num(lhs_s)
-            rhs = float(rhs_s)
-            if lhs is None:
+            rhs = self._eval_num(rhs_s)
+            if lhs is None or rhs is None:
                 continue
-            ok = {">=": lhs >= rhs, "<=": lhs <= rhs, ">": lhs > rhs, "<": lhs < rhs}[op]
+            ok = {">=": lhs >= rhs, "<=": lhs <= rhs, ">": lhs > rhs, "<": lhs < rhs, "=": lhs == rhs}[op]
             if not ok:
                 failed_num.append(numeric_match.group(0))
 
@@ -1210,7 +1218,7 @@ def profile_is_flat(iteration_profile: list[dict[str, Any]], tolerance: float = 
     """Test whether the P(Valid|k) iteration profile is approximately flat.
 
     Metric correlation: optional condition for the Stochastic Searcher profile.
-    Rationale: a flat curve (max − min ≤ tolerance=0.10) indicates the probability
+    Rationale: a flat curve (max - min ≤ tolerance=0.10) indicates the probability
     of success is independent of attempt number, consistent with the model sampling
     independently at each retry rather than correcting. The tolerance of 0.10 gives
     a 10 percentage-point buffer for sampling noise in small problem sets.

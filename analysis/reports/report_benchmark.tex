@@ -11,6 +11,8 @@
 \usepackage{array}
 \usepackage{xcolor}
 
+\newcommand{\code}[1]{\colorbox{gray!20}{\texttt{#1}}}
+
 \begin{document}
 
 \begin{titlepage}
@@ -306,14 +308,58 @@ In order to obtain a wider range of outputs 5 LLMs were chosen and downloaded by
 
 
 
-\section{Parsing and Output Structure}
+\section{Benchmark output Parsing and Output Structure}
 \textcolor{red}{\LARGE\MakeUppercase{DA RIEMPIRE}}
 
-\section{Validator}
+\section{Output Validation Using VAL}
 \textcolor{red}{\LARGE\MakeUppercase{DA RIEMPIRE}}
 
-\section{Output Comparison}
-\textcolor{red}{\LARGE\MakeUppercase{DA RIEMPIRE}}
+\section{LLMs Reasoning Capabilities Evaluation}
+    \subsection{Pipeline and Data flow}
+    How Raw / Parsed / Scored become one DataFrame , which Classes hold the state the metrics need and why the load $\rightarrow$ row $\rightarrow$ aggregate $\rightarrow$ plot $\rightarrow$ report stages.
+    This section maps the analysis script \texttt{advanced\_planning\_evaluation\_sp.py} onto the rest of the Repo , showing how the three on-disk artifact layers Raw / Parsed / Scored.
+    become DataFrames , which data classes exist and why and how the data-manipulation stage hands off to metric computation and visualization.
+        \subsubsection{Pipeline Generic description}
+        Everything funnels into one DataFrame \code{df\_metrics} , which is the single source of truth for every groupby and every plot.
+        we start from the outputs:
+        \begin{itemize}
+            \item raw\ : generation text + reasoning text
+            \item parsed\ : raw.actions + reasonig.actions
+            \item scored\ : VAL outputs solved , prefix lenght , valid@k informations
+            \item tasks\ : domain.pddl + pfileN.pddl
+        \end{itemize}
+        
+        \code{look\_artifact\_rows()} takes the data present in Parsed and then joins Raw and Scored data in a single row for each instance , collapsing the retry loop by scanning the attemps back to front keeping the last non empty plan as the representative \code{\_actions} , while preserving the full attemp list \code{\_parsed\_attemps},\code{\_scored\_attemps}, \code{\_raw\_attemps} as private colums so per-iteration metrics can still be computed downstream.
+        Keeping the grain at instance level leads to every aggregate metric (SR , HR , PS ) bein an average over comparable units , while maintaining the iteration structure in the private \code{\_*\_attemps} and used as option by the metrics that explicitly need it like (FASR , IWSR , iteration profile , CoTal ).
+        For each row is also added Validity and Iteration count taken from the Scored file \code{Valid = scored["solved"] , Iterations = scored["iterations\_used"]}, the presence of the CoT is instead taken from \code{\string\protocols\string\protocol.yaml} or instead as a fallback is looked the presence of reasonig actions or text since we want to compute the Cot alignement metric only for those models that have it available.
+        this function resites for each row the \code{df\_raw} informations:
+        \begin{itemize}
+            \item Model
+            \item Domain
+            \item Problem
+            \item Difficulty
+            \item Protocol
+            \item Run\_id
+            \item Valid
+            \item Length
+            \item Iterations
+            \item Chain\_of\_Thought
+            \item actions
+            \item \_cot\_text
+            \item \_parsed\_attempts
+            \item \_scored\_attempts
+            \item \_raw\_attempts
+            \item \_file\_path
+            \item parsed\_file\_path
+            \item iterations 
+        \end{itemize}
+    \subsection{Metrics scientific foundation}
+    \subsection{Metric Families}
+        \subsubsection{Planning Efficiency}
+        \subsubsection{Execution and Reasoning}
+        \subsubsection{Grounding and Discriminatory}
+        \subsubsection{PS (Composite Planning Score)}
+    \subsection{Cross-Domain and Cross-LLM comparison}
 
 
 \section{Conclusions}

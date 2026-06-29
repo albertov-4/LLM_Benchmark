@@ -6,6 +6,7 @@
 \usepackage{xcolor}
 \usepackage[edges]{forest}
 \usepackage{multicol}
+\usepackage{graphicx}
 
 % --- Scelta del Tema (Personalizzabile) ---
 \usetheme{Berkeley}
@@ -70,31 +71,45 @@
 \end{frame}
 
 
-\begin{frame}{Goal and Keypoints}
-    \textcolor{blue}{Goal:} create a reliable, scalable and user-friendly benchmark to test the planning capabilities of LLMs on planning problems.
-    \vspace{1cm}
+\begin{frame}{Goal and Keypoints}\footnotesize
+    \textcolor{blue}{\textbf{Goal:}} build a reproducible benchmark for evaluating how LLMs solve PDDL planning problems and evaluate the reasoning capabilities.
 
-    \textcolor{blue}{\textbf{Keypoints}}
+    \vspace{0.45cm}
+    \textcolor{blue}{\textbf{Presentation structure}}
     \begin{itemize}
-        \item Problems Classification
-        \item Hardware Platform and LLM Models Selected
-        \item Outputs and Evaluation Metrics
+        \item Introduction
+        \item Repository structure
+        \item Problem classification
+        \item Tools used
+        \item Selected models
+        \item Outputs and evaluation
+        \item Results
+        \item Conclusions
     \end{itemize}
 \end{frame}
 
-\begin{frame}{General Structure}
+\section{Repository Structure}
+\begin{frame}[c]
+    \centering
+    
+    {\Huge\textcolor{blue}{Repository Structure}}
+    
+    \vspace{0.1cm}
+    
+    \textcolor{black}{\rule{10cm}{1pt}}
+    
+\end{frame}
+\begin{frame}{General Structure}\footnotesize
         \begin{columns}
-        % Prima Colonna
-        \begin{column}{0.5\textwidth}\footnotesize
-            This slide is used to show the structure of the repo, under the root folder we have:
+        \begin{column}{0.5\textwidth}
+            The repository is split into three main areas:
             \begin{itemize}
-                \item \textbf{analysis}: contains the material needed to write reports and the report itself.
-                \item \textbf{archive}: contains material provided by the professor and a PDDL guide written to help understand key features of the PDDL.
-                \item \textbf{Benchmark Framework}: main folder containing the work done to create this benchmark.
+                \item \textbf{analysis}: notebooks, reports and generated figures.
+                \item \textbf{archive}: reference papers, planning domains and PDDL support material.
+                \item \textbf{Benchmark\_Framework}: execution pipeline, tasks, model backends, validation and outputs.
             \end{itemize}
         \end{column}
         
-        % Seconda Colonna
         \begin{column}{0.5\textwidth}
             \begin{forest}
             for tree={
@@ -105,16 +120,16 @@
                 anchor=west,
                 calign=fixed edge angles,
                 edge={draw, semithick},
-                l sep = 7pt,       % Ridotto lo spazio orizzontale tra i livelli
-                s sep = 3pt,       % Ridotto lo spazio verticale tra le cartelle
-                inner sep = 2.5pt,  % ridotto spazio attorno al testo
-                folder, % stile cartella
+                l sep = 7pt,
+                s sep = 3pt,
+                inner sep = 2.5pt,
+                folder,
             }
             [LLM Benchmark/
                 [analysis/
                 [domain complexity/]
                 [notebooks/]
-                [Reports/]
+                [reports/]
                 ]
                 [archive/
                 [Papers/]
@@ -122,9 +137,10 @@
                 [References/]
                 [Quick PDDL Guide/]
                 ]
-                [Benchmark Framework/
+                [Benchmark\_Framework/
                 [...]
                 ]
+                [results/]
                 [README.md]
             ]
             \end{forest}
@@ -133,32 +149,28 @@
     
 \end{frame}
 
-\begin{frame}{General Structure II}
+\begin{frame}{General Structure}\scriptsize
         \begin{columns}
-        % Prima Colonna
-        \begin{column}{0.5\textwidth}\scriptsize
-            Now the Benchmark Framework folder is highlighted, note that to simplify not all the sub folders are shown.
+        \begin{column}{0.5\textwidth}
+            \texttt{Benchmark\_Framework} is the runnable benchmark layer. Only the core folders are shown here.
             \begin{itemize}
-                \setlength{\itemsep}{2pt}  % Spazio tra un punto e l'altro
-                \setlength{\parskip}{0pt}  % Spazio tra paragrafi interni
-                \setlength{\parsep}{0pt}   % Spazio di parsing
-                \setlength{\topsep}{0pt}   % Spazio sopra l'elenco
-                \setlength{\partopsep}{0pt}% Spazio extra sopra l'elenco
+                \setlength{\itemsep}{2pt}
+                \setlength{\parskip}{0pt}
+                \setlength{\parsep}{0pt}
+                \setlength{\topsep}{0pt}
+                \setlength{\partopsep}{0pt}
                 
-                \item \textit{evaluators}: code for running evaluation and parsing of outputs
-                \item \textit{Leonardo script}: files to gain access to leonardo booster
-                \item \textit{outputs}: store outputs of benchmark
-                \item \textit{prompts}: prompts written to be feed to LLMs 
-                \item \textit{runner}: contains code to run some tests with LLMs on the booster
-                \item \textit{scripts}: contains code necessary for the scoring of the inputs
-                \item \textit{tasks}: problems selected
-                \item \textit{utils}: executable of validator
-                \item \textit{results}: heatmaps showing output metric results
-                \item \textit{run benchmark}: file that runs whole working sequence
+                \item \textit{tasks}: selected PDDL domains and instances.
+                \item \textit{prompts} and \textit{protocols}: prompt text, direct planning and repair settings.
+                \item \textit{models}: backend registries and adapter configuration.
+                \item \textit{runner}: suite and single-case execution logic.
+                \item \textit{evaluators}: parser, VAL validation, metrics and error taxonomy.
+                \item \textit{outputs}: raw, parsed and scored benchmark artifacts.
+                \item \textit{reporting}: post-run plots and JSON reports.
+                \item \textit{utils}: bundled VAL validator binaries.
             \end{itemize}
         \end{column}
         
-        % Seconda Colonna
         \begin{column}{0.5\textwidth}
             \begin{forest}
             for tree={
@@ -169,22 +181,22 @@
                 anchor=west,
                 calign=fixed edge angles,
                 edge={draw, semithick},
-                l sep = 7pt,       % Ridotto lo spazio orizzontale tra i livelli
-                s sep = 4pt,       % Ridotto lo spazio verticale tra le cartelle
-                inner sep = 2.5pt,  % ridotto spazio attorno al testo
-                folder, % stile cartella
+                l sep = 7pt,
+                s sep = 2pt,
+                inner sep = 2.5pt,
+                folder,
             }
-            [Benchmark Framework/
+            [Benchmark\_Framework/
                 [evaluators/]
-                [Leonardo script/]
+                [models/]
                 [outputs/]
                 [prompts/]
+                [protocols/]
+                [reporting/]
                 [runner/]
-                [scripts/]
                 [tasks/]
                 [utils/]
-                [results/]
-                [run benchmark.py]
+                [run\_benchmark.py]
             ]
             \end{forest}
         \end{column}
@@ -192,13 +204,55 @@
     
 \end{frame}
 
+\begin{frame}{Benchmark Framework Overview}\footnotesize
+    The framework is organized as a reproducible pipeline: the same task set can be tested with different prompts, protocols and model backends.
 
-\section{Problems Classification}
+    \vspace{0.35cm}
+    \centering
+    \texttt{tasks + prompts + protocols + model registries}
+
+    \vspace{0.18cm}
+    $\Downarrow$
+
+    \vspace{0.18cm}
+    \texttt{run\_benchmark.py}
+
+    \vspace{0.18cm}
+    $\Downarrow$
+
+    \vspace{0.18cm}
+    \texttt{runner/run\_suite.py} $\rightarrow$ \texttt{runner/run\_case.py}
+
+    \vspace{0.18cm}
+    $\Downarrow$
+
+    \vspace{0.18cm}
+    \texttt{model adapter} $\rightarrow$ \texttt{parser} $\rightarrow$ \texttt{VAL validator} $\rightarrow$ \texttt{metrics}
+
+    \vspace{0.18cm}
+    $\Downarrow$
+
+    \vspace{0.18cm}
+    \texttt{outputs/raw + outputs/parsed + outputs/scored}
+\end{frame}
+
+\begin{frame}{Why This Structure}\footnotesize
+    \begin{itemize}
+        \item \textbf{Comparable runs:} every model is evaluated on the same task, protocol and validation matrix.
+        \item \textbf{Backend isolation:} model adapters keep HuggingFace, NVIDIA API, Ollama and llama.cpp behind the same generation interface.
+        \item \textbf{External validation:} VAL checks the generated plans independently from the model text.
+        \item \textbf{Traceable artifacts:} raw generations, parsed plans and scored validation results are stored separately.
+        \item \textbf{Post-run analysis:} reports and plots are generated from saved JSON artifacts, not from manual inspection.
+    \end{itemize}
+\end{frame}
+
+
+\section{Problem Classification}
 \begin{frame}[c]
     \centering
     
     % Testo molto grande (Huge), in grassetto (bfseries) e di colore blu elegante
-    {\Huge\textcolor{blue}{Problems' Classification}}
+    {\Huge\textcolor{blue}{Problem Classification}}
     
     \vspace{0.1cm} % Spazio elegante tra la parola e la linea di sottolineatura
     
@@ -207,187 +261,183 @@
     
 \end{frame}
 
-\begin{frame}{Classification Purpose}
-    \textcolor{blue}{\textbf{Purpose:}} In order to obtain reliable outputs to be evaluated after we for sure need a way to classify the PDDL problems to be fed to the LLMs chosen, since we had available 20 different problems a easy but effective way to classify them was needed to choose wisely the problems to be used.\\
-    The main idea behind this Input Classification develops around two main concepts:
+\begin{frame}{Classification Purpose}\footnotesize
+    \textcolor{blue}{\textbf{Purpose:}} select a small but meaningful set of PDDL tasks from the available domains.
+
+    \vspace{0.35cm}
+    The classification has two complementary goals:
     \begin{itemize}
-        \item  need of a numerical score representing the difficulty of the problem.
-        \item classify problems based on the type of reasoning to be employed to solve the problem.
+        \item assign a numerical difficulty score to each domain and instance;
+        \item label each domain by its dominant reasoning type.
     \end{itemize}
 
+    \vspace{0.25cm}
+    This makes the benchmark easier to interpret: model failures can be compared by both difficulty and planning style.
 \end{frame}
 
 \begin{frame}{Implementation: Raw and Numerical Score}\footnotesize
-    As stated before the idea of using a raw score to classify the difficulty of the problems came up because a relatively simple and repeatable way to evaluate problems was needed; in order to obtain the score the code in \textit{LLM benchmark/scripts/score domains complexity.py} has been designed.\\
-    The main idea behind the computation of the score is to evaluate for each instance of a PDDL problem the presence or the absence of features that we believed could increment or decrement the difficuly of a problem, specifically:
+    Difficulty scores are computed with \texttt{Benchmark\_Framework/scripts/score\_domains\_complexity.py}.
+
+    \vspace{0.25cm}
+    The score combines features that increase planning complexity:
     \begin{multicols}{2}
     \begin{itemize}
-        \item N. of Objects
-        \item N of possible Actions
-        \item N. of Goals
-        \item N. of Numeric goal conditions
-        \item N. of Numeric functions
-        \item N. of Numeric preconditions
-        \item N. of Numeric effects
-        \item Has metric
-        \item Topology
+        \item number of objects
+        \item possible grounded actions
+        \item number of goals
+        \item numeric goal conditions
+        \item numeric functions
+        \item numeric preconditions
+        \item numeric effects
+        \item metric optimization
+        \item topology structure
     \end{itemize}
     \end{multicols}
-    A raw score for each instance of a problem is therefore computed and then a normalization between instances of the same domain is employed; then for each domain a summary is presented.
 
+    Each instance receives a raw score, then scores are normalized within the domain and summarized at domain level.
 \end{frame}
 
 
 \begin{frame}{Implementation: Raw and Numerical Score II}\footnotesize
-    The raw score for each instance is computed using the following formula:\\
+    The raw score is a weighted logarithmic combination, so no single count dominates the result:
     \resizebox{\textwidth}{!}{
-        $\text{RawScore} = 0.45 \cdot \log(1 + \text{Nactions}) + 0.20 \cdot \log(1 + \text{Ngoals}) + 0.20 \cdot \log(1 + \text{num-score}) + 0.15 \cdot \text{topology}$
-    }\\
-    \vspace{0.2cm} % Spazio tra i due blocchi
+        $RawScore = 0.45 \cdot \log(1 + Nactions) + 0.20 \cdot \log(1 + Ngoals) + 0.20 \cdot \log(1 + NumScore) + 0.15 \cdot Topology$
+    }
 
-    where the num-score is computed by:
-        \resizebox{\textwidth}{!}{
-        $\text{NumScore} =   1.0 \cdot (\text{N of num effects}) + 2.0 \cdot (\text{N of num preconditions}) + 3.0 \cdot (\text{N of num goal conditions})+ 1.0 \cdot (\text{has metric})$
-    }\\
-    the whole domain difficulty is the computed starting from the sum of all the raw scores obtained from the instances of the
-    instances and then normalized 0/100.\\
+    \vspace{0.2cm}
+    \resizebox{\textwidth}{!}{
+        $NumScore = 1.0 \cdot NumEffects + 2.0 \cdot NumPreconditions + 3.0 \cdot NumGoalConditions + 1.0 \cdot HasMetric$
+    }
 
-    \vspace{0.2cm} % Spazio tra i due blocchi
-
+    \vspace{0.2cm}
     \begin{columns}
         \begin{column}{0.47\textwidth}
-            \footnotesize
-            A simple example of a domain summary with the scores computed for each instance is shown here on the side, the domain chosen is \textit{counters}.\\
-            As it can be noticed other datas are added for completion sake, specifically the mean raw score of the instances and the median raw score.
+            The example shows the \textit{counters} domain summary: instance scores plus aggregate raw-score statistics.
         \end{column}
         
         \begin{column}{0.47\textwidth}
-            % L'immagine non prende tutto il lato, solo questa colonna
             \includegraphics[width=\textwidth]{domainsum.png}
         \end{column}
     \end{columns}
 \end{frame}
 
 
-\begin{frame}{Implementation: Reasoning Type} \footnotesize
-    Another very important feature of PDDL problems is the fact that different problems may require different kind of reasoning to be properly managed; this said we defined 5 different reasoning categories to classify the problems in this sense:
+\begin{frame}{Implementation: Reasoning Type}\footnotesize
+    Difficulty alone is not enough: two domains can be equally hard while requiring different reasoning skills.
+
+    \vspace{0.25cm}
+    We therefore assign each domain a dominant reasoning category:
     \begin{multicols}{2}
     \begin{itemize}
-        \item Numerical optimization
-        \item Temporal planning
-        \item Logistic
-        \item Logic
-        \item Spatial
+        \item numerical optimization
+        \item temporal planning
+        \item logistics
+        \item symbolic logic
+        \item spatial planning
     \end{itemize}
     \end{multicols}
 
-
-    Using these 5 categories we divided the problems available into these categories, it is worth noticiting that many problems might have mixed reasoning types, so we assigned the final reasoning label to a problem based on the type of reasoning required present most within the problem of interest.\\     
-    In the end both using this classification and the difficulty score we end up obtaining a good classification able to take into account the main feature of the problems but still easy to deal with even for someone that is not familiar with this topic.
+    Mixed domains are labeled by the reasoning type that is most central to solving the problem.
 \end{frame}
 
 \begin{frame}{Problems Chosen}\footnotesize
-    To conclude the Problems' Classification chapter it's useful to highlight among all the problems available the selected ones, since the Temporal Planning and Logic reasoning types have just a single related problem each it is better not to include them in the selection hence we selected problems among all the remaining reasoning categories.\\
-    We selected 6 problems total: 3 of them are the hardest ones (one for each reasoning categories left) based on the difficulty score of the domains; the other 3 are the easiest ones, one from each reasoning categories left.\\
-    Two sets of problems are therefore obtained:\\
-    \vspace{0.2cm}
+    We selected six domains from the three reasoning categories with enough coverage: numerical optimization, logistics and spatial planning.
 
+    \vspace{0.25cm}
     \begin{columns}
         \begin{column}{0.47\textwidth}
-            \centering \textbf{Hard Set:}
+            \centering \textbf{Hard Set}
             \begin{itemize}
-                \item Settlersnumeric (N.opt.)
-                \item Rover (Logistic)
-                \item Block Grouping (Spatial)
+                \item settlersnumeric (numerical optimization)
+                \item rover (logistics)
+                \item block-grouping (spatial)
             \end{itemize}
         \end{column}
         
         \begin{column}{0.47\textwidth}
-            \centering \textbf{Easy Set:}
+            \centering \textbf{Easy Set}
             \begin{itemize}
-                \item Fo counters (N.opt.)
-                \item Expedition (Logistic)
-                \item Fo Sailing (Spatial)
+                \item fo-counters (numerical optimization)
+                \item expedition (logistics)
+                \item fo-sailing (spatial)
             \end{itemize}
         \end{column}
     \end{columns}
 
+    \vspace{0.25cm}
+    Temporal planning and symbolic logic were excluded from the final set because only one domain was available for each category.
 \end{frame}
 
 
 
-\section{Hardware platform and Models selected}
-
+\section{Tools Used}
 \begin{frame}[c]
     \centering
     
-    % Testo molto grande (Huge), in grassetto (bfseries) e di colore blu elegante
-    {\Huge\textcolor{blue}{Hardware platform and Models selected}}
+    {\Huge\textcolor{blue}{Tools Used}}
     
-    \vspace{0.1cm} % Spazio elegante tra la parola e la linea di sottolineatura
+    \vspace{0.1cm}
     
-    % Una linea sottile di sottolineatura (lunga 5cm e spessa 1.5pt)
     \textcolor{black}{\rule{10cm}{1pt}}
     
 \end{frame}
 
-\begin{frame}{Hardware Platform}\footnotesize
-    Now, since a good amount of computational resources is needed to run the LLMs we started looking for some resources and we ended up with tho different alternatives:
-    \begin{multicols}{2}
+\begin{frame}{Tools Used}\footnotesize
+    The benchmark relies on a small set of tools, each with a specific role:
     \begin{itemize}
-        \item Leonardo HPC by CINECA
-        \item NVIDIA API
+        \item \textbf{Leonardo HPC by CINECA:} main compute platform for local model execution.
+        \item \textbf{Hugging Face:} source for local inference setup and download of open-source models.
+        \item \textbf{whichLLM:} model-selection support based on available hardware on Leonardo.
+        \item \textbf{VAL validator:} external PDDL plan validator.
+        \item \textbf{NVIDIA API:} alternative backend to use open-source models without a local powerful machine.
     \end{itemize}
-    \end{multicols}
-    Both of them provided good amount of computational resources, more than sufficient run LLMs but the choice ended up being Leonardo HPC simply because with NVIDIA some problems came up since we needed a good internet connection and we didn't always have a clear feedback from the system.\\
-    The CINECA provided us a trial project on Leonardo consisting of a Cluster composed by:
-    \begin{itemize}
-        \item 32 Cores
-        \item 4 x A100 GPUs (64GB each)
-        \item 500GB RAM
-    \end{itemize}
-    
 
-
+    \vspace{0.2cm}
+    Both Leonardo and the NVIDIA API were used: Leonardo for controlled local execution with direct GPU access, and NVIDIA API as a hosted backend for additional model runs.
 \end{frame}
 
-\begin{frame}{Models Selected}\footnotesize
+\section{Selected Models}
+\begin{frame}[c]
+    \centering
+    
+    {\Huge\textcolor{blue}{Selected Models}}
+    
+    \vspace{0.1cm}
+    
+    \textcolor{black}{\rule{10cm}{1pt}}
+    
+\end{frame}
 
-    Now for the selection of the LLM models we used a specific tool called \textit{whichLLM} and allows the user to obtain a ranking of LLMs that could be executed effectively on the hardware platform on which we call the tool.\\
-    We therefore obtained the ranking displayed in the picture below, now that we had a better knowledge about what Leonardo could execute we looked for the models on HuggingFace.
+\begin{frame}{Selected Models}\footnotesize
+    Model selection was guided by two constraints:
+    \begin{itemize}
+        \item compatibility with the available Leonardo hardware;
+        \item coverage of recent open LLM families available through Hugging Face.
+    \end{itemize}
 
+    \vspace{0.25cm}
     \begin{columns}[T]
         \begin{column}{0.35\textwidth}
-            \footnotesize
-            Given the ranking we selected the following models:
+            The local evaluation shown in the results includes:
             \begin{itemize}
-                \item qwen
-                \item gpt oss 120B
-                \item llama 4
-                \item gemma 4
-                \item deepseek
+                \item Gemma 4 31B IT
+                \item Nemotron 3 Nano 30B A3B
+                \item Phi-4
+                \item Qwen 3 6/27B
             \end{itemize}
         \end{column}
         
         \begin{column}{0.6\textwidth}
-            
             \includegraphics[width=\linewidth]{rankLLMs.png}
         \end{column}
     \end{columns}
-
-
-
-
 \end{frame}
-
-
-% NEW SECTION
-\section{Outputs and Evaluation Metrics}
+\section{Outputs and Evaluation}
 \begin{frame}[c]
     \centering
     
     % Testo molto grande (Huge), in grassetto (bfseries) e di colore blu elegante
-    {\Huge\textcolor{blue}{Output and Evaluation Metrics}}
+    {\Huge\textcolor{blue}{Outputs and Evaluation}}
     
     \vspace{0.1cm} % Spazio elegante tra la parola e la linea di sottolineatura
     
@@ -397,65 +447,136 @@
 \end{frame}
 
 
-\begin{frame}{Output Structure}
-    in this section will be described how the outputs structure is managed , raw / parsed /scored results.
-    how are created the output files and what is the rationale behind the the choice of getting the outputs in this way.\\
-    a brief description of the reason for which the json files are structured as they are.
+\begin{frame}{Output Structure}\footnotesize
+    Each benchmark case produces three aligned JSON artifacts:
+    \begin{itemize}
+        \item \textbf{Raw:} prompt messages, model output and provider-side reasoning text when available.
+        \item \textbf{Parsed:} extracted PDDL actions, final plan text and formatting issues.
+        \item \textbf{Scored:} VAL validation result, solved flag, iterations used and repair feedback.
+    \end{itemize}
+
+    \vspace{0.25cm}
+    The suite also writes \texttt{suite\_result.json}, which summarizes the run matrix and is the entry point for post-run analysis.
+
+    \vspace{0.25cm}
+    This split keeps generation, extraction and evaluation independent, so parser errors and planning failures can be diagnosed separately.
+\end{frame}
+
+\begin{frame}{Evaluation Metrics Scope}\footnotesize
+    The metrics are designed to answer three different questions:
+    \begin{itemize}
+        \item \textbf{Did the model solve the planning task?}
+        \item \textbf{Was the produced action sequence grounded in the PDDL domain?}
+        \item \textbf{Did retries improve the answer or only resample attempts?}
+    \end{itemize}
+
+    \vspace{0.25cm}
+    For this reason, the evaluation does not rely only on final success. It combines success, executability, hallucination, precondition awareness and retry behavior.
+\end{frame}
+
+\begin{frame}{Core Metrics}\footnotesize
+    \begin{itemize}
+        \item \textbf{SR:} fraction of instances solved by the model.
+        \item \textbf{FASR:} first-attempt success rate; measures zero-shot planning ability.
+        \item \textbf{IWSR:} iteration-weighted success rate; rewards valid plans found with fewer retries.
+        \item \textbf{Retry Gap:} $SR - FASR$; high values mean the model depends on repair attempts.
+        \item \textbf{Executability Ratio:} fraction of the plan executable before the first precondition failure.
+        \item \textbf{Hallucination Rate:} fraction of actions or objects not grounded in the PDDL files.
+        \item \textbf{PAS:} precondition awareness score; separates sequencing errors from fabricated states.
+        \item \textbf{CoTaL:} alignment between reasoning actions and the final extracted plan when reasoning is available.
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}{Cross-Domain and Cross-Model Analysis}\footnotesize
+    \begin{itemize}
+        \item \textbf{Within-domain ranking:} compares models inside each domain using normalized metric values.
+        \item \textbf{Cross-domain consistency:} checks whether a model is robust across different reasoning categories.
+        \item \textbf{Failure mode taxonomy:} combines hallucination, executability and PAS to identify why plans fail.
+        \item \textbf{Difficulty analysis:} compares easy, medium and hard instances to see where performance degrades.
+    \end{itemize}
+
+\end{frame}
+
+\begin{frame}{Composite Planning Score}\footnotesize
+    The Composite Planning Score summarizes complementary planning signals in one value:
+
     \vspace{0.2cm}
-\end{frame}
+    \resizebox{\textwidth}{!}{
+        $PS = 0.25 \cdot FASR + 0.20 \cdot IWSR + 0.20 \cdot ER + 0.20 \cdot (1 - Hallucination) + 0.15 \cdot PAS$
+    }
 
-\begin{frame}{Evaluation Metrics Scope and justification}
-    in this section will be decribed :
+    \vspace{0.35cm}
     \begin{itemize}
-        \item the scope of the evaluation metrics
-        \item the scientific rationale behind the choice of the metrics and the power of those not only given the current literature but considering also future improvements of the LLMs capabilities.
+        \item \textbf{FASR} has the highest weight because it cannot be inflated by retries.
+        \item \textbf{IWSR} and \textbf{ER} capture repair efficiency and structural plan quality.
+        \item \textbf{Grounding} is represented by inverse hallucination rate.
+        \item \textbf{PAS} adds information about local precondition reasoning.
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Single Evaluation Metrics sense and implementation}
-    in this section will be decribed briefly the single evaluation metrics:
+\section{Results}
+\begin{frame}[c]
+    \centering
+    
+    {\Huge\textcolor{blue}{Results}}
+    
+    \vspace{0.1cm}
+    
+    \textcolor{black}{\rule{10cm}{1pt}}
+    
+\end{frame}
+
+\begin{frame}{Evaluation Snapshot}\footnotesize
+    The plots shown here come from the generated report \texttt{results/LLM\_classification\_test}.
+
+    \vspace{0.25cm}
     \begin{itemize}
-        \item Process Level Metrics ( reasoning quality )
-        \begin{itemize}
-        \item CoTaL ( chain of thought alignement)
-        \item PAS ( precondition awarness score )
-        \item ER ( executability ratio )
-        \end{itemize}
-        \item Efficiency Metrics ( reasoning efficiency )
-        \begin{itemize}
-        \item FASR ( first attemp succes rate )
-        \item IWSR ( iteration weighted succes rate )
-        \item RG = SR - FASR ( retry gap )
-        \item P( valid | reached attemp k ) ( probability of getting a valid plan given that the attemp k has been reached )
-        \end{itemize}
-        
+        \item \textbf{Rows:} 267 evaluated task instances.
+        \item \textbf{Models:} Gemma, Nemotron, Phi-4 and Qwen.
+        \item \textbf{Domains:} block-grouping, expedition, fo-counters, fo-sailing, rover and settlersnumeric.
+        \item \textbf{Protocol:} iterative repair.
+        \item \textbf{Difficulty tiers:} easy, medium and hard.
     \end{itemize}
 \end{frame}
 
+\begin{frame}{Success and Hallucination}\footnotesize
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{../../results/LLM_classification_test/01_success_rate_heatmap.png}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{../../results/LLM_classification_test/02_hallucination_heatmap.png}
+        \end{column}
+    \end{columns}
 
-\begin{frame}{Cross Domain and Cross Model Comparative Analysis}
-     in this section will be decribed :
-    \begin{itemize}
-        \item WDMR(within domain model ranking) performance comparison of LLMs on the defined metrics considering normalized scores on the specific domain then given a rank for each metric on for the LLMs on the specific domain.
-        \item CDC (cross domain consistency) ranking performance consistency of the LLMs across domains
-        \item FMT (failure mode taxonomy) analysis of the failure modes of the LLMs on the specific metrics and domains.
-    \end{itemize}
-
+    \vspace{0.2cm}
+    Final success and grounding errors must be read together: a model can use legal-looking actions while still failing the global goal.
 \end{frame}
 
-\begin{frame}{Composite Planning Score}
-    in this section will be described :
-    \begin{itemize}
-        \item rationale behind the CPS (composite planning score) and the way it is computed.
-        
-    \end{itemize}
+\begin{frame}{Composite Score and Capability Profile}\footnotesize
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{../../results/LLM_classification_test/03_composite_score_bar.png}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\linewidth]{../../results/LLM_classification_test/04_radar_chart.png}
+        \end{column}
+    \end{columns}
+
+    \vspace{0.2cm}
+    The composite score gives a compact ranking; the radar chart shows which capabilities drive each score.
 \end{frame}
-\section{Conclusion}
+\section{Conclusions}
 \begin{frame}[c]
     \centering
     
     % Testo molto grande (Huge), in grassetto (bfseries) e di colore blu elegante
-    {\Huge\textcolor{blue}{Conclusion}}
+    {\Huge\textcolor{blue}{Conclusions}}
     
     \vspace{0.1cm} % Spazio elegante tra la parola e la linea di sottolineatura
     
@@ -464,15 +585,15 @@
     
 \end{frame}
 
-\begin{frame}{Conclusion}
-    in this section will be described broadly what are the conclusions given the data available in terms of :
+\begin{frame}{Conclusions}\footnotesize
     \begin{itemize}
-        \item LLMs performance on the defined metrics
-        \item LLMs found thinking capabilities profile based on the metrics and analysis done.
-        \item Future work and possible improvements of the benchmark and the metrics defined.
+        \item The benchmark provides a reproducible way to compare LLMs on planning tasks, using the same domains, protocols and validator.
+        \item VAL validation keeps final scoring independent from model wording and parser interpretation.
+        \item The raw / parsed / scored split makes failures easier to inspect and compare.
+        \item The metrics separate final success, grounding, executability, retry dependence and reasoning alignment.
+        \item Future work can extend the task set, add more temporal and logic domains, and compare additional model backends.
     \end{itemize}
 \end{frame}
-
 
 
 \end{document}

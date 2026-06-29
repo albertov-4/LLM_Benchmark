@@ -1250,7 +1250,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
     - ``cot_summary``: SR and CoT plan alignment split by CoT flag.
     - ``failure_breakdown``: total and proportional sequencing vs. fabrication errors
       per model — feeds failure type stacked bar.
-    - ``retry_gap``: SR, FASR, IWSR, and RG (= SR − FASR) sorted by RG.
+    - ``retry_gap``: SR, FASR, IWSR, and RG (= SR - FASR) sorted by RG.
     - ``composite_score``: PS with 95% bootstrap CI (N=1000, seed=42) and error bars.
     - ``rank_within_domain``: model ranks on every RANK_METRICS metric within each
       domain (rank 1 = best, direction per RANK_METRICS).

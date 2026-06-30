@@ -1,0 +1,187 @@
+From a capped text-overlap proxy to a five-component structural comparison of the emitted plan against the plan reconstructed from the reasoning trace -- plus the status taxonomy that says how far to trust each score.
+
+CoTaL -- the CoT plan-alignment score -- answers the question Lanham2023 and Kambhampati2024 pose: \emph{does the model's reasoning actually correspond to what it does, or is the chain-of-thought a post-hoc story*} The metric began as a crude text-overlap proxy and was redesigned into a structural sequence comparison between two reconstructed plans. Both still exist in the code, but they play different roles: the structural score is the real metric; the text proxy is a capped fallback for when there is only one plan to look at.
+
+\begin{quote}\small
+\textbf{The two-plan idea.} For a reasoning model, the parser produces \textbf{two} plans per attempt: \code{raw.actions} (what the model emitted in its answer) and \code{reasoning.actions} (the plan reconstructed from the thinking trace). CoTaL is, at its strongest, the structural agreement between these two sequences. High agreement = the model did what it reasoned about (faithful CoT). Low agreement = the answer and the reasoning diverged.
+\end{quote}
+
+\subsubsection{The status decision tree}
+
+\code{compute\_cot\_alignment\_for\_attempt} routes each attempt into one of several statuses depending on which plans exist and whether they validate. The status is as important as the number -- it tells you how much to trust the score.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Status & Condition & Score basis & Confidence\\
+\midrule
+comparable\_and\_both\_valid & raw + reasoning plans, both valid & structural\_alignment & high\\
+\addlinespace
+comparable\_but\_both\_invalid & both plans present, both invalid & structural\_alignment & high\\
+\addlinespace
+comparable\_but\_raw/reasoning\_invalid & both present, one invalid & structural\_alignment & high\\
+\addlinespace
+semantic\_proxy\_only & raw plan but no reasoning plan & text overlap -- 0.35 cap & low\\
+\addlinespace
+no\_raw\_plan & reasoning but no emitted plan & none & low\\
+\addlinespace
+no\_reasoning\_text & neither reasoning text nor actions & none & none\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{The strict metric -- structural\_alignment}
+
+When both plans exist, \code{compute\_sequence\_alignment}(in \code{evaluators/plan\_alignment.py}) compares the two normalised action sequences along five order- and content-sensitive dimensions and combines them into one bounded score:
+
+\[
+\begin{aligned}
+structural alignment -- [0,1]0.35--lcs\_ratio + 0.25--prefix\_ratio + 0.20--bag\_overlap + 0.10--length\_ratio + 0.10--repetition\_similarity
+\end{aligned}
+\]
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Component & What it captures & Why weighted so\\
+\midrule
+lcs\_ratio & longest common subsequence / max len -- order-preserving overlap & highest (0.35): the truest measure of "same plan in the same order"\\
+\addlinespace
+prefix\_ratio & common leading actions / min len -- do they start identically* & 0.25: a shared prefix is strong evidence of a shared plan\\
+\addlinespace
+bag\_overlap & multiset intersection -- same actions, order ignored & 0.20: same ingredients even if reordered\\
+\addlinespace
+length\_ratio & min/max length -- are the plans the same size* & 0.10: weak signal, easily coincidental\\
+\addlinespace
+repetition\_similarity & similar amount of repeated actions & 0.10: catches degenerate looping\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Alongside the score it returns rich diagnostics the report can drill into: \code{exact\_sequence\_match}, \code{first\_mismatch\_index}, \code{adjacent\_swaps}(transposition localisation), \code{displaced\_actions}, per-sequence distinct-action counts, action frequencies, and run-length \code{repetition\_blocks}. These are exactly the distinct/repetition/transposition diagnostics the redesign called for.
+
+\subsubsection{The fallback -- semantic proxy, capped at 0.35}
+
+When only the raw plan exists (no reconstructable reasoning plan), the metric falls back to \code{compute\_cot\_semantic\_support}: the fraction of the plan's action names and object names that appear as tokens in the reasoning text. This is vocabulary coverage, not plan agreement, so it is deliberately\textbf{capped at 0.35}-- it can never masquerade as a strong structural match.
+
+\begin{lstlisting}
+score = semantic["cot_semantic_support_score"]          # (action_cov + object_cov)/2
+proxy_score = score * semantic_proxy_cap                  # cap = 0.35
+status = "semantic_proxy_only"; confidence = "low"
+\end{lstlisting}
+
+\begin{quote}\small
+\textbf{Why the cap matters.} Mentioning the right words is not the same as planning them in the right order. The cap encodes that epistemic gap: a proxy score of 0.35 is the ceiling of "the reasoning at least talks about the plan", which is strictly weaker than "the reasoning \emph{is} the plan".
+\end{quote}
+
+\subsubsection{Which plan is the basis, and which attempt is selected}
+
+When both plans validate-differently, a three-way rule picks the authoritative one: prefer the valid plan if only one is valid; if both are valid prefer the \emph{shorter}; if both invalid prefer the reasoning plan. Across iterations, \code{select\_cot\_alignment\_attempt} takes the first solved attempt when the instance is solved, otherwise the last attempt -- so the reported CoTaL reflects the decisive attempt, not an average of doomed ones.
+
+\begin{lstlisting}
+if   raw_valid and not reasoning_valid: basis = "raw"
+elif reasoning_valid and not raw_valid: basis = "reasoning"
+elif raw_valid and reasoning_valid:     basis = "raw" if len(raw) <= len(reasoning) else "reasoning"
+else:                                   basis = "reasoning"
+\end{lstlisting}
+
+\subsubsection{Aggregation\&range}
+
+The \code{overall} table actually exposes three CoT aggregates: \code{strict\_mean\_cot\_plan\_alignment}(structural only), \code{inclusive\_mean\_cot\_alignment}(strict-or-proxy), and \code{mean\_cot\_semantic\_support}(raw coverage), plus status-rate columns like \code{cot\_comparable\_and\_both\_valid\_rate} and \code{cot\_exact\_sequence\_match\_rate}. Report the strict mean as the metric and the status rates as the coverage context.
+
+\begin{quote}\small
+\textbf{The single most important caveat for this metric.} CoTaL is only defined where paired plans (or at least reasoning text) exist. In the bundled run the status distribution is \textbf{282 no\_reasoning\_text -- 82 semantic\_proxy\_only -- 18 comparable\_and\_both\_valid} -- most instances have \emph{no} reasoning plan to compare, so CoT\_Alignment is NaN for most non-reasoning models. Where it is defined on tiny samples it can be misleading: kimi shows CoT\_Alignment = 1.000 driven by a handful of comparable attempts while its SR is only 0.051. Never read a CoTaL mean without its sample size and status mix; a high CoTaL on a low-SR model is the textbook "the reasoning matches a plan that still fails" case, not evidence of capability.
+\end{quote}
+
+\begin{quote}\small
+\textbf{Known accessor edge case.} \code{parsed\_plan\_reasoning\_text()} returns the reasoning field only when it is a string; for the current dict-shaped \code{reasoning} namespace it returns "". In practice the reasoning text is recovered first from the raw generation via \code{raw\_attempt\_reasoning\_text()} , so the proxy path still fires -- but if a run lacks raw generation text, the proxy will silently see an empty string. Worth gating with an explicit diagnostic.
+\end{quote}
+
+\subsubsection{The coverage proxy: the double-intersection}
+
+Underneath the structural metric sits the semantic-support proxy -- the layer that answers the plain question \emph{"does the chain-of-thought actually talk about the same things that end up in the plan*"} If the CoT names the right actions and objects, that is evidence the reasoning guided generation (high score); if it talks about entirely different things, the reasoning is decorative and was likely written around a plan produced by some other mechanism (low score). This operationalises Kambhampati's "fake reasoning vs genuine deliberation" and Lanham et al.'s finding that CoT grows less faithful with scale.
+
+Coverage is computed with a deliberate\textbf{two-step filter}:
+
+Both filters are necessary.\textbf{Without the first}, any English word resembling a PDDL action name would inflate the score; restricting to exact members of \code{legal\_action\_names} stops that.\textbf{Without the second}, a CoT that simply lists every action in the domain would score 1.0 even if the plan used one action; requiring the specifically-used actions stops that.
+
+\begin{quote}\small
+\textbf{Why the denominator is the plan, not the CoT.} Each coverage score divides by the size of the \emph{plan} vocabulary, not the CoT vocabulary. The question is "what fraction of what the model \emph{did} is reflected in its reasoning*", not "what fraction of the reasoning made it into the plan*". A plan-based denominator rewards coverage of what was actually done and denies a long, everything-mentioning CoT an inflated score.
+\end{quote}
+
+\paragraph{Worked example.}
+
+CoT: \emph{"move car1 from l1 to l2 along the road; once car1 is at l2, pick up passenger p1; then drive to l3 to drop off the passenger."} Plan: \code{(move-car car1 l1 l2) (pick-up p1 car1 l2) (move-car car1 l2 l3) (drop-off p1 car1 l3)}. Every plan action and object is named in the prose, so both action- and object-coverage are full.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Scenario & action\_cov & object\_cov & What it reveals\\
+\midrule
+CoT names every action and object in the plan & 1.00 & 1.00 & Perfect alignment -- the CoT anticipated the plan.\\
+\addlinespace
+All actions, wrong objects & 1.00 & 0.00 & Knows what to do, reasons about the wrong objects.\\
+\addlinespace
+Some actions, all objects & 0.50 & 1.00 & Object tracking good, action selection partly off.\\
+\addlinespace
+No domain actions or objects & 0.00 & 0.00 & CoT is pure prose with no PDDL grounding.\\
+\addlinespace
+Empty plan / empty CoT & 0.00 & 0.00 & max(0,1) denominator avoids division by zero -- 0.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{quote}\small
+\textbf{Tokeniser is substring-based, not word-boundary.} Tokenisation uses \code{re.findall(r'[a-z][a-z0-9\_-]*', cot\_lower)} , which matches substrings rather than whole words. If the CoT contains "pick-up-person" and the action is "pick-up", the shorter token still matches, so the score can be slightly inflated when an action name is a substring of a longer compound word. Rare for specific PDDL action names, but worth remembering when reading very high scores.
+\end{quote}
+
+\subsubsection{Reading the CoT plots}
+
+\paragraph{Mean CoT alignment by model -- domain (bars).}
+
+The mean hides variance, so it is the first thing to look at before the violin. A mean of 0.60 could be every plan near 0.60, or half at 1.0 and half at 0.2 -- the violin resolves it; read both. Across a model's domains: similar-and-high means domain-general grounding (formal vocabulary used regardless of domain); dissimilar means domain-specific behaviour (grounded in some domains, lapsing into prose in others -- a transfer failure); similar-and-low means the CoT is not grounded in PDDL vocabulary at all. Comparing one domain across models yields a qualitative sense of how hard that domain's names/identifiers are for CoT to latch onto.
+
+\paragraph{Success rate: CoT=True vs CoT=False (paired bars).}
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Pattern & Conclusion\\
+\midrule
+CoT=True>False & CoT is causally helping -- \emph{but} only counts as genuine reasoning if the alignment score is also high; if success rises while alignment is low, the CoT is not what improved the outcome (Stechly et al. 2023).\\
+\addlinespace
+CoT=True<False & CoT is actively harmful -- verbose self-contradicting reasoning confuses plan generation.\\
+\addlinespace
+CoT=True -- False & CoT is decorative -- Kambhampati's "fake reasoning": plans retrieved by pattern-matching, CoT written around them.\\
+\addlinespace
+Both low & Model can't plan here regardless; the CoT effect size is not interpretable at the floor.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{quote}\small
+\textbf{This contrast is only valid if everything else is held equal.} The CoT=True/False runs must test the same problems under the same prompt, \textbf{temperature} and \textbf{iteration budget} , or the bar difference reflects confounds rather than a CoT effect. Temperature divides the logits before sampling (adjusted = score/temperature): < 1 sharpens toward the most likely tokens, > 1 flattens toward surprising ones -- so a reproducible benchmark should pin temperature to 0 or near-0 for every model so differences reflect capability, not sampling luck. The iteration budget (N rounds) follows Valmeekam et al. 2023 for the cap and Stechly et al. 2023 for treating attempts past the first as independent samples; 3--15 is the defensible range since the marginal value of later iterations is negligible. Both must be identical across the True and False runs.
+\end{quote}
+
+\paragraph{Alignment distribution for valid vs invalid plans (violin).}
+
+Compare the median lines between the Valid and Invalid violins: a substantially higher Valid median means alignment is predictive of success (models reasoning in domain vocabulary are likelier to succeed); equal medians mean alignment and validity are independent. The violin is a 90---rotated, KDE-smoothed histogram (x = alignment score, y = plan count) -- and because CoTaL scores cluster at the extremes, the KDE is imperfect and should be read loosely.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Valid violin & Invalid violin & Conclusion\\
+\midrule
+Tight, high mass near 1.0 & Wide, spread 0--1 & Valid plans have consistently aligned CoT; failed plans have chaotic CoT -- no reasoning--output relationship.\\
+\addlinespace
+Moderately tight, high & Slightly lower, similar width & CoT stays grounded even in failures -- failures are sequencing/complexity, not reasoning misalignment.\\
+\addlinespace
+Very wide, mid-range & Wide, similar & CoT noisy for both outcomes -- alignment is essentially random.\\
+\bottomrule
+\end{tabularx}
+\end{table}

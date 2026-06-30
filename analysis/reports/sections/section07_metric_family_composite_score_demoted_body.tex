@@ -1,0 +1,89 @@
+What PS represents, its five weighted components plus the conditional CoT bonus, the per-row bootstrap CI, how to read the capability radar, and how to retune the weights for a specific research goal.
+
+The Composite Planning Score collapses five orthogonal capability axes into one number per model (and per model--domain). Its purpose is triage, not verdict: a single ranking to scan, always reported alongside its components because a composite can hide compensating strengths and weaknesses.
+
+\subsubsection{Why a composite at all}
+
+The preceding sections give nine-plus dials. PS exists so that, for a quick comparison, you have one axis that already encodes the framework's value judgement: zero-shot ability matters most, retries are a cost, structural quality and grounding matter, and precondition awareness is a tie-breaker. It is the metric you sort the leaderboard by; it is never the metric you conclude from.
+
+\subsubsection{The components and their weights}
+
+PS is a weighted sum of five inputs, each already in [0,1], with an optional sixth (CoT) bonus. The person sometimes thinks of it as "two components" -- that intuition maps onto the structure exactly: there is a\textbf{base}(the five-term weighted sum) and a\textbf{conditional CoT bonus} that only applies when a strict CoT alignment score exists, at which point all weights are renormalised so the result stays bounded.
+
+\[
+\begin{aligned}
+base0.25--FASR + 0.20--IWSR + 0.20--exec\_ratio + 0.20--(1--halluc) + 0.15--PAS if CoT finitePS = (base + 0.05--CoT) / (1.00 + 0.05) -- renormalised, clipped to [0,1]
+\end{aligned}
+\]
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Component & w & Rationale for the weight & NaN substitute\\
+\midrule
+FASR & 0.25 & Highest -- the only signal that cannot be inflated by retries & 0\\
+\addlinespace
+IWSR & 0.20 & Retry efficiency; rewards fast convergence, penalises stochastic search & 0\\
+\addlinespace
+exec\_ratio & 0.20 & Structural quality independent of goal success & 0\\
+\addlinespace
+1 -- halluc & 0.20 & Schema grounding & 0.5\\
+\addlinespace
+PAS & 0.15 & Lowest -- undefined for zero-failure models, so a 0.5 prior is needed & 0.5\\
+\addlinespace
+CoT bonus & +0.05 & Applied only when strict CoT alignment is finite & skipped\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Aggregation\&range}
+
+PS is computed on the \emph{aggregated} components in both the \code{overall} and \code{by\_domain} tables -- so each model carries an overall PS and one PS per domain. In the bundled run: gpt\_oss 0.548 -- nemotron(nv) 0.446 -- kimi 0.435 -- qwen\_3\_5 0.425, down to phi\_4\_mini 0.315.
+
+\subsubsection{The 95\% bootstrap confidence interval}
+
+To show whether a PS difference is real or noise, the \code{composite\_score} table attaches a bootstrap CI (N=1000, seed=42). Crucially it resamples\textbf{per-row PS contributions}, not per-model means -- a more conservative estimate that reflects instance-level variability.
+
+\begin{lstlisting}
+contribs = model_df.apply(per_row_composite, axis=1).values
+boots = [contribs[rng.integers(0,len(contribs),len(contribs))].mean() for _ in range(1000)]
+PS_ci_lo, PS_ci_hi = np.percentile(boots,2.5), np.percentile(boots,97.5)
+\end{lstlisting}
+
+\begin{quote}\small
+\textbf{Overall PS and the CI are computed two different ways.} The overall PS averages the components first, then weights them. The CI averages per-row composites. These are not the same operation -- for non-linear cases and for models with many empty/NaN rows they can diverge, and the overall PS can even sit outside its own CI (in the bundled run kimi's PS\_overall 0.435 lies above its CI [0.184, 0.247]). Read the CI as a stability indicator for the per-instance score, not as a strict interval around PS\_overall. If you need them to coincide, compute the point estimate the same per-row way.
+\end{quote}
+
+\subsubsection{The capability radar}
+
+The \code{radar\_chart} plots the five [0,1] axes\textbf{FASR -- IWSR -- Exec -- IHR -- PAS} as a pentagon per model. It is the visual companion to the profile thresholds: a Genuine Planner fills most of the pentagon; a No-Grounding model collapses to the centre; a Vocabulary-Only model shows a lopsided shape -- high IHR but low PAS and Exec. Read \emph{area} for overall strength and \emph{shape} for the capability signature. Note the radar uses IHR (not 1--halluc) and omits the CoT bonus, so it is the \emph{base} profile, not the bonus-adjusted PS.
+
+\begin{quote}\small
+\textbf{Radar reading caveat.} Equal area can come from very different shapes -- a model strong on FASR/IWSR but weak on Exec/PAS can match the area of a balanced model. Always compare shape, not just fill. With many models the overlapping fills become unreadable; facet or pick a handful for any figure you publish.
+\end{quote}
+
+\subsubsection{Goal-dependent weight tuning}
+
+The weights encode a scientific claim; changing them changes the question PS answers. They live in one dict ( \code{COMPOSITE\_WEIGHTS}) and must sum to 1.0. Reasonable retunings for different research goals:
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Research goal & Adjustment\\
+\midrule
+Zero-shot capability only & FASR--0.40, IWSR--0.10\\
+\addlinespace
+Domain grounding focus & one\_minus\_halluc--0.35, FASR--0.15\\
+\addlinespace
+All dimensions equal & all five = 0.20 (simple average)\\
+\addlinespace
+Execution-centric & exec\_ratio--0.35, PAS--0.10\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{quote}\small
+\textbf{The discipline that makes PS safe.} Always report the component scores next to PS. A PS of 0.60 from FASR=1.0 / exec=0.0 (always right on the first try, never produces a partially-executable failure) is a completely different model from a PS of 0.60 from moderate scores everywhere. The composite ranks; the components explain.
+\end{quote}

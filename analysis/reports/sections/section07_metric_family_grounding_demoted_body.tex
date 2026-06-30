@@ -1,0 +1,72 @@
+Action, fuzzy, and object hallucination, plus the inverse rate used downstream -- the metrics that decide whether a model is reading the formal domain at all.
+
+Hallucination is the most basic grounding signal: is the model even using the domain's legal vocabulary* A model that hallucinates is not reading the schema at all; a model that does not hallucinate has at minimum memorised it, even if it cannot sequence. Three variants separate three failure modes, all produced by \code{compute\_hallucination\_metrics} in one pass.
+
+\begin{quote}\small
+\textbf{Why"discriminatory".} These metrics rarely correlate with success on their own -- most capable models score 0 hallucination -- but they are decisive at the \emph{boundary} . They are what tells apart a Vocabulary-Only model (legal names, no coherent state) from a No-Grounding model (invents names outright). In the bundled run hallucination is 0 for almost every model; the exceptions are phi\_4 (0.120) and qwen\_3\_6\_27b (0.143).
+\end{quote}
+
+\paragraph{Action Hallucination Rate.}
+\emph{rate = illegal\_action\_names / total\_actions.}
+Fraction of plan steps whose action name is not in the domain's legal action set. The headline grounding gate.
+\begin{description}
+\item[How it is computed] Each parsed action name is checked for membership in \code{domain\_info["action\_names"]}. \begin{lstlisting}
+if action_name not in legal_actions:
+    hall_strict += 1
+hallucination_rate = hall_strict / total_actions   # NaN if empty
+\end{lstlisting}
+\item[Aggregation ladder] instanceillegal / total on the final plan--domainmean--modelmean
+\item[Range\&meaningful bands] 0.0 fully grounded1.0 no grounding NaN for empty plans / absent domain file. The profile gate is strict: IHR>0.90 (i.e. hallucination<0.10) is required for the grounded profiles; IHR<0.60 marks No Grounding.
+\item[In the plots] \code{hallucination\_heatmap}(model--domain), \code{hallucination\_by\_model\_domain}(bars), the x-axis of \code{failure\_mode\_taxonomy}, and a ranked metric (direction min).
+\item[Rationale] Valmeekam's obfuscation result (35\%--0.16\% when action names are scrambled) shows that apparent planning can collapse to nothing once the model can no longer pattern-match on familiar names. Hallucination rate is the everyday proxy for that grounding.
+\item[Grounds in] \textbf{Valmeekam 2023}--4 obfuscation\textbf{Vafa 2024} grounding
+\end{description}
+
+\paragraph{Fuzzy Hallucination Rate.}
+\emph{counted only if min Levenshtein>2.}
+Strict hallucination minus the near-misses. An illegal name is counted here only if its edit distance to \emph{every} legal name exceeds 2, so "pick-up" vs "pickup" is forgiven but a genuine invention is not.
+\begin{description}
+\item[How it is computed] Among strict hallucinations, only those far from any legal name survive. \begin{lstlisting}
+if min(levenshtein(action_name, a) for a in legal_actions) > MAX_FUZZY_DISTANCE:  # =2
+    hall_fuzzy += 1
+\end{lstlisting}
+\item[Aggregation ladder] instancefuzzy / total--domainmean--modelmean
+\item[Range\&meaningful bands] 0.01.0 Always -- strict rate. The \emph{gap} between strict and fuzzy is the diagnostic: a model with high strict but low fuzzy is making transcription/format slips, not inventing actions -- a parser/formatting problem, not a grounding problem.
+\item[In the plots] Carried in the aggregate tables ( \code{Fuzzy\_Halluc}); read alongside the strict heatmap rather than plotted on its own.
+\item[Rationale] Separates "the model doesn't know the action exists" from "the model knows it but spelled it differently". Only the former is a reasoning failure; the latter is fixable at the parser/prompt level and should not be charged against planning ability.
+\item[Grounds in] \textbf{Valmeekam 2023} grounding\textbf{implementation} Levenshtein -- 2
+\end{description}
+
+\paragraph{Object Hallucination Rate.}
+\emph{rate = illegal\_arg\_tokens / total\_arg\_tokens.}
+Fraction of argument tokens not present in the problem's \code{:objects} block -- normalised over arguments, not actions. Catches models that know the verbs but invent the nouns.
+\begin{description}
+\item[How it is computed] Every argument of every action is checked against \code{problem\_info["objects"]}. \begin{lstlisting}
+for arg in action_args:
+    if legal_objects and arg not in legal_objects:
+        obj_hall += 1
+object_hallucination_rate = obj_hall / total_args
+\end{lstlisting}
+\item[Aggregation ladder] instanceillegal args / total args--domainmean--modelmean
+\item[Range\&meaningful bands] 0.01.0 An independent axis from action hallucination. High object-halluc + low action-halluc = the model has the action vocabulary but invents world entities -- shallow grounding, exactly Vafa's incoherent-world-model signature at the object level.
+\item[In the plots] \code{object\_hallucination\_by\_model\_domain}(bars).
+\item[Rationale] Object grounding and action grounding fail independently. Splitting them prevents a model that uses legal actions on fabricated objects from looking grounded.
+\item[Grounds in] \textbf{Vafa 2024} object/state coherence
+\end{description}
+
+\paragraph{Inverse Hallucination Rate.}
+\emph{IHR = 1 -- hallucination\_rate.}
+The same signal flipped so higher is better, for use in the composite score and the profile thresholds.
+\begin{description}
+\item[How it is computed] \code{1 -- hallucination\_rate}, NaN-preserving. \begin{lstlisting}
+inverse_hallucination_rate = 1 - hallucination_rate
+\end{lstlisting}
+\item[Range\&meaningful bands] 0.0 no grounding1.0 fully grounded IHR is the radar axis and composite component (weight 0.20 via \code{one\_minus\_halluc}). Profile gates:>0.90 grounded --<0.60 No Grounding.
+\item[In the plots] Radar axis ( \code{radar\_chart}); component of the Composite Planning Score.
+\item[Rationale] Purely a sign convention so every composite input points the same direction (higher = better) and the weighted sum stays interpretable.
+\item[Grounds in] \textbf{Valmeekam 2023} grounding gate
+\end{description}
+
+\begin{quote}\small
+\textbf{NaN handling differs by consumer.} In the aggregate tables hallucination is averaged NaN-aware. But inside the per-row bootstrap for the composite CI, a NaN hallucination is replaced by a neutral 0.5 for \code{one\_minus\_halluc} rather than dropped. This is deliberate (an empty plan shouldn't score as perfectly grounded) but it means the composite CI and the table mean can diverge for models with many empty plans -- see section 06.
+\end{quote}

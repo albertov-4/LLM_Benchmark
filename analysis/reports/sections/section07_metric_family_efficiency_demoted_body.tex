@@ -1,0 +1,195 @@
+Success Rate, First-Attempt Success Rate, Iteration-Weighted Success Rate, Retry Gap -- and the iteration profile that distinguishes genuine correction from stochastic resampling.
+
+This family answers \emph{"how often, how cheaply, and how honestly does the model succeed*"} All four metrics live in the \code{overall}/ \code{by\_domain} tables and share one design principle: a success that needed many retries is worth less than a success on the first try, because under the retrieval hypothesis those retries are independent samples, not corrections.
+
+\begin{quote}\small
+\textbf{Real values from the bundled run.} gpt\_oss\_120b is the clear leader: SR 0.524, FASR 0.333, IWSR 0.371, Retry Gap 0.190. qwen\_3\_5\_122b shows the diagnostic pattern that motivates the whole family -- SR 0.500 but FASR 0.000 and Retry Gap 0.500: every success arrived only after retries, the signature of a Stochastic Searcher.
+\end{quote}
+
+\paragraph{Success Rate.}
+\emph{overall["Success\_Rate"] = mean(Valid).}
+Fraction of instances the model ever solves, across all allowed iterations. The headline number -- and the one the framework argues is least trustworthy on its own.
+\begin{description}
+\item[How it is computed] Boolean \code{Valid}(from \code{scored["solved"]}) averaged per group. This is \emph{validity@k}: success anywhere in the repair budget counts. \begin{lstlisting}
+Success_Rate=("Valid", "mean")
+\end{lstlisting}
+\item[Aggregation ladder] attemptcollapsed: solved anywhere -- instance Valid=True--instanceValid -- \{0,1\}--domainmean over instances--modelmean over all instances
+\item[Range\&meaningful bands] 0.0 worst1.0 best Bands used by the profile thresholds: --0 -- No Grounding --<0.2 -- Understander/Vocabulary -->0.5 capable -->0.7 strong. Always read against FASR; SR alone cannot distinguish retrieval from reasoning.
+\item[In the plots] \code{success\_rate\_heatmap}(model--domain), the SR bars in \code{sr\_vs\_fasr} and \code{sr\_fasr\_iwsr\_by\_model}, and it drives the colour in \code{failure\_mode\_taxonomy} and \code{fasr\_iwsr\_scatter}.
+\item[Rationale] SR is the necessary baseline but the framework's thesis is that it is \emph{insufficient}: it conflates first-try success with retry-dependent success and says nothing about \emph{why} a failure happened. Every other metric exists to decompose it.
+\item[Grounds in] \textbf{Valmeekam 2023} planning baseline\textbf{Kambhampati 2024} retrieval vs reasoning
+\end{description}
+
+\paragraph{First-Attempt Success Rate.}
+\emph{overall["FASR"] = mean(\_iter1).}
+Fraction solved on iteration 1 with no feedback at all. The framework treats this as the single honest signal of planning ability, because it is the only one that cannot be inflated by retries.
+\begin{description}
+\item[How it is computed] A private boolean column is set at row level and averaged: \begin{lstlisting}
+df["_iter1"] = (df["Valid"] == True) & (df["Iterations"] == 1)
+FASR=("_iter1", "mean")
+\end{lstlisting}
+\item[Aggregation ladder] attemptis iteration 1 the solving one*--instance\_iter1 -- \{0,1\}--domainmean--modelmean
+\item[Range\&meaningful bands] 0.01.0 FASR>0.50 with low Retry Gap -- genuine zero-shot capability. FASR -- 0 while SR is high -- the model only ever succeeds by resampling (the entire qwen / nemotron pattern in the bundled run).
+\item[In the plots] \code{fasr\_by\_model\_domain}, \code{fasr\_by\_difficulty}, the FASR bar in \code{sr\_vs\_fasr}/ \code{sr\_fasr\_iwsr\_by\_model}, both axes of \code{fasr\_iwsr\_scatter}, and the y-axis of \code{failure\_mode\_taxonomy} bubble size.
+\item[Rationale] Under the retrieval hypothesis (Kambhampati 2024) and the irrelevant-feedback finding (Stechly 2023), only the un-retried attempt reflects what the model can do in one shot. FASR carries the highest weight in the composite score (0.25) for exactly this reason.
+\item[Grounds in] \textbf{Valmeekam 2023}--5.2\textbf{Stechly 2023} irrelevant feedback
+\end{description}
+
+\paragraph{Iteration-Weighted Success Rate.}
+\emph{contrib = (1/Iterations) if Valid else 0.}
+Success discounted by how many attempts it took. Rewards models that converge fast; penalises models that only succeed deep into the retry budget.
+\begin{description}
+\item[How it is computed] Each solved instance contributes \code{1/k} where k is the iteration count; unsolved contributes 0. The mean of these contributions is IWSR. \begin{lstlisting}
+df["_iwsr_contrib"] = (1.0/row["Iterations"]) if row["Valid"] and row["Iterations"]>0 else 0.0
+IWSR=("_iwsr_contrib", "mean")
+\end{lstlisting}
+\item[Aggregation ladder] attemptdetermines k = Iterations--instance1/k or 0--domainmean--modelmean
+\item[Range\&meaningful bands] 0.01.0 IWSR is bounded above by SR and below by FASR (a first-try win contributes the full 1.0, matching FASR; a 5th-try win contributes only 0.2). IWSR -- SR -- fast repairs (Efficient Corrector). IWSR -- SR -- slow, late convergence.
+\item[In the plots] \code{iwsr\_by\_model\_domain}, the IWSR bar in \code{sr\_fasr\_iwsr\_by\_model}, and the y-axis of \code{fasr\_iwsr\_scatter}.
+\item[Rationale] The \code{1/k} weighting is the numerical encoding of Stechly's argument: if verification isn't easier than generation for a retrieval system, late successes deserve no credit for "search". IWSR is the metric that turns the retry budget into a cost.
+\item[Grounds in] \textbf{Stechly 2023} Abstract --2\textbf{Kambhampati 2024} retrieval
+\end{description}
+
+\paragraph{Retry Gap.}
+\emph{Retry\_Gap = Success\_Rate -- FASR.}
+How much of the reported success depends on retries. A pure diagnostic, not a capability -- high is a warning, not a strength.
+\begin{description}
+\item[How it is computed] A single subtraction on the \code{overall}/ \code{by\_domain} tables, then sorted ascending in the \code{retry\_gap} table. \begin{lstlisting}
+overall["Retry_Gap"] = overall["Success_Rate"] - overall["FASR"]
+\end{lstlisting}
+\item[Aggregation ladder] instancevia SR and FASR--modelSR -- FASR computed on aggregates
+\item[Range\&meaningful bands] --0 no retry dependence-- high dependence RG<0.10 -- near-zero-shot. 0.10--0.30 -- Efficient Corrector territory.>0.30 -- Stochastic Searcher: success is mostly resampling. In the bundled run qwen\_3\_5 hits 0.500.
+\item[In the plots] \code{retry\_gap\_by\_model}(diverging horizontal bars, red = positive gap). RG is also a ranked metric (direction = min) in the within-domain ranking.
+\item[Rationale] RG operationalises the difference between "solved" and "solved on its own". It is the cleanest single read on whether a model's SR is trustworthy.
+\item[Grounds in] \textbf{Stechly 2023} finding (iii)
+\end{description}
+
+\subsubsection{The iteration profile -- the test that separates correction from resampling}
+
+RG tells you retries happened; the iteration profile tells you \emph{whether they helped}. \code{compute\_iteration\_profile()} computes, for each attempt slot k, the conditional success probability among instances that needed exactly k attempts:
+
+\begin{lstlisting}
+for k in range(1, max_iter+1):
+    reached = df[df["Iterations"] >= k]
+    exact   = reached[reached["Iterations"] == k]
+    p_valid_given_reached = exact["Valid"].mean()
+\end{lstlisting}
+
+A\textbf{rising} curve means later attempts succeed more often -- the model is using feedback (Efficient Corrector). A\textbf{flat} curve means success probability is independent of attempt number -- each retry is an independent draw (Stochastic Searcher). \code{profile\_is\_flat()} formalises "flat" as max--min -- 0.10 over the finite points, and feeds the Stochastic-Searcher profile condition. This is the direct empirical test of Stechly's finding (iii) in your own data.
+
+\begin{quote}\small
+\textbf{Reading caveat.} With few instances per (model, k) slot the curve is noisy and \code{profile\_is\_flat} can return None (inconclusive) when fewer than two finite points exist. Treat the profile as suggestive, not decisive, on small task sets -- the bundled run's 6-instance subsets are exactly this regime.
+\end{quote}
+
+\subsubsection{Reading the efficiency plots}
+
+The three success metrics are only diagnostic in combination. The guarantee \code{FASR -- IWSR -- SR} holds by construction, and the two gaps between them carry the meaning: the \emph{SR--IWSR} gap measures how late successes arrive, the \emph{IWSR--FASR} gap measures how much retries contributed at all.
+
+\paragraph{FASR by model -- domain.}
+
+Two readings live in one chart.\textbf{Per model (compare a model's bars across domains):} a systematic gap between one domain group and another suggests memorised patterns specific to that group rather than generalised planning; a small gap across all domains points to genuine zero-shot transfer. A uniformly low FASR means near-zero zero-shot ability -- go to SR-vs-FASR to check whether success is being manufactured by resampling.\textbf{Per domain (compare one domain across models):} a domain with consistently high FASR across every model is simply an easy domain -- the domain, not the model, is driving the score.
+
+\paragraph{SR vs FASR -- the retry gap.}
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Gap pattern & Meaning\\
+\midrule
+SR -- FASR, both high & Genuine zero-shot capability. Retries add almost nothing.\\
+\addlinespace
+SR moderately>FASR & Partial capability, partly scaffolded by the retry mechanism.\\
+\addlinespace
+SR -- FASR (large gap) & Stochastic search. Per Stechly et al. (2023), retries are re-sampling, not correction -- SR alone misleads.\\
+\addlinespace
+Both near 0 & No planning capability; the retry budget is irrelevant.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{FASR by difficulty bin -- genuine reasoning vs memorisation.}
+
+An easy--hard sweep separates reasoning from training-frequency exploitation. A reasoner degrades \emph{gradually and smoothly} as steps, objects and constraint interactions grow -- the decline is a property of the task. A memoriser stays high on easy (short, common-looking plans) and then falls off a \emph{cliff} at the point where the required plans become long and rare, i.e. fall outside its training distribution. The cliff is the boundary of the distribution, not of a reasoning process.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+FASR pattern (easy--hard) & Interpretation & Reference\\
+\midrule
+Gradual decline & Generalisation -- graceful degradation under complexity; some genuine reasoning that scales. & Expected for capable reasoners\\
+\addlinespace
+Sharp cliff to \textasciitilde{}0 & Memorisation -- easy instances exploit training frequency; hard instances fall outside the distribution. & McCoy et al. 2024\\
+\addlinespace
+Flat and high & Genuine capability across all difficulties. Strongest possible result. & Ideal case\\
+\addlinespace
+Flat and low & No capability at any difficulty -- or Difficulty='unknown' throughout (check data). & Valmeekam et al. 2023\\
+\addlinespace
+Non-monotonic / irregular & Difficulty bins don't track real plan complexity. Recalibrate using optimal-plan-length quantiles / statistical rarity. & Data-quality issue\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{IWSR -- where in the run the success happened.}
+
+The closer IWSR sits to FASR, the more successes landed on attempt 1; the closer it sits to SR, the faster the model converges when it does eventually succeed. The two gaps read together:
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+SR--IWSR & IWSR--FASR & Interpretation & Profile\\
+\midrule
+small & small & All three nearly equal; most success on attempt 1, retries add nothing. & Genuine zero-shot planner\\
+\addlinespace
+small & large & IWSR -- SR -- FASR -- rarely first-try, but converges quickly on attempt 2--3. & Efficient corrector\\
+\addlinespace
+large & small & FASR -- IWSR -- SR -- most success arrives very late (attempt 4--5), heavily penalised by IWSR. & Stochastic / late luck\\
+\addlinespace
+large & large & All three spread apart; SR inflated by retries, FASR reveals true zero-shot is low. & Fully retry-dependent\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{P(Valid | reached attempt k).}
+
+For each k the curve takes plans that actually \emph{reached} attempt k ( \code{Iterations -- k}) and reports the fraction resolving at exactly k -- a conditional, not cumulative, probability. Its shape is the direct empirical test of the Stochastic-Searcher hypothesis.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Line shape & Interpretation & Reference\\
+\midrule
+Declining from k=1 & Easiest problems resolve first; harder ones take more attempts -- difficulty-sensitive correction. & Expected for a capable reasoner\\
+\addlinespace
+Flat across k & Each retry is statistically independent -- re-sampling, not correcting. Feedback content is irrelevant. & Stechly et al. 2023 (--4 Results)\\
+\addlinespace
+Increasing with k & Model improves with each retry -- genuine in-context learning. Very rare; check whether feedback leaks the answer. & Would contradict Stechly et al.\\
+\addlinespace
+Low-flat near 0 & No valid plans at any attempt; the iteration budget is wasted compute. & Valmeekam et al. 2023 (--5.2)\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Retry-gap bar\&the FASR--IWSR scatter.}
+
+The diverging retry-gap bar colours each model by \code{SR -- FASR}(tomato for the usual positive gap; a steelblue/negative bar would be a data anomaly, since SR -- FASR by construction). Models at the top -- lowest gap -- are the most independent of the retry scaffold. The FASR-vs-IWSR scatter then encodes three axes at once:\textbf{x = FASR}(zero-shot skill),\textbf{y = IWSR}(retry efficiency),\textbf{dot size+colour = SR}(deep-red small = SR 0 -- deep-green large = SR 1). No point can fall below the FASR=IWSR diagonal.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X >{\raggedright\arraybackslash} X@{}}
+\toprule
+Position & Dot & Interpretation\\
+\midrule
+Top-right, on/near diagonal & large green & Genuine planner -- high FASR, IWSR--FASR, high SR; success is first-attempt.\\
+\addlinespace
+Top-left, well above diagonal & medium yellow & Efficient corrector -- low FASR lifted by early-retry successes.\\
+\addlinespace
+Bottom-left & small red & No capability -- FASR and IWSR near zero, SR low.\\
+\addlinespace
+Top-left, large dot, low FASR & large green/yellow & Dangerous case -- high SR/IWSR mask retry dependence; SR misleads without FASR.\\
+\bottomrule
+\end{tabularx}
+\end{table}

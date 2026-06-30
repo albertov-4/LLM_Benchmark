@@ -5,7 +5,7 @@ These notes record the fixes and diagnostics applied on Leonardo for
 
 Context used during debugging:
 
-- Python venv: `/leonardo_scratch/large/userexternal/avarini0/our_env`
+- Python venv: `/leonardo_scratch/large/userexternal/sspezia0/our_env`
 - Python: `3.11.7`
 - Torch stack: `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`,
   `torchaudio==2.5.1+cu121`

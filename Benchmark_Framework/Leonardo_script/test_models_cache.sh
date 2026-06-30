@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=test_models_cache
-#SBATCH --account=try26_varini
+#SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=02:00:00
 #SBATCH --nodes=1

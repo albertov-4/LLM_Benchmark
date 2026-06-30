@@ -53,7 +53,7 @@ A100 GPUs with `TORCH_CUDA_ARCH_LIST=8.0`.
 Use the setup script when creating or repairing the Leonardo venv:
 
 ```bash
-PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/our_env \
+PYTHON_VENV=/leonardo_scratch/large/userexternal/sspezia0/our_env \
 sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
 ```
 
@@ -62,7 +62,7 @@ The script defaults to `our_env`. It switches to the GPT-OSS profile when
 
 ```bash
 LEONARDO_ENV_PROFILE=gptoss_env \
-PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/gptoss_env \
+PYTHON_VENV=/leonardo_scratch/large/userexternal/sspezia0/gptoss_env \
 sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
 ```
 
@@ -70,7 +70,7 @@ It runs the equivalent of:
 
 ```bash
 module load gcc/12.2.0
-source /leonardo_scratch/large/userexternal/avarini0/our_env/bin/activate
+source /leonardo_scratch/large/userexternal/sspezia0/our_env/bin/activate
 
 export CUDA_HOME=/leonardo/prod/opt/compilers/cuda/12.1/none
 export CUDACXX=$CUDA_HOME/bin/nvcc
@@ -111,12 +111,12 @@ Expected versions are `torch==2.5.1+cu121`, `torchvision==0.20.1+cu121`,
 
 ```bash
 LEONARDO_ENV_PROFILE=gptoss_env \
-PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/gptoss_env \
+PYTHON_VENV=/leonardo_scratch/large/userexternal/sspezia0/gptoss_env \
 sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
 ```
 
 The launcher routes that model through `GPTOSS_PYTHON_VENV` or the default
-`/leonardo_scratch/large/userexternal/avarini0/gptoss_env` path.
+`/leonardo_scratch/large/userexternal/sspezia0/gptoss_env` path.
 
 ## Model Preparation
 

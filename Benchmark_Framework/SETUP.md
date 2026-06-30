@@ -143,9 +143,7 @@ protocol YAML files, and prompt files:
 - `protocols/*.yaml` controls prompt assembly and the per-case attempt budget.
 - `prompts/*.txt` provides system, task-family, examples, and repair text.
 
-The files in `config/` are reference/default metadata for the benchmark. They
-are useful for documentation and future shared defaults, but the current runner
-does not treat them as the primary runtime configuration API.
+There is no central `config/` runtime directory in the current layout.
 
 ## Hugging Face Models
 

@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=setup_leonardo_env
-#SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=02:00:00
 #SBATCH --gres=gpu:1
@@ -72,11 +71,7 @@ case "${ENV_PROFILE}" in
         python -m pip install --force-reinstall \
             torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
             --index-url https://download.pytorch.org/whl/cu121
-
-        python -m pip install --no-cache-dir --no-deps --no-build-isolation mamba-ssm==2.2.4 -v
-
         python -c "import torchvision, torchaudio; print(torchvision.__version__, torchaudio.__version__)"
-        python -c "import mamba_ssm; print('mamba ok')"
         ;;
     gptoss_env)
         python -m pip install -r "${FRAMEWORK_DIR}/requirements/leonardo-gptoss-env.txt"

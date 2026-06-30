@@ -19,74 +19,17 @@ Quick dependency check:
 python -c "import torch, transformers, accelerate, openai; print(torch.__version__); print(transformers.__version__)"
 ```
 
-## Leonardo CUDA 12.1 Environment
+## Leonardo Setup
 
-On Leonardo, keep PyTorch pinned to the CUDA 12.1 wheel set used by the
-benchmark jobs:
+Use the from-zero guide for Leonardo access, sparse checkout, `our_env`,
+`gptoss_env`, Hugging Face tokens, model downloads, offline cache checks, and
+SLURM notes:
 
-```bash
-module load gcc/12.2.0
-source /leonardo_scratch/large/userexternal/avarini0/our_env/bin/activate
+- [docs/leonardo_setup_from_zero.md](docs/leonardo_setup_from_zero.md)
 
-export CUDA_HOME=/leonardo/prod/opt/compilers/cuda/12.1/none
-export CUDACXX=$CUDA_HOME/bin/nvcc
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}
-export CC=$(which gcc)
-export CXX=$(which g++)
-export MAX_JOBS=1
-export TORCH_CUDA_ARCH_LIST="8.0"
-```
-
-Restore the supported PyTorch matrix with:
-
-```bash
-pip install -r Benchmark_Framework/requirements/leonardo-our-env.txt
-
-pip install --force-reinstall \
-  torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
-  --index-url https://download.pytorch.org/whl/cu121
-```
-
-Install Mamba without allowing pip to upgrade Torch or Triton:
-
-```bash
-pip install --no-cache-dir --no-deps --no-build-isolation mamba-ssm==2.2.4 -v
-```
-
-Do not run plain `pip install mamba-ssm`; newer releases can pull incompatible
-Torch, Triton, or CUDA wheels. The repository also provides:
-
-```bash
-PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/our_env \
-sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
-```
-
-Final checks:
-
-```bash
-python -c "import torch; print(torch.__version__, torch.version.cuda)"
-python -c "import torchvision, torchaudio; print(torchvision.__version__, torchaudio.__version__)"
-python -c "import mamba_ssm; print('mamba ok')"
-python -c "import triton; print(triton.__version__)"
-pip check
-```
-
-Expected: `torch 2.5.1+cu121`, CUDA `12.1`, `torchvision 0.20.1+cu121`,
-`torchaudio 2.5.1+cu121`, `triton 3.1.0`, `mamba_ssm` import OK, and
-`No broken requirements found`.
-
-For `hf_gpt_oss_120b`, use the dedicated Leonardo environment:
-
-```bash
-LEONARDO_ENV_PROFILE=gptoss_env \
-PYTHON_VENV=/leonardo_scratch/large/userexternal/avarini0/gptoss_env \
-sbatch Benchmark_Framework/Leonardo_script/setup_leonardo_env.sh
-```
-
-The SLURM launcher routes `hf_gpt_oss_120b` to `GPTOSS_PYTHON_VENV` or the
-default `gptoss_env` path. See [requirements/README.md](requirements/README.md)
-for the environment mapping.
+Short version: keep environments and model cache under `$CINECA_SCRATCH`, use
+`our_env` for the standard active Hugging Face local models, and use
+`gptoss_env` only for `hf_gpt_oss_120b`.
 
 ## VAL Validator
 

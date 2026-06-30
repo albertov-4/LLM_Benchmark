@@ -1,4 +1,13 @@
 #!/bin/bash
+#SBATCH --job-name=benchmark_test
+#SBATCH --partition=boost_usr_prod
+#SBATCH --time=1:00:00
+#SBATCH --gres=gpu:4
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=0
+#SBATCH --output=Benchmark_Framework/slurm_logs/benchmark_test_%j.out
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,7 +70,13 @@ if [ "${VENV_ACTIVATED}" != "1" ]; then
     exit 1
 fi
 
-export HF_HOME="${HF_HOME:-${SCRATCH:-${REPO_ROOT}}/hf_cache}"
+# Default offline/cache behaviour for Leonardo compute nodes.
+# Models are expected to be already present in Benchmark_Framework/models_cache.
+export HF_HOME="${HF_HOME:-${FRAMEWORK_DIR}/models_cache}"
+export USE_HUB_KERNELS="${USE_HUB_KERNELS:-0}"
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${HF_HOME}"
@@ -85,6 +100,9 @@ echo "Node: ${SLURMD_NODENAME:-local}"
 echo "Repo root: ${REPO_ROOT}"
 echo "Framework dir: ${FRAMEWORK_DIR}"
 echo "HF_HOME: ${HF_HOME}"
+echo "USE_HUB_KERNELS: ${USE_HUB_KERNELS}"
+echo "HF_HUB_OFFLINE: ${HF_HUB_OFFLINE}"
+echo "TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE}"
 echo "CUDA_HOME: ${CUDA_HOME}"
 echo "CUDACXX: ${CUDACXX}"
 echo "CC: ${CC}"
@@ -123,6 +141,10 @@ import transformers
 print("torch", torch.__version__, "torch_cuda", torch.version.cuda, "cuda_available", torch.cuda.is_available(), "gpus", torch.cuda.device_count())
 print("transformers", transformers.__version__)
 print("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"))
+print("HF_HOME", os.environ.get("HF_HOME", "<unset>"))
+print("USE_HUB_KERNELS", os.environ.get("USE_HUB_KERNELS", "<unset>"))
+print("HF_HUB_OFFLINE", os.environ.get("HF_HUB_OFFLINE", "<unset>"))
+print("TRANSFORMERS_OFFLINE", os.environ.get("TRANSFORMERS_OFFLINE", "<unset>"))
 
 if not torch.cuda.is_available():
     print("ERROR: PyTorch cannot initialize CUDA on this node.", file=sys.stderr)

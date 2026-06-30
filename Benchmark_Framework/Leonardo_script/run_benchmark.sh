@@ -1,4 +1,14 @@
 #!/bin/bash
+#SBATCH --job-name=benchmark_test
+#SBATCH --partition=boost_usr_prod
+#SBATCH --time=1:00:00
+#SBATCH --gres=gpu:4
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=0
+#SBATCH --output=Benchmark_Framework/slurm_logs/benchmark_test_%j.out
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +19,6 @@ WORKER_SCRIPT="${SCRIPT_DIR}/run_benchmark_single.sh"
 DEFAULT_MODEL_IDS=(
     hf_gemma_4_31b_it
     hf_gpt_oss_120b
-    hf_nemotron_3_nano_30b_a3b
     hf_phi_4
     hf_qwen_3_6_27b
 )
@@ -38,7 +47,7 @@ RUN_ID="${RUN_ID:-$(date +%Y-%m-%d_%H-%M-%S)}"
 PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 LOG_DIR="${FRAMEWORK_DIR}/slurm_logs/${RUN_ID}"
 
-SLURM_ACCOUNT="${SLURM_ACCOUNT:-try26_spezia}"
+SLURM_ACCOUNT="${SLURM_ACCOUNT:?Set SLURM_ACCOUNT=<CINECA_PROJECT_ACCOUNT>}"
 SLURM_PARTITION="${SLURM_PARTITION:-boost_usr_prod}"
 SLURM_TIME="${SLURM_TIME:-1-00:00:00}"
 SLURM_GPUS="${SLURM_GPUS:-4}"
@@ -50,7 +59,7 @@ SLURM_MEM="${SLURM_MEM:-0}"
 python_venv_for_model() {
     case "$1" in
         hf_gpt_oss_120b)
-            echo "${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/sspezia0/gptoss_env}"
+            echo "${GPTOSS_PYTHON_VENV:-${CINECA_SCRATCH:?Set CINECA_SCRATCH}/gptoss_env}"
             ;;
         *)
             echo ""

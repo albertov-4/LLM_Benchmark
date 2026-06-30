@@ -1,15 +1,3 @@
-#!/bin/bash
-#SBATCH --job-name=test_models_cache
-#SBATCH --account=try26_spezia
-#SBATCH --partition=boost_usr_prod
-#SBATCH --time=02:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --output=Benchmark_Framework/slurm_logs/test_models_cache_%j.out
-#SBATCH --error=Benchmark_Framework/slurm_logs/test_models_cache_%j.err
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

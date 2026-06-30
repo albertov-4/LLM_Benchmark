@@ -2,7 +2,7 @@
 #SBATCH --job-name=benchmark_single
 #SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=1:00:00
+#SBATCH --time=24:00:00
 #SBATCH --gres=gpu:4
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

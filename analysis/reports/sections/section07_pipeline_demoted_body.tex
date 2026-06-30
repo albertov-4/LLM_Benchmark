@@ -1,0 +1,516 @@
+\begin{center}\small
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{3} & \textbf{1} & \textbf{8} & \textbf{27} & \textbf{7}\\
+artifact layers & canonical DataFrame & aggregate tables & registered plots & capability profiles\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ---------------------------------------------------------------------------
+\subsubsection{The pipeline at a glance}
+% ---------------------------------------------------------------------------
+
+Everything funnels into one DataFrame, \code{df_metrics}, the single source of
+truth for every \code{groupby} and every plot. Solid (teal) arrows are the data
+path; dashed (grey) arrows inject the PDDL ground truth needed to score plans
+(Figure~\ref{fig:pipeline}).
+
+\begin{figure}[h]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\ttfamily\scriptsize,
+  diskbox/.style={draw=linecol,fill=white,rounded corners=3pt,inner sep=4pt,
+                  align=left,minimum height=10mm,line width=0.8pt},
+  inkbox/.style={draw=ink,fill=ink,text=white,rounded corners=3pt,inner sep=4pt,
+                 align=left,minimum height=10mm,line width=0.8pt},
+  widebox/.style={draw=accent,fill=accent!6,rounded corners=3pt,inner sep=5pt,
+                  align=left,line width=1pt},
+  data/.style={-{Stealth[length=5pt]},accent,line width=1pt},
+  gt/.style={-{Stealth[length=5pt]},muted,line width=0.9pt,dashed},
+  node distance=5mm and 7mm,
+]
+\node[diskbox] (raw) {\textbf{raw/}\\[-1pt]\textcolor{muted}{\tiny gen + reasoning}};
+\node[diskbox,right=of raw] (parsed) {\textbf{parsed/}\\[-1pt]\textcolor{muted}{\tiny raw./reasoning.}};
+\node[diskbox,right=of parsed] (scored) {\textbf{scored/}\\[-1pt]\textcolor{muted}{\tiny VAL: solved}};
+\node[diskbox,right=of scored] (tasks) {\textbf{tasks/}\\[-1pt]\textcolor{muted}{\tiny domain+pfile}};
+
+\node[inkbox,below=9mm of parsed.south,anchor=north,xshift=6mm] (load)
+  {load\_artifact\_rows()\\[-1pt]\textcolor{linecol}{\tiny walk parsed, join raw+scored}};
+\node[inkbox,below=9mm of tasks.south,anchor=north] (index)
+  {index\_pddl\_context()\\[-1pt]\textcolor{linecol}{\tiny domain\_info / problem\_info}};
+
+\node[widebox,below=10mm of load.south west,anchor=north west,text width=0.86\linewidth] (df)
+  {compute\_row\_metrics() $\rightarrow$ \textbf{df\_metrics}\\[-1pt]
+   \textcolor{accent}{\tiny hallucination $\cdot$ PDDLSimulator(exec/PAS) $\cdot$ CoTaL $\cdot$ \_iter1 $\cdot$ \_iwsr\_contrib}};
+
+\node[inkbox,below=8mm of df.south west,anchor=north west] (agg)
+  {build\_aggregate\_tables()\\[-1pt]\textcolor{linecol}{\tiny overall/domain/rank/PS+CI}};
+\node[diskbox,right=8mm of agg] (plots) {plots $\times$27};
+\node[diskbox,right=6mm of plots] (report) {report.json};
+
+\draw[data] (raw) -- (parsed);
+\draw[data] (parsed) -- (scored);
+\draw[data] (scored.south) |- (load.east);
+\draw[data] (parsed.south) -- (load.north);
+\draw[data] (tasks.south) -- (index.north);
+\draw[data] (load.south) -- ([xshift=-30mm]df.north);
+\draw[gt]   (index.south) -- ([xshift=30mm]df.north);
+\draw[data] (df.south -| agg) -- (agg.north);
+\draw[data] (agg) -- (plots);
+\draw[data] (plots) -- (report);
+\end{tikzpicture}%
+}
+\caption{The analysis pipeline. One DataFrame, \texttt{df_metrics}, is the single
+source of truth; PDDL ground truth (dashed) is injected to score plans.}
+\label{fig:pipeline}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+\subsubsection{How a row is built: the three inputs to \texorpdfstring{\texttt{df\_metrics}}{df\_metrics}}
+% ---------------------------------------------------------------------------
+
+The canonical table is produced by \code{compute_row_metrics()}. It does
+\emph{not} read the filesystem and it does \emph{not} compute ground truth ---
+both happen before it. By the time the row loop runs, three things already
+exist, each with a structurally different role.
+
+\begin{table}[h]\small
+\begin{tabularx}{\linewidth}{@{}c p{2.7cm} p{3.2cm} >{\raggedright\arraybackslash}X@{}}
+\toprule
+\# & \textbf{Input} & \textbf{Produced by} & \textbf{Role in the row loop}\\
+\midrule
+1 & \code{df_raw} & \code{load_artifact_rows()} &
+The skeleton: one row per instance with the artifact-derived columns and the
+keys used to look up ground truth. It is \code{.copy()}-ed, then \emph{widened}
+with computed columns.\\[3pt]
+2 & \code{domain_info} / \code{problem_info} & \code{index_pddl_context()} &
+The ground truth: two dict lookups (\code{d_info}, \code{p_info}) consumed per
+row to score the plan. \emph{Not} stored as columns --- they are the reference
+the metric functions compare against.\\[3pt]
+3 & \code{warnings_out} & threaded list via \code{add_warning()} &
+The diagnostic side-channel: a by-reference list accumulating structured
+records whenever an input is missing or malformed. Never part of
+\code{df_metrics}; embedded separately in the report.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{bmkeybox}{What \code{df\_metrics} literally is}
+\code{df_metrics = df_raw.copy()} horizontally concatenated with three blocks of
+computed columns --- hallucination, precondition/executability (from
+\code{PDDLSimulator}), and CoTaL --- plus two derived columns \code{_iter1} and
+\code{_iwsr_contrib}. So input~1 supplies the columns you keep; input~2 is
+\emph{consumed} to manufacture the new columns and then discarded; input~3 is a
+parallel log, not a column. The ``three components'' mental model is right, but
+only the first is literally part of the frame.
+\end{bmkeybox}
+
+\paragraph{\texorpdfstring{\texttt{df\_raw}}{df\_raw} --- the artifact skeleton}
+
+\code{load_artifact_rows()} walks the canonical path
+\texttt{parsed/\allowbreak<run>/\allowbreak<model>/\allowbreak<protocol>/\allowbreak<domain>/\allowbreak<difficulty>/\allowbreak<instance>.json} and,
+for each instance, joins the matching \code{scored/} data. It emits exactly
+\emph{one row per problem instance}, collapsing the retry loop by keeping the
+last non-empty plan as the representative \code{_actions} while preserving the
+full attempt lists as private columns.
+
+\begin{lstlisting}
+# public  -- identity + outcome
+Model, Domain, Problem, Difficulty, Protocol, Run_id
+Valid (= scored["solved"]), Length, Iterations (= scored["iterations_used"]), Chain_of_Thought
+# private -- consumed downstream, dropped from the report
+_actions          # representative plan (last non-empty attempt)
+_cot_text         # reasoning trace text
+_parsed_attempts  _scored_attempts  _raw_attempts   # full per-iteration lists
+_file_path  parsed_file_path
+\end{lstlisting}
+
+The keys that matter for the next input are \code{Domain}, \code{Difficulty} and
+\code{Problem} --- together the exact triple used to retrieve per-instance ground
+truth. The \code{Chain_of_Thought} flag is resolved from three sources (protocol
+YAML, presence of reasoning text, presence of reasoning actions) so CoT-bearing
+runs are never mislabelled.
+
+\begin{bmkeybox}{Why one row per instance, not per attempt}
+Keeping the grain at the \emph{instance} level means every aggregate (success
+rate, hallucination, PS) is automatically an average over comparable units. The
+iteration structure is not lost --- it survives in the private
+\code{_*_attempts} columns and the \code{Iterations} count --- but it is opt-in,
+read only by metrics that need it (FASR, IWSR, the iteration profile, CoTaL).
+\end{bmkeybox}
+
+\paragraph{The PDDL parsing layer --- \texorpdfstring{\texttt{d\_info}}{d\_info} and \texorpdfstring{\texttt{p\_info}}{p\_info}}
+
+Plans can only be scored against the formal task they were generated for, so the
+framework parses the PDDL itself. Two small, deliberately permissive regex
+parsers do this --- a syntax error emits a warning, never aborts the run. They
+answer two different questions and return two differently-shaped dicts.
+
+\code{parse_domain_pddl(domain_path)} reads one \code{domain.pddl} (the schema
+shared by every instance in a domain) and returns the legal vocabulary plus
+per-action templates:
+
+\begin{lstlisting}
+parse_domain_pddl(...) -> {
+  "action_names": set[str],   # every legal action head -- the hallucination whitelist
+  "predicates":   set[str],   # legal predicate names
+  "functions":    set[str],   # numeric fluent names -- what is numeric, not propositional
+  "schemas": {                # one entry PER action, the simulator's instruction sheet
+     action_name: {
+        "params":   [str, ...],   # ordered ?param variable names, for grounding
+        "prec_raw": str,          # raw :precondition s-expression text (unparsed)
+        "eff_raw":  str,          # raw :effect s-expression text (unparsed)
+     }, ...
+  },
+  "path": str | None,         # None when the file was missing (empty stub)
+}
+\end{lstlisting}
+
+Each field has a single downstream consumer: \code{action_names} is the
+whitelist for action hallucination; \code{functions} tells the simulator which
+heads are numeric fluents; and \code{schemas} is what the simulator grounds ---
+\code{params} maps the action's arguments onto the variables inside the raw
+\code{prec_raw}/\code{eff_raw} strings so preconditions can be checked and
+effects applied.
+
+\code{parse_problem_pddl(problem_path)} reads one instance file (its own object
+set and starting state) and returns:
+
+\begin{lstlisting}
+parse_problem_pddl(...) -> {
+  "objects":      set[str],               # legal argument tokens -- object-hallucination whitelist
+  "init_atoms":   set[tuple[str, ...]],   # initial true propositions, e.g. ("at","truck1","depot")
+  "init_numeric": dict[tuple, float],     # initial fluent values, e.g. ("fuel","truck1") -> 50.0
+  "path":       str,
+  "difficulty": str,                      # parent folder name
+}
+\end{lstlisting}
+
+Object hallucination uses \code{objects}; the simulator seeds its world from
+\code{init_atoms} and \code{init_numeric}. Action- vs object-hallucination are
+kept as separate signals on purpose --- a model can know the legal action names
+yet still invent objects, a different and shallower grounding failure.
+
+\code{index_pddl_context(tasks_dir)} calls those two parsers exactly once each
+per file, walking \code{tasks/} a single time, and packs the results into two
+lookups whose key shapes mirror the granularity of what they hold:
+
+\begin{lstlisting}
+domain_info  : dict[str, dict]                  # key = domain_name  (schema is shared)
+problem_info : dict[tuple[str,str,str], dict]   # key = (domain, difficulty, instance)
+\end{lstlisting}
+
+This is the ``parse once, consume many'' design: every PDDL file is read once
+regardless of how many rows or retries reference it. In the row loop the
+retrieval is then two O(1) dict gets:
+
+\begin{lstlisting}
+d_info = domain_info.get(domain, {})                            # by domain
+p_info = problem_info.get((domain, difficulty, instance), {})   # by full triple
+pddl_ok = bool(d_info.get("action_names")) and bool(p_info.get("objects"))
+\end{lstlisting}
+
+\begin{bmcavbox}{A missing domain and a missing problem fail differently}
+When \code{domain.pddl} is absent, \code{index_pddl_context} still stores a
+populated-but-empty stub under the domain key (empty \code{action_names}, empty
+\code{schemas}, \code{path=None}). When a problem file is absent, no entry is
+created and the row's \code{.get(..., \{\})} returns a bare \code{\{\}}. Both end
+up empty, but only the domain case leaves a record --- and an empty
+\code{action_names} set means \emph{every} emitted action looks illegal,
+silently depressing that domain's grounding numbers. The only trace is a
+warning, which is exactly what input~3 is for.
+\end{bmcavbox}
+
+\paragraph{\texorpdfstring{\texttt{warnings\_out}}{warnings\_out} --- the diagnostic accumulator}
+
+\code{warnings_out} is a single \code{list[dict]} created once at the top of the
+analysis run and threaded by reference into every stage that can encounter a
+malformed or missing input --- \code{index_pddl_context}, both PDDL parsers, and
+\code{compute_row_metrics}. Each stage appends through one helper:
+
+\begin{lstlisting}
+def add_warning(warnings_out, warning_type, message, **extra):
+    warnings_out.append({"type": warning_type, "message": message, **extra})
+    # **extra carries locating context: run_id, domain, difficulty, problem, path
+\end{lstlisting}
+
+Its purpose is to replace scattered \code{print}/\code{logging} calls with one
+structured, serialisable trace that travels with the results: the full list is
+embedded in \code{report.json} under the \code{warnings} key, so a notebook or CI
+job can filter by \code{type} and locate the offending artifact without
+re-running anything. Typical entries are \code{missing_tasks_dir},
+\code{missing_domain_pddl}, \code{missing_pddl_context},
+\code{domain_parser_error}, \code{problem_parser_error}. Rows with incomplete
+context are \emph{not} dropped --- they still get NaN metric values --- so the
+instance count stays honest while the warning records why those NaNs exist.
+
+\begin{bmcavbox}{One diagnostic path bypasses \code{warnings\_out}}
+The simulator is the exception. If \code{compute_precondition_metrics} throws, it
+falls back to a NaN result and reports through Python's stdlib
+\code{warnings.warn("[simulator] ...")} --- \emph{not} through
+\code{add_warning}. So a simulator crash does not appear in the structured
+\code{warnings} list in the JSON report; it surfaces only on stderr. Worth
+unifying if the report is to be the single audit log.
+\end{bmcavbox}
+
+% ---------------------------------------------------------------------------
+\subsubsection{The merge: three inputs into one widened frame}
+% ---------------------------------------------------------------------------
+
+\code{compute_row_metrics} iterates \code{df_raw} once. For each row it resolves
+\code{d_info}/\code{p_info} (input~2), runs the three metric families against the
+row's \code{_actions} and attempt lists, and emits any incompleteness into
+\code{warnings_out} (input~3). The per-family results are collected and
+concatenated columnwise back onto the copied skeleton.
+
+\begin{lstlisting}
+df = df_raw.copy()
+for _, row in df.iterrows():
+    d_info  = domain_info.get(row["Domain"], {})
+    p_info  = problem_info.get((row["Domain"], row["Difficulty"], row["Problem"]), {})
+    if not (d_info.get("action_names") and p_info.get("objects")):
+        add_warning(warnings_out, "missing_pddl_context", ...)        # input 3
+    halluc_rows.append(      compute_hallucination_metrics(actions, d_info, p_info))
+    precondition_rows.append(compute_precondition_metrics(actions, d_info, p_info))  # PDDLSimulator
+    cot_rows.append(         ... compute_cot_alignment_for_attempt(...) ...)
+
+df_metrics = pd.concat([df, halluc_df, precondition_df, cot_df], axis=1)
+df_metrics["_iter1"]        = (df.Valid == True) & (df.Iterations == 1)   # -> FASR
+df_metrics["_iwsr_contrib"] = 1/Iterations if Valid else 0                # -> IWSR
+\end{lstlisting}
+
+The result, \code{df_metrics}, is the single source of truth every
+\code{groupby} in \code{build_aggregate_tables} and every plot reads from. Note
+the grain: the hallucination and executability columns describe the
+\emph{representative} (last non-empty) plan, while the CoTaL and efficiency
+signals reach back into the preserved attempt lists.
+
+% ---------------------------------------------------------------------------
+\subsubsection{Data classes that make the metrics possible}
+% ---------------------------------------------------------------------------
+
+Two classes carry state that a flat function could not --- introduced here, with
+the simulator expanded in full in Section~\ref{sec:sim}.
+
+\paragraph{PDDLSimulator (in the analysis script).} A forward STRIPS +
+simple-numeric simulator written in pure Python so the analysis layer needs no
+VAL subprocess. Instantiated \emph{once per (problem, plan)} inside
+\code{compute_precondition_metrics}. Its decisive feature is \code{prop_hist}: a
+list of \code{frozenset} snapshots of the propositional state after every
+applied step. That history is what lets the framework, at the first failing
+action, ask \emph{``was this precondition ever true earlier?''} --- the question
+separating a sequencing error (true before, deleted too early) from a state
+fabrication (never true). Without the per-step history there is no PAS and no
+temporal distance.
+
+\paragraph{RunMetrics (\texttt{evaluators/metrics.py}, \texttt{@dataclass}).} The
+validator-side metric bundle written at scoring time: \code{validity_at_1},
+\code{validity_at_k}, \code{repair_success}, \code{iterations_to_valid},
+\code{plan_length}, \code{error_type}, \code{hit_iteration_limit}. The analysis
+script re-derives most of these from the scored JSON, but this dataclass is the
+contract guaranteeing every model is scored on the same basis, independent of
+backend.
+
+The error vocabulary is fixed in \code{evaluators/error_taxonomy.py} as an
+\code{ErrorType} enum, partitioned into \code{LOGICAL_ERROR_TYPES} (empty plan,
+syntax, unknown action, invalid precondition, unsatisfied goal) versus
+\code{TECHNICAL_ERROR_TYPES} (parse error, timeout, validator crash/unavailable).
+That split keeps infrastructure failures from being charged against a model's
+planning score.
+
+% ---------------------------------------------------------------------------
+\subsubsection{\texorpdfstring{\texttt{PDDLSimulator}}{PDDLSimulator} in depth}
+\label{sec:sim}
+% ---------------------------------------------------------------------------
+
+Almost every execution-side discriminator --- executability ratio, the
+sequencing-vs-fabrication split, PAS, and mean temporal distance --- is produced
+by one small class. It is a \textbf{forward STRIPS + simple-numeric simulator
+written in pure Python}, deliberately so: the analysis layer can re-derive these
+signals without spawning a VAL subprocess or shipping a compiled binary. It
+reproduces just enough of the validator's logic for the propositional and
+numeric-inequality fragments the benchmark uses, trading completeness for
+portability.
+
+\paragraph{What it is for.} The class does three things: it \textbf{holds a
+world state} (a set of true propositions plus a dict of numeric fluents), it
+\textbf{walks the plan one action at a time} checking each action's
+preconditions before applying its effects, and --- its decisive feature --- it
+\textbf{saves a frozen snapshot of the state after every applied step}. That
+snapshot history is what makes the precondition-awareness metrics computable. It
+is the basis for four metrics: executability ratio (how far the plan runs before
+the first break), the sequencing-error / state-fabrication counts, PAS (their
+ratio), and mean temporal distance. It targets \emph{forward},
+\emph{propositional} and \emph{simple-numeric} domains --- STRIPS add/delete
+effects plus \code{increase}/\code{decrease} fluents and
+$\geq\ \leq\ >\ <$ comparisons --- and is invoked exactly once per
+\code{(problem, plan)} pair.
+
+\begin{figure}[h]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\ttfamily\scriptsize,
+  snap/.style={draw=bmblue,fill=white,rounded corners=3pt,minimum width=11mm,
+               minimum height=8mm,line width=1pt,text=bmblue,font=\ttfamily\bfseries\small},
+  fail/.style={draw=bmred,fill=bmred!8,rounded corners=3pt,minimum width=12mm,
+               minimum height=8mm,line width=1pt,text=bmred,font=\ttfamily\bfseries\small},
+  fwd/.style={-{Stealth[length=5pt]},bmblue,line width=1pt},
+  back/.style={-{Stealth[length=5pt]},bmred,line width=1pt,dashed},
+  node distance=11mm,
+]
+\node[snap] (s0) {S0};
+\node[snap,right=of s0] (s1) {S1};
+\node[snap,right=of s1] (s2) {S2};
+\node[snap,right=of s2] (s3) {S3};
+\node[fail,right=18mm of s3] (fk) {$a_k$ $\times$};
+
+\draw[fwd] (s0) -- node[above=-1pt,text=muted,font=\ttfamily\tiny]{$a_0$} (s1);
+\draw[fwd] (s1) -- node[above=-1pt,text=muted,font=\ttfamily\tiny]{$a_1$} (s2);
+\draw[fwd] (s2) -- node[above=-1pt,text=muted,font=\ttfamily\tiny]{$a_2$} (s3);
+\draw[fwd] (s3) -- node[above=-1pt,text=muted,font=\ttfamily\tiny]{$\dots a_k$} (fk);
+
+\draw[back] (fk.north) to[out=120,in=60] node[above,text=bmred,font=\ttfamily\tiny]
+  {temporal distance $= k-0$} (s0.north);
+
+\node[text=muted,font=\sffamily\scriptsize,anchor=west] at ([yshift=-9mm]s0.south west)
+  {prop\_hist $= [\,$frozenset(S0), frozenset(S1), $\dots\,]$ --- one snapshot per applied step};
+\end{tikzpicture}%
+}
+\caption{State evolution. At the first failing action $a_k$, each unmet
+precondition atom is traced back through \texttt{prop_hist}: found earlier
+$\rightarrow$ \textcolor{bmblue}{sequencing error} (record $k-\text{last}$ as
+temporal distance); never found $\rightarrow$ \textcolor{bmred}{state
+fabrication}.}
+\label{fig:sim}
+\end{figure}
+
+\paragraph{State, snapshots, and the step loop.} The constructor seeds the world
+from the parsed problem and takes the first snapshot before any action runs;
+\code{prop_hist} then grows by one frozen set per applied step.
+
+\begin{lstlisting}
+def __init__(self, d_info, p_info):
+    self.prop      = set(p_info.get("init_atoms", set()))   # true propositions
+    self.num       = dict(p_info.get("init_numeric", {}))   # numeric fluents
+    self.prop_hist = [frozenset(self.prop)]                 # snapshot S0 = initial state
+    self.step      = 0
+\end{lstlisting}
+
+For each action, \code{compute_precondition_metrics} grounds the schema, checks
+preconditions, and --- only if they hold --- applies the effects and appends a
+new snapshot. The walk \textbf{stops at the first failing action} (a
+\code{break}), which makes ``how far did it get'' a meaningful prefix length.
+
+\begin{lstlisting}
+for step, action_str in enumerate(actions):
+    name, args = parse_action(action_str)
+    schema = schemas.get(name)
+    if name is None or schema is None:        # unparseable / unknown action: skipped
+        continue
+    if len(schema["params"]) != len(args):    # wrong arity -> fabrication, stop
+        first_failure = step; fab_errors += 1; break
+    ok, failed_prop, failed_num = sim.check_preconditions(schema["prec_raw"], params, args)
+    if not ok:
+        first_failure = step
+        for atom in failed_prop:
+            last = sim.last_step_atom_true(atom)         # search the snapshot history
+            if last >= 0: seq_errors += 1; temporal_distances.append(step - last)
+            else:         fab_errors += 1
+        fab_errors += len(failed_num); break
+    sim.apply_effects(schema["eff_raw"], params, args)   # mutate state + append snapshot
+\end{lstlisting}
+
+\paragraph{The classification logic, atom by atom.} At the failing action, each
+unsatisfied propositional precondition is the unit of analysis.
+\code{last_step_atom_true(atom)} scans \code{prop_hist} newest-to-oldest and
+returns the latest snapshot index at which the atom held --- or \code{-1} if it
+never did.
+
+\begin{lstlisting}
+def last_step_atom_true(self, atom):
+    for index in range(len(self.prop_hist) - 1, -1, -1):
+        if atom in self.prop_hist[index]:
+            return index
+    return -1
+\end{lstlisting}
+
+That single lookup is the whole basis of the sequencing/fabrication distinction.
+If the atom was true at some earlier snapshot, the model had the prerequisite
+and then ordered actions so as to destroy it --- a \textbf{sequencing error},
+and the gap $\text{step}-\text{last}$ is recorded as a temporal distance. If the
+atom was never true, the model required a world state that never existed --- a
+\textbf{state fabrication}. Effects are applied in STRIPS order (deletes before
+adds), so the snapshots faithfully reflect what each action left behind. The
+metrics fall straight out of these counts:
+
+\begin{bmformulabox}
+\ttfamily\small
+executability_ratio = first_failure / plan_len\\[2pt]
+PAS = sequencing_errors / (sequencing_errors + state_fabrications)\\[2pt]
+mean_temporal_distance = mean(step - last_true_step  for each sequencing error)
+\end{bmformulabox}
+
+\begin{bmcavbox}{The counts describe the first failure, not the whole plan}
+Because the loop \code{break}s at the first failing action, the
+sequencing/fabrication counts and the temporal distances come from that
+\emph{one} action's unmet preconditions --- PAS is a property of where the plan
+first breaks, not a tally over the entire sequence. This is intended (it
+localises the failure), but it means a plan can accrue at most one failure event
+in these columns.
+\end{bmcavbox}
+
+\begin{bmcavbox}{Unknown actions are skipped, which inflates executability}
+An action whose name is not in the schema is \code{continue}d over --- it neither
+advances the state nor counts as a failure here (name-level hallucination is
+scored separately). So a plan made entirely of hallucinated action names never
+triggers a precondition failure and records \code{executability_ratio = 1.0}.
+Always read ER alongside the hallucination columns. Relatedly, because skipped
+actions advance the plan index but not the snapshot index, temporal distance is
+measured in generated-plan positions relative to the snapshot where the atom
+last held --- the two clocks coincide only when every prior action was a known,
+applied schema.
+\end{bmcavbox}
+
+% ---------------------------------------------------------------------------
+\subsubsection{From data to metrics to pictures --- why each stage exists}
+% ---------------------------------------------------------------------------
+
+The architecture separates concerns on purpose, so each is independently
+testable.
+
+\begin{table}[h]\small
+\begin{tabularx}{\linewidth}{@{}l l >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Stage} & \textbf{Function} & \textbf{Purpose / why it is separate}\\
+\midrule
+Load & \code{load_artifact_rows} &
+Decouples the filesystem walk from metric logic; everything below receives a
+uniform table.\\[3pt]
+Row metrics & \code{compute_row_metrics} &
+One pass attaches every per-instance metric; private \code{_actions} /
+\code{_cot_text} stay alive only here.\\[3pt]
+Aggregate & \code{build_aggregate_tables} &
+All \code{groupby} logic in one place so the JSON report can embed tables whether
+or not plots are drawn.\\[3pt]
+Visualise & \code{maybe_make_plots} &
+Reads only the aggregate tables; registering each figure embeds its path +
+description into the report.\\[3pt]
+Assemble & \code{build_model_payloads} &
+Re-keys everything by \emph{model} so a consumer can pull one model in O(1), and
+attaches the capability-profile classification.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{bmcavbox}{A real artefact to know about}
+Because \code{compute_row_metrics} keeps the last non-empty plan as the
+representative for the instance-level hallucination/executability columns, those
+columns describe the \emph{final} attempt. Metrics that must see all attempts
+(FASR, IWSR, CoTaL per-iteration, the iteration profile) read the preserved
+\code{_*_attempts} lists instead. When reading a plot, always check which grain
+it is on --- this is spelled out per metric in the following sections.
+\end{bmcavbox}
+

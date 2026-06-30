@@ -1,5 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=benchmark_test
+#SBATCH --job-name=benchmark_single
+#SBATCH --account=sspezia0
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=1:00:00
 #SBATCH --gres=gpu:4
@@ -8,6 +9,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=0
 #SBATCH --output=Benchmark_Framework/slurm_logs/benchmark_test_%j.out
+#SBATCH --error=Benchmark_Framework/slurm_logs/benchmark_test_%j.err
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

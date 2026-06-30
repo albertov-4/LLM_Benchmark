@@ -1,0 +1,120 @@
+The framework's thesis is that binary validity is not enough: two models can
+both fail and still fail for different reasons. The metric set therefore splits
+planning quality into retry dependence, executable structure, schema grounding,
+precondition awareness, and reasoning-plan alignment. Each dimension is tied to
+a specific failure mechanism reported in the LLM-planning literature.
+
+\begin{quote}\small
+If LLM planning is closer to approximate retrieval than to search, retries
+should not be treated as free evidence of planning ability. First-attempt
+success, retry efficiency, executable prefixes, hallucination rates, and
+reasoning-faithfulness must be read together.
+\end{quote}
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}p{3.2cm} p{3.1cm} >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Literature claim} & \textbf{Metric signal} & \textbf{Design consequence}\\
+\midrule
+LLMs may solve planning tasks by retrieving surface patterns rather than by
+performing explicit search. & \textbf{FASR}, \textbf{Retry Gap},
+\textbf{CoT Alignment} & First-attempt success is separated from final success,
+and reasoning traces are checked against extracted plan actions instead of being
+accepted as explanations.\\
+\addlinespace
+Feedback and repeated attempts can behave like stochastic re-sampling rather
+than correction. & \textbf{IWSR}, \textbf{Retry Gap},
+\textbf{$P(\mathrm{Valid}\mid k)$ profile} & A model that succeeds only after
+many attempts is discounted; early repairs count more than late lucky samples.\\
+\addlinespace
+Grounding can fail before sequencing begins: the model can invent action names
+or objects not present in the PDDL task. & \textbf{Hallucination rate},
+\textbf{Fuzzy hallucination rate}, \textbf{Object hallucination rate},
+\textbf{IHR} & Action vocabulary and object grounding are measured separately
+from VAL validity, so invalid plans can still be diagnosed precisely.\\
+\addlinespace
+Some failures are local state-tracking errors rather than total domain
+ignorance. & \textbf{Executability ratio}, \textbf{PAS},
+\textbf{Mean temporal distance} & The simulator measures how far the plan can
+run and classifies the first failed precondition as sequencing error or state
+fabrication.\\
+\addlinespace
+Capability profiles need multiple signals, because the same success rate can
+hide different mechanisms. & \textbf{SR}, \textbf{FASR}, \textbf{IWSR},
+\textbf{RG}, \textbf{IHR}, \textbf{ER}, \textbf{PAS}, \textbf{CoT} & The report
+classifies models as genuine planners, efficient correctors, stochastic
+searchers, lucky retrievers, understanders, vocabulary-only systems, or
+ungrounded systems.\\
+\bottomrule
+\end{tabularx}
+\caption{Scientific motivation for the metric families used in Section~7.}
+\label{tab:section07_metric_foundation}
+\end{table}
+
+\paragraph{Retry-aware scoring.}
+Success rate alone is intentionally not the primary capability estimate. The
+analysis computes \textbf{FASR} from the private \code{_iter1} column and
+\textbf{IWSR} from \code{_iwsr_contrib}. This keeps three cases separate:
+models that solve immediately, models that repair quickly, and models whose
+reported success is mostly a product of repeated sampling.
+
+\paragraph{Grounding before validity.}
+The hallucination metrics measure whether the generated plan is expressed in the
+task's legal vocabulary. Strict action hallucination catches invented operators;
+fuzzy hallucination avoids over-penalising small naming variants; object
+hallucination checks whether arguments come from the problem's declared objects.
+This follows the idea that a model cannot be credited with planning over a
+formal domain if it is not grounded in that domain's symbols.
+
+\paragraph{Execution as a diagnostic, not only a pass/fail gate.}
+The pure-Python \code{PDDLSimulator} replays the representative plan and records
+the prefix that remains executable. At the first failed precondition, a
+previously true atom is counted as a sequencing error; an atom that was never
+true is counted as state fabrication. \textbf{PAS} and temporal distance
+therefore distinguish near-miss ordering failures from invented world states.
+
+\paragraph{Reasoning-faithfulness.}
+CoTaL is used only when reasoning traces are available. It compares actions
+mentioned in the reasoning channel with actions extracted from the final plan,
+so chain-of-thought is treated as evidence only when it is aligned with the
+actual output. This prevents fluent but post-hoc rationales from inflating the
+planning interpretation.
+
+\paragraph{Composite score.}
+The composite Planning Score keeps the same bias as the metric design:
+\[
+PS = 0.25 \cdot FASR
+   + 0.20 \cdot IWSR
+   + 0.20 \cdot ER
+   + 0.20 \cdot (1 - Hallucination)
+   + 0.15 \cdot PAS .
+\]
+FASR has the largest weight because it cannot be inflated by retries. IWSR and
+ER capture repair efficiency and executable structure; grounding is represented
+by inverse hallucination; PAS receives a smaller weight because it is undefined
+for perfectly executable plans and requires a neutral prior when aggregated.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}p{3.0cm} p{4.2cm} >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Reference family} & \textbf{Used for} & \textbf{Where it appears in the framework}\\
+\midrule
+Kambhampati (2024) & Retrieval-vs-planning framing; surface-pattern solutions;
+post-hoc reasoning caveats. & Hallucination rationale, lucky-retriever profile,
+CoT interpretation.\\
+Valmeekam et al. (2023) & Formal-domain grounding tests and obfuscation-style
+checks. & IHR thresholds, no-grounding profile, understander profile.\\
+Stechly et al. (2023) & Retry behaviour and repeated sampling under feedback. &
+Retry Gap, IWSR, stochastic-searcher profile, $P(\mathrm{Valid}\mid k)$.\\
+Dziri et al. (2023) & Compositional and long-horizon state-tracking failures. &
+PAS, temporal distance, understander profile.\\
+Vafa et al. (2024) and McCoy et al. (2024) & World-model incoherence and
+training-frequency / distributional explanations. & Vocabulary-only and
+no-grounding interpretations.\\
+\bottomrule
+\end{tabularx}
+\caption{Reference families used by the metric taxonomy.}
+\label{tab:section07_reference_families}
+\end{table}

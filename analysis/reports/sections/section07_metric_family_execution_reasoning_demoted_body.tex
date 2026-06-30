@@ -1,16 +1,34 @@
-Executability ratio, Precondition Awareness Score, the sequencing-vs-fabrication split, and mean temporal distance -- everything the PDDLSimulator extracts by replaying a plan step by step.
+Executability ratio, Precondition Awareness Score, the sequencing-vs-fabrication split, and mean temporal distance --- everything the PDDLSimulator extracts by replaying a plan step by step.
 
-These metrics look \emph{inside} a plan, valid or not, by replaying it through the \code{PDDLSimulator}. They are the framework's answer to "a plan failed -- but how close was it, and what kind of mistake was it*". All are produced together by \code{compute\_precondition\_metrics}, which walks the plan step by step until the first precondition failure.
+These metrics look \emph{inside} a plan, valid or not, by replaying it through the \code{PDDLSimulator}. They are the framework's answer to "a plan failed --- but how close was it, and what kind of mistake was itc". All are produced together by \code{compute\_precondition\_metrics}, which walks the plan step by step until the first precondition failure.
 
-\begin{quote}\small
-\textbf{How one failure is classified.} At the first failing action the simulator inspects each unsatisfied propositional precondition and asks \code{last\_step\_atom\_true(atom)} against its per-step history \code{prop\_hist} . If the atom was true at some earlier step -- \textbf{sequencing error} (the model deleted a prerequisite too early). If it was never true -- \textbf{state fabrication} (the model invented a state that never existed). A wrong-arity action is counted as fabrication and halts the walk.
-\end{quote}
+\begin{bmkeybox}{How one failure is classified}
+At the first failing action the simulator inspects each unsatisfied propositional precondition and asks
 
-\paragraph{Executability Ratio.}
-\emph{exec\_ratio = first\_failure\_index / plan\_length.}
-How far into the plan the model gets before the first illegal action -- a continuous measure of partial correctness that is completely independent of whether the goal is reached.
+\code{last\_step\_atom\_true(atom)}
+
+against its per-step history
+
+\code{prop\_hist}
+
+. If the atom was true at some earlier step \(\rightarrow\)
+
+\textbf{sequencing error}
+
+(the model deleted a prerequisite too early). If it was never true \(\rightarrow\)
+
+\textbf{state fabrication}
+
+(the model invented a state that never existed). A wrong-arity action is counted as fabrication and halts the walk.
+\end{bmkeybox}
+
+\begin{bmmcard}{METRIC \(\cdot\) ER / Exec: Executability Ratio}
+\emph{exec\_ratio = first\_failure\_index / plan\_length}
+How far into the plan the model gets before the first illegal action --- a continuous measure of partial correctness that is completely independent of whether the goal is reached.
 \begin{description}
-\item[How it is computed] The simulator applies effects step by step; at the first unsatisfiable precondition (or wrong arity) it records \code{first\_failure}. A fully executable plan yields ratio1.0 even if it never reaches the goal. \begin{lstlisting}
+\item[How it is computed] The simulator applies effects step by step; at the first unsatisfiable precondition (or wrong arity) it records \code{first\_failure}. A fully executable plan yields ratio 1.0 even if it never reaches the goal.
+
+\begin{lstlisting}
 for step, action in enumerate(actions):
     ok, failed_prop, failed_num = sim.check_preconditions(...)
     if not ok:
@@ -18,34 +36,34 @@ for step, action in enumerate(actions):
     sim.apply_effects(...)
 return {"executability_ratio": first_failure / plan_len}
 \end{lstlisting}
-\item[Aggregation ladder] instanceratio per final plan--domainmean (NaN-aware)--modelmean
-\item[Range\&meaningful bands] 0.0 fails immediately1.0 fully executable NaN for empty plans / missing PDDL. Bands:<0.30 No-Grounding -- 0.30--0.70 Vocabulary-Only -->0.70 Understander (runs deep, still fails the goal). In the bundled run kimi reaches 0.969 and gpt\_oss 0.952 -- both produce structurally near-perfect plans.
-\item[In the plots] \code{executability\_by\_model\_domain}(boxplots), \code{executability\_vs\_length}(faceted scatter -- does executability decay with plan length*), and it is a radar axis and a ranked metric (direction max).
+\item[Range \& meaningful bands] NaN for empty plans / missing PDDL. Bands:<0.30 No-Grounding \(\cdot\) 0.30--0.70 Vocabulary-Only \(\cdot\)>0.70 Understander (runs deep, still fails the goal). In the bundled run kimi reaches 0.969 and gpt\_oss 0.952 --- both produce structurally near-perfect plans.
+\item[In the plots] \code{executability\_by\_model\_domain}(boxplots),\code{executability\_vs\_length}(faceted scatter --- does executability decay with plan lengthc), and it is a radar axis and a ranked metric (direction max).
 \item[Rationale] Huang 2022 established executability and goal-correctness as independent axes. A high exec with low SR is the Understander/Vocabulary signature: the model speaks the language and respects local preconditions but cannot sequence to the goal.
-\item[Grounds in] \textbf{Huang 2022}--2.2 Fig 1\textbf{Valmeekam 2023} Fig 3
 \end{description}
+\end{bmmcard}
 
-\paragraph{Precondition Awareness Score.}
-\emph{PAS = seq\_errors / (seq\_errors + fab\_errors).}
-Of the failures the model makes, what fraction are \emph{ordering} mistakes (it understood the state model but mis-ordered) versus \emph{fabrication}(it invented impossible states)*
+\begin{bmmcard}{METRIC \(\cdot\) PAS: Precondition Awareness Score}
+\emph{PAS = seq\_errors / (seq\_errors + fab\_errors)}
+Of the failures the model makes, what fraction are \emph{ordering} mistakes (it understood the state model but mis-ordered) versus \emph{fabrication}(it invented impossible states)c
 \begin{description}
-\item[How it is computed] Computed at the single failure point. Each failed propositional precondition is bucketed via the temporal lookup; PAS is the sequencing share of all failures. \begin{lstlisting}
+\item[How it is computed] Computed at the single failure point. Each failed propositional precondition is bucketed via the temporal lookup; PAS is the sequencing share of all failures.
+
+\begin{lstlisting}
 for atom in failed_prop:
     if sim.last_step_atom_true(atom) >= 0: seq_errors += 1     # was true before
     else:                                  fab_errors += 1     # never true
 fab_errors += len(failed_num)
 PAS = seq_errors / (seq_errors + fab_errors)   # NaN if no failures
 \end{lstlisting}
-\item[Aggregation ladder] instanceseq/(seq+fab) at the failure step--domainnanmean, default 0.5--modelnanmean, default 0.5
-\item[Range\&meaningful bands] 0.0 pure fabrication1.0 pure sequencing NaN when the plan fully executes (no failures) -- substituted with a 0.5 prior so a perfect model is not penalised. High PAS + low SR = Understander; low PAS = Vocabulary-Only / incoherent world model.
+\item[Range \& meaningful bands] NaN when the plan fully executes (no failures) \(\rightarrow\) substituted with a 0.5 prior so a perfect model is not penalised. High PAS + low SR = Understander; low PAS = Vocabulary-Only / incoherent world model.
 \item[In the plots] The y-axis of \code{failure\_mode\_taxonomy}, a radar axis, and a ranked metric. The raw counts also drive \code{failure\_type\_breakdown}.
 \item[Rationale] This is the metric that distinguishes Dziri's compositional collapse (sequencing) from Vafa's world-model incoherence (fabrication). Two models with identical SR and exec can sit at opposite ends of PAS and require completely different interventions.
-\item[Grounds in] \textbf{Dziri 2023} compositionality\textbf{Vafa 2024}--2.3 world model
 \end{description}
+\end{bmmcard}
 
-\subsubsection{Sequencing vs fabrication -- the failure breakdown}
+\subsubsection{Sequencing vs fabrication --- the failure breakdown}
 
-\code{failure\_breakdown} sums the two error counts per model and reports their proportions. In the bundled run almost every model is fabrication-dominant (proportion -- 1.0); the exception is gemma\_4\_31b at 0.42 sequencing / 0.58 fabrication -- the only model in the set making a substantial share of "right idea, wrong order" mistakes rather than inventing states outright.
+\code{failure\_breakdown} sums the two error counts per model and reports their proportions. In the bundled run almost every model is fabrication-dominant (proportion \(\approx\) 1.0); the exception is gemma\_4\_31b at 0.42 sequencing / 0.58 fabrication --- the only model in the set making a substantial share of "right idea, wrong order" mistakes rather than inventing states outright.
 
 \begin{table}[h]\small
 \centering
@@ -66,33 +84,38 @@ gpt\_oss\_120b & 0 & 1 & 0.000\\
 \end{tabularx}
 \end{table}
 
-\begin{quote}\small
-\textbf{Why strong models show tiny failure counts.} gpt\_oss and kimi show only 1 total failure each -- not because they fail gracefully, but because they \emph{succeed} on most instances, so there is rarely a first-failure to classify. The failure breakdown is informative only where failures are plentiful; on near-solving models its proportions are statistically meaningless. Read it together with SR, never alone.
-\end{quote}
+\begin{bmcavbox}{Why strong models show tiny failure counts}
+gpt\_oss and kimi show only 1 total failure each --- not because they fail gracefully, but because they
 
-\paragraph{Mean Temporal Distance.}
-\emph{-- = mean(failure\_step -- last\_true\_step).}
+\emph{succeed}
+
+on most instances, so there is rarely a first-failure to classify. The failure breakdown is informative only where failures are plentiful; on near-solving models its proportions are statistically meaningless. Read it together with SR, never alone.
+\end{bmcavbox}
+
+\begin{bmmcard}{METRIC \(\cdot\) \(\tau\): Mean Temporal Distance}
+\emph{\(\tau\) = mean(failure\_step - last\_true\_step)}
 For sequencing errors only: how many steps back the violated prerequisite was last true. A measure of \emph{how badly} the ordering collapsed.
 \begin{description}
-\item[How it is computed] For each sequencing error the gap between the failure step and the last step the atom held is recorded; -- is the mean of those gaps. \begin{lstlisting}
+\item[How it is computed] For each sequencing error the gap between the failure step and the last step the atom held is recorded; \(\tau\) is the mean of those gaps.
+
+\begin{lstlisting}
 last_step = sim.last_step_atom_true(atom)
 temporal_distances.append(step - last_step)
 mean_temporal_distance = np.mean(temporal_distances)
 \end{lstlisting}
-\item[Aggregation ladder] instancemean gap over the instance--s seq errors--domainnanmean--modelnanmean
-\item[Range\&meaningful bands] small near-correct orderlarge ordering collapse Unbounded above; NaN when there are no sequencing errors (i.e. fabrication-only or fully-executing models -- most of the bundled set). Small -- -- the prerequisite was deleted just before it was needed (a local slip). Large -- -- it was deleted many steps earlier (global ordering failure).
+\item[Range \& meaningful bands] Unbounded above; NaN when there are no sequencing errors (i.e. fabrication-only or fully-executing models --- most of the bundled set). Small \(\tau\) \(\rightarrow\) the prerequisite was deleted just before it was needed (a local slip). Large \(\tau\) \(\rightarrow\) it was deleted many steps earlier (global ordering failure).
 \item[In the plots] \code{temporal\_distance\_by\_model}(per-model histograms). A ranked metric (direction min).
-\item[Rationale] Refines PAS: among models that mostly make sequencing errors, -- says whether they are nearly-right (short --) or have lost the plot (long --) -- the granular read on long-horizon compositional ability.
-\item[Grounds in] \textbf{Dziri 2023} horizon depth\textbf{Valmeekam 2023} Phase 2
+\item[Rationale] Refines PAS: among models that mostly make sequencing errors, \(\tau\) says whether they are nearly-right (short \(\tau\)) or have lost the plot (long \(\tau\)) --- the granular read on long-horizon compositional ability.
 \end{description}
+\end{bmmcard}
 
 \subsubsection{Reading the execution plots together}
 
-These four figures are meant to be read as a cascade, not in isolation. \code{executability\_ratio} is a prerequisite for PAS to mean anything: a model with exec near 0 has nothing to classify -- it fails before any causal structure can be tested, so PAS is almost always NaN there. PAS becomes informative only once exec is moderate-to-high (--0.4+), i.e. once the model has actually engaged the domain's state-transition logic long enough for its causal reasoning to be observable.
+These four figures are meant to be read as a cascade, not in isolation.\code{executability\_ratio} is a prerequisite for PAS to mean anything: a model with exec near 0 has nothing to classify --- it fails before any causal structure can be tested, so PAS is almost always NaN there. PAS becomes informative only once exec is moderate-to-high (\(\approx\)0.4+), i.e. once the model has actually engaged the domain's state-transition logic long enough for its causal reasoning to be observable.
 
-\paragraph{Executability ratio by model -- domain (box plot).}
+\paragraph{Executability ratio by model \(\times\) domain (box plot).}
 
-Box edges are Q1/Q3, the middle line the median, whiskers 1.5--IQR, dots beyond them outliers. A box near 1.0 means the model runs most of the plan before any failure (it understands domain structure); a box at 0.0--0.2 means it fails at step 1--2 (near-total incomprehension). A wide IQR means it works on some problems and collapses on others; a narrow IQR means consistency. The ideal is a\textbf{narrow box sitting high across every domain}-- consistently good, most plans run before failing, little variation.
+Box edges are Q1/Q3, the middle line the median, whiskers 1.5\(\times\)IQR, dots beyond them outliers. A box near 1.0 means the model runs most of the plan before any failure (it understands domain structure); a box at 0.0--0.2 means it fails at step 1--2 (near-total incomprehension). A wide IQR means it works on some problems and collapses on others; a narrow IQR means consistency. The ideal is a \textbf{narrow box sitting high across every domain}--- consistently good, most plans run before failing, little variation.
 
 Cross-comparisons follow from the box meaning: comparing differently-coloured boxes \emph{within} one domain cluster reads one model's behaviour across domains (its reasoning across scenarios); comparing the same colour \emph{across} domains reads each domain's real difficulty.
 
@@ -106,16 +129,20 @@ Raw errors are summed across all domains/problems then converted to proportions 
 \toprule
 Segment & Meaning & Severity\\
 \midrule
-\textbf{Blue -- sequencing} & The required atom was true earlier but the action was placed too late, after a prior effect deleted it. A tall blue bar = a reasonable causal model with ordering mistakes. & More fixable with better prompting\\
+\textbf{Blue --- sequencing} & The required atom was true earlier but the action was placed too late, after a prior effect deleted it. A tall blue bar = a reasonable causal model with ordering mistakes. & More fixable with better prompting\\
 \addlinespace
-\textbf{Red -- fabrication} & The required atom was never true in any prior state -- the model invented a precondition. A tall red bar = no grounded world model. & Severe; less fixable by prompting alone\\
+\textbf{Red --- fabrication} & The required atom was never true in any prior state --- the model invented a precondition. A tall red bar = no grounded world model. & Severe; less fixable by prompting alone\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{quote}\small
-\textbf{Atom vs precondition.} A precondition is a conjunction of several \emph{atoms} (single grounded propositional facts). The sequencing/fabrication verdict is made per failed atom at the first failing action, which is why a single action can contribute both kinds of error.
-\end{quote}
+\begin{bmkeybox}{Atom vs precondition}
+A precondition is a conjunction of several
+
+\emph{atoms}
+
+(single grounded propositional facts). The sequencing/fabrication verdict is made per failed atom at the first failing action, which is why a single action can contribute both kinds of error.
+\end{bmkeybox}
 
 \paragraph{Executability ratio vs plan length (faceted scatter).}
 
@@ -129,7 +156,7 @@ Pattern & Reading\\
 \midrule
 Exec stays high regardless of length & Robust internal model.\\
 \addlinespace
-Exec drops as length grows & State-tracking decay -- the model leans on its own generated chain more than a strong internal representation. (A natural place for a Vafa-style Myhill-Nerode world-model metric, generalising PAS.)\\
+Exec drops as length grows & State-tracking decay --- the model leans on its own generated chain more than a strong internal representation. (A natural place for a Vafa-style Myhill-Nerode world-model metric, generalising PAS.)\\
 \addlinespace
 Flat near 0 everywhere & Little-to-no domain knowledge, or the domain was never read.\\
 \addlinespace
@@ -142,7 +169,7 @@ Decays in \emph{one} domain only & Domain-specific problem.\\
 
 \paragraph{Mean temporal distance per model (histogram).}
 
-For a sequencing error, \code{distance = (step of first failure) -- (last step where the violated atom was true)}, averaged across the atoms of the failing precondition. Each bar groups plans whose sequencing errors had that mean distance. A model whose \code{mean\_temporal\_distance} is always NaN produces \emph{no panel}-- all its failures are fabrications, there are no sequencing errors to measure, and the absence itself is informative: it means PAS = 0.0.
+For a sequencing error,\code{distance = (step of first failure) - (last step where the violated atom was true)}, averaged across the atoms of the failing precondition. Each bar groups plans whose sequencing errors had that mean distance. A model whose \code{mean\_temporal\_distance} is always NaN produces \emph{no panel}--- all its failures are fabrications, there are no sequencing errors to measure, and the absence itself is informative: it means PAS = 0.0.
 
 \begin{table}[h]\small
 \centering
@@ -150,17 +177,17 @@ For a sequencing error, \code{distance = (step of first failure) -- (last step w
 \toprule
 Distribution shape & Interpretation & Severity\\
 \midrule
-Spike at 1--2 & Near-miss ordering -- almost right, one step too late. & Low\\
+Spike at 1--2 & Near-miss ordering --- almost right, one step too late. & Low\\
 \addlinespace
-Spike at 3--7 & Imprecise causal model -- knows what's needed, tracks sequence loosely. & Moderate\\
+Spike at 3--7 & Imprecise causal model --- knows what's needed, tracks sequence loosely. & Moderate\\
 \addlinespace
-Long tail 8+ & Severe ordering collapse -- preconditions were true much earlier. & High\\
+Long tail 8+ & Severe ordering collapse --- preconditions were true much earlier. & High\\
 \addlinespace
-No bars (NaN) & All failures are fabrications -- no causal knowledge at all. & Severe\\
+No bars (NaN) & All failures are fabrications --- no causal knowledge at all. & Severe\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{quote}\small
-\textbf{The cascade -- read all four with one question chain.} (1) Does the plan run at all (box plot)* (2) When it fails, is it conceptual or ordering (breakdown)* (3) Does the failure worsen with complexity (exec-vs-length)* (4) How severe are the ordering errors (temporal distance)* A model that passes (1), is mostly blue in (2), stays flat in (3) and spikes at distance 1 in (4) genuinely understands the domain and makes only minor sequencing slips. A model that fails (1) and has no histogram in (4) is fabricating preconditions from the first step -- it may not be planning at all.
-\end{quote}
+\begin{bmkeybox}{The cascade --- read all four with one question chain}
+(1) Does the plan run at all (box plot)c (2) When it fails, is it conceptual or ordering (breakdown)c (3) Does the failure worsen with complexity (exec-vs-length)c (4) How severe are the ordering errors (temporal distance)c A model that passes (1), is mostly blue in (2), stays flat in (3) and spikes at distance 1 in (4) genuinely understands the domain and makes only minor sequencing slips. A model that fails (1) and has no histogram in (4) is fabricating preconditions from the first step --- it may not be planning at all.
+\end{bmkeybox}

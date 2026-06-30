@@ -1,2 +1,164 @@
 \section{Output Validation Using VAL}
-\textcolor{red}{\LARGE\MakeUppercase{DA RIEMPIRE}}
+
+After the benchmark has obtained a textual answer from an LLM and extracted the
+candidate PDDL actions, the plan still has to be checked against the formal
+domain and problem definition. This is the role of VAL in the framework. The
+parser can say whether the model produced something that looks like an action
+sequence; VAL decides whether that sequence is actually executable and whether
+it reaches the goal.
+
+\subsection{Role of VAL in the Benchmark}
+
+VAL is used as an external symbolic validator. For each benchmark case, the
+framework provides VAL with three inputs:
+
+\begin{itemize}
+    \item the PDDL domain file, containing predicates, actions, preconditions,
+    and effects;
+    \item the PDDL problem file, containing objects, initial state, and goal;
+    \item the candidate plan extracted from the LLM output.
+\end{itemize}
+
+This separation is important because the benchmark does not rely on textual
+judgement to decide whether a plan is correct. A model can produce a plausible
+or well explained answer, but the answer is counted as solved only if the final
+action sequence validates against the corresponding PDDL task.
+
+\subsection{Validator Setup and Preflight}
+
+VAL is not a Python dependency of the project. It is an external executable that
+can be resolved in three ways: by putting \texttt{Validate} or
+\texttt{Validate.exe} on the system path, by passing an explicit executable path
+with \texttt{--validator-command}, or by using one of the bundled platform
+utilities under \texttt{utils/linux64/bin/} or \texttt{utils/win64/bin/}.
+
+The benchmark can also run a task preflight before launching model generation.
+In this stage the framework checks the selected domain and problem files with
+VAL. This prevents malformed or unsupported PDDL inputs from being interpreted
+later as model failures. If VAL cannot be resolved, or if the preflight fails,
+the error is stored as an orchestration problem instead of being mixed with the
+LLM planning results.
+
+\subsection{Validation Flow}
+
+The validation path is the same for every model backend. The backend changes how
+the answer is generated, but not how the answer is checked:
+
+\begin{center}
+\texttt{LLM output}
+$\rightarrow$ \texttt{parsed actions}
+$\rightarrow$ \texttt{temporary plan file}
+$\rightarrow$ \texttt{VAL(domain, problem, plan)}
+$\rightarrow$ \texttt{ValidationResult}
+$\rightarrow$ \texttt{scored artifact}
+\end{center}
+
+The temporary plan file is created only to invoke VAL with the expected command
+line interface. After validation, the framework normalizes the validator output
+into a common result schema. This makes the rest of the benchmark independent
+from the exact textual format printed by the external validator.
+
+\subsection{Normalized Validation Result}
+
+The normalized validation record stores both the final decision and the
+diagnostic information needed for analysis and repair.
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Field} & \textbf{Meaning} \\
+\midrule
+\texttt{valid} & Boolean result used to decide whether the candidate plan solved the task. \\
+\texttt{status} & Normalized status such as \texttt{valid}, \texttt{invalid}, \texttt{parse\_error}, \texttt{timeout}, or \texttt{validator\_error}. \\
+\texttt{error\_type} & Compact failure class used by metrics and repair feedback. \\
+\texttt{failed\_step} & First failing step reported by VAL, when available. \\
+\texttt{failed\_action} & Problematic action extracted from the validator output, when available. \\
+\texttt{goal\_satisfied} & Whether the final state satisfies the goal. \\
+\texttt{plan\_length} & Number of action lines submitted to validation. \\
+\texttt{validation\_time\_ms} & Time spent in the external validator call. \\
+\texttt{raw\_validator\_output} & Original VAL output kept for debugging and later inspection. \\
+\bottomrule
+\end{tabularx}
+\caption{Main fields stored in the normalized validation result.}
+\label{tab:validation-result-fields}
+\end{table}
+
+\subsection{Prefix Validation}
+
+The framework does not validate only the full action sequence. It validates
+every non-empty prefix of the parsed final answer. This provides a more precise
+view of the model behaviour.
+
+For example, a model may reach the goal after five actions and then continue
+with unnecessary or invalid actions. In that case, validating only the complete
+sequence would mark the attempt as invalid, while prefix validation reveals that
+a valid solution was present inside the answer. The scored artifact therefore
+records the first valid prefix length, the first valid plan text, whether the
+final full plan is valid, and how many extra actions appear after the first
+valid prefix.
+
+This distinction is useful for the later reasoning analysis: it separates models
+that never find a valid plan from models that find a plan but fail to stop cleanly
+after satisfying the goal.
+
+\subsection{Failure Types and Repair Feedback}
+
+VAL failures are mapped into a small shared taxonomy. The most relevant classes
+are:
+
+\begin{itemize}
+    \item \texttt{invalid\_precondition}: an action is not applicable in the
+    current state;
+    \item \texttt{unsatisfied\_goal}: the sequence executes but does not reach
+    the required goal;
+    \item \texttt{unknown\_action}: the plan contains an action not defined in
+    the domain;
+    \item \texttt{syntax\_error}: the plan format is not accepted by the
+    validator;
+    \item \texttt{timeout}, \texttt{validator\_unavailable}, and
+    \texttt{validator\_crash}: technical validation failures, kept separate
+    from planning mistakes.
+\end{itemize}
+
+In the iterative repair protocol, this normalized failure information is turned
+into feedback for the next model attempt. The feedback can include the validation
+status, the error type, the failed step, the failed action, and a compact
+description of the validator output. This makes the repair loop grounded in
+symbolic validation rather than in a generic request to try again.
+
+\subsection{Reasoning Validation}
+
+Some models expose a separate reasoning trace in addition to the final answer.
+The benchmark keeps the final answer as the official plan used for scoring, but
+it can also validate an action sequence extracted from the reasoning text. This
+second validation is diagnostic: it helps identify cases where the model derives
+a valid plan in its reasoning but fails to transfer it correctly into the final
+answer.
+
+This distinction avoids giving credit for hidden reasoning when the final answer
+is invalid, while still preserving useful information for the reasoning
+capability analysis in the following section.
+
+\subsection{Metrics Derived from Validation}
+
+The validation result is the source for the core execution metrics. A case is
+considered solved only when the normalized validation result is valid. From this
+record the framework derives \texttt{validity\_at\_1},
+\texttt{validity\_at\_k}, \texttt{repair\_success},
+\texttt{iterations\_to\_valid}, \texttt{plan\_length},
+\texttt{error\_type}, and whether the run hit the iteration limit.
+
+Therefore, VAL is not only a final correctness check. It is the component that
+connects raw model generations to comparable benchmark scores.
+
+\subsection{Limitations}
+
+The validation layer deliberately checks formal plan correctness, not the
+quality of the natural-language reasoning. It also depends on the availability
+and behaviour of an external executable, so timeout and validator errors are
+reported separately from genuine planning failures. Finally, the parser that
+normalizes VAL output uses conservative textual heuristics; for this reason the
+raw validator output is stored together with the normalized fields whenever
+manual inspection is needed.

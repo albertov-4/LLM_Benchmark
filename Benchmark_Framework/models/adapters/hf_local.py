@@ -87,9 +87,36 @@ class HFLocalAdapter:
             _install_transformers_generation_compatibility_shim()
             AutoModelForCausalLM = getattr(transformers, "AutoModelForCausalLM")
             AutoTokenizer = getattr(transformers, "AutoTokenizer")
-            AutoModel = getattr(transformers, "AutoModel", None)
-            AutoModelForImageTextToText = getattr(transformers, "AutoModelForImageTextToText", None)
-            AutoProcessor = getattr(transformers, "AutoProcessor", None)
+
+            try:
+                AutoModel = getattr(transformers, "AutoModel", None)
+            except Exception as exc:
+                print(
+                    f"[hf_local] Optional transformers AutoModel unavailable; continuing without it: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                AutoModel = None
+
+            try:
+                AutoModelForImageTextToText = getattr(transformers, "AutoModelForImageTextToText", None)
+            except Exception as exc:
+                print(
+                    f"[hf_local] Optional transformers AutoModelForImageTextToText unavailable; continuing without it: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                AutoModelForImageTextToText = None
+
+            try:
+                AutoProcessor = getattr(transformers, "AutoProcessor", None)
+            except Exception as exc:
+                print(
+                    f"[hf_local] Optional transformers AutoProcessor unavailable; continuing without it: "
+                    f"{type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                AutoProcessor = None
         except ImportError as exc:
             raise RuntimeError(
                 "HFLocalAdapter backend import failed. "

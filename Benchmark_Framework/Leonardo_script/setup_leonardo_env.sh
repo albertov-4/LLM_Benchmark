@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=setup_leonardo_env
-#SBATCH --account=try26_varini
+#SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=02:00:00
 #SBATCH --gres=gpu:1

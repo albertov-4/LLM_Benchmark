@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=benchmark_test
-#SBATCH --account=try26_varini
+#SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=1:00:00
 #SBATCH --gres=gpu:4
@@ -55,7 +55,7 @@ export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 MODEL_ID="${MODEL_ID:-hf_nemotron_3_nano_30b_a3b}"
 
 if [ "${MODEL_ID}" = "hf_gpt_oss_120b" ] && [ -z "${PYTHON_VENV:-}" ]; then
-    PYTHON_VENV="${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/avarini0/gptoss_env}"
+    PYTHON_VENV="${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/sspezia0/gptoss_env}"
 fi
 
 VENV_ACTIVATED=0

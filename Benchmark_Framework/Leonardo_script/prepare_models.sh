@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=benchmark_test
-#SBATCH --account=try26_varini
+#SBATCH --account=try26_spezia
 #SBATCH --partition=boost_usr_prod
 #SBATCH --time=24:00:00
 #SBATCH --gres=gpu:4

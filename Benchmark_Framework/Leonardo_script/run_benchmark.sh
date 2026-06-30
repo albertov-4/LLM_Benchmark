@@ -38,7 +38,7 @@ RUN_ID="${RUN_ID:-$(date +%Y-%m-%d_%H-%M-%S)}"
 PROTOCOL_ID="${PROTOCOL_ID:-iterative_repair}"
 LOG_DIR="${FRAMEWORK_DIR}/slurm_logs/${RUN_ID}"
 
-SLURM_ACCOUNT="${SLURM_ACCOUNT:-try26_varini}"
+SLURM_ACCOUNT="${SLURM_ACCOUNT:-try26_spezia}"
 SLURM_PARTITION="${SLURM_PARTITION:-boost_usr_prod}"
 SLURM_TIME="${SLURM_TIME:-1-00:00:00}"
 SLURM_GPUS="${SLURM_GPUS:-4}"
@@ -50,7 +50,7 @@ SLURM_MEM="${SLURM_MEM:-0}"
 python_venv_for_model() {
     case "$1" in
         hf_gpt_oss_120b)
-            echo "${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/avarini0/gptoss_env}"
+            echo "${GPTOSS_PYTHON_VENV:-/leonardo_scratch/large/userexternal/sspezia0/gptoss_env}"
             ;;
         *)
             echo ""

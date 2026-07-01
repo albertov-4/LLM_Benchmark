@@ -1,100 +1,35 @@
-What PS represents, its five weighted components plus the conditional CoT bonus, the per-row bootstrap CI, how to read the capability radar, and how to retune the weights for a specific research goal.
-
-The Composite Planning Score collapses five orthogonal capability axes into one number per model (and per model\(\times\)domain). Its purpose is triage, not verdict: a single ranking to scan, always reported alongside its components because a composite can hide compensating strengths and weaknesses.
-
-\subsubsection{Why a composite at all}
-
-The preceding sections give nine-plus dials. PS exists so that, for a quick comparison, you have one axis that already encodes the framework's value judgement: zero-shot ability matters most, retries are a cost, structural quality and grounding matter, and precondition awareness is a tie-breaker. It is the metric you sort the leaderboard by; it is never the metric you conclude from.
-
-\subsubsection{The components and their weights}
-
-PS is a weighted sum of five inputs, each already in [0,1], with an optional sixth (CoT) bonus. The person sometimes thinks of it as "two components" --- that intuition maps onto the structure exactly: there is a \textbf{base}(the five-term weighted sum) and a \textbf{conditional CoT bonus} that only applies when a strict CoT alignment score exists, at which point all weights are renormalised so the result stays bounded.
+The Composite Planning Score (PS) gives a compact leaderboard, but it is not a replacement for the diagnostic metrics. It combines zero-shot success, retry efficiency, execution quality, grounding and precondition awareness into one bounded score so that models can be sorted quickly before inspecting their component profiles.
 
 \begin{bmformulabox}
 \begin{align*}
-\text{base} &=
-0.25 \cdot \text{FASR}
-+ 0.20 \cdot \text{IWSR}
-+ 0.20 \cdot \text{exec\_ratio}
-+ 0.20 \cdot (1 - \text{halluc})
-+ 0.15 \cdot \text{PAS}
-\\[4pt]
-\text{PS} &=
-\frac{\text{base} + 0.05 \cdot \text{CoT}}{1.05},
-\quad \text{if CoT is finite}
-\\[4pt]
-&\rightarrow \text{renormalised and clipped to } [0,1]
+\mathrm{base} ={}& 0.25\cdot\mathrm{FASR} +0.20\cdot\mathrm{IWSR} +0.20\cdot\mathrm{Exec}\\
+&+0.20\cdot(1-\mathrm{Hallucination}) +0.15\cdot\mathrm{PAS}
 \end{align*}
 \end{bmformulabox}
 
-\begin{table}[h]\small
+When a strict CoT-alignment score is available, a small optional bonus is added and the result is renormalized so PS remains in \([0,1]\).
+
+\begin{table}[H]\small
 \centering
-\begin{tabularx}{\linewidth}{@{}l r I P@{}}
+\begin{tabularx}{\linewidth}{@{}l c Y@{}}
 \toprule
-Component & w & Rationale for the weight & NaN substitute\\
+\textbf{Component} & \textbf{Weight} & \textbf{Reason}\\
 \midrule
-FASR & 0.25 & Highest --- the only signal that cannot be inflated by retries & 0\\
+FASR & 0.25 & Highest weight because first-attempt success is the least retry-inflated signal.\\
 \addlinespace
-IWSR & 0.20 & Retry efficiency; rewards fast convergence, penalises stochastic search & 0\\
+IWSR & 0.20 & Rewards fast convergence and penalizes late retry success.\\
 \addlinespace
-exec\_ratio & 0.20 & Structural quality independent of goal success & 0\\
+Exec & 0.20 & Measures structural plan quality even when the goal is not reached.\\
 \addlinespace
-1 - halluc & 0.20 & Schema grounding & 0.5\\
+1 - Hallucination & 0.20 & Captures grounding in the legal action vocabulary.\\
 \addlinespace
-PAS & 0.15 & Lowest --- undefined for zero-failure models, so a 0.5 prior is needed & 0.5\\
+PAS & 0.15 & Distinguishes sequencing errors from state fabrications.\\
 \addlinespace
-CoT bonus & +0.05 & Applied only when strict CoT alignment is finite & skipped\\
+CoT bonus & +0.05 & Rewards faithful reasoning only when strict CoT alignment exists.\\
 \bottomrule
 \end{tabularx}
+\caption{Composite Planning Score components.}
+\label{tab:ps-components-compact}
 \end{table}
 
-\subsubsection{Aggregation \& range}
-
-PS is computed on the \emph{aggregated} components in both the \code{overall} and \code{by\_domain} tables --- so each model carries an overall PS and one PS per domain. In the bundled run: gpt\_oss 0.548 \(\cdot\) nemotron(nv) 0.446 \(\cdot\) kimi 0.435 \(\cdot\) qwen\_3\_5 0.425, down to phi\_4\_mini 0.315.
-
-\subsubsection{The 95\% bootstrap confidence interval}
-
-To show whether a PS difference is real or noise, the \code{composite\_score} table attaches a bootstrap CI (N=1000, seed=42). Crucially it resamples \textbf{per-row PS contributions}, not per-model means --- a more conservative estimate that reflects instance-level variability.
-
-\begin{lstlisting}
-contribs = model_df.apply(per_row_composite, axis=1).values
-boots = [contribs[rng.integers(0,len(contribs),len(contribs))].mean() for _ in range(1000)]
-PS_ci_lo, PS_ci_hi = np.percentile(boots,2.5), np.percentile(boots,97.5)
-\end{lstlisting}
-
-\begin{bmcavbox}{Overall PS and the CI are computed two different ways}
-The overall PS averages the components first, then weights them. The CI averages per-row composites. These are not the same operation --- for non-linear cases and for models with many empty/NaN rows they can diverge, and the overall PS can even sit outside its own CI (in the bundled run kimi's PS\_overall 0.435 lies above its CI [0.184, 0.247]). Read the CI as a stability indicator for the per-instance score, not as a strict interval around PS\_overall. If you need them to coincide, compute the point estimate the same per-row way.
-\end{bmcavbox}
-
-\subsubsection{The capability radar}
-
-The \code{radar\_chart} plots the five [0,1] axes \textbf{FASR \(\cdot\) IWSR \(\cdot\) Exec \(\cdot\) IHR \(\cdot\) PAS} as a pentagon per model. It is the visual companion to the profile thresholds: a Genuine Planner fills most of the pentagon; a No-Grounding model collapses to the centre; a Vocabulary-Only model shows a lopsided shape --- high IHR but low PAS and Exec. Read \emph{area} for overall strength and \emph{shape} for the capability signature. Note the radar uses IHR (not 1-halluc) and omits the CoT bonus, so it is the \emph{base} profile, not the bonus-adjusted PS.
-
-\begin{bmcavbox}{Radar reading caveat}
-Equal area can come from very different shapes --- a model strong on FASR/IWSR but weak on Exec/PAS can match the area of a balanced model. Always compare shape, not just fill. With many models the overlapping fills become unreadable; facet or pick a handful for any figure you publish.
-\end{bmcavbox}
-
-\subsubsection{Goal-dependent weight tuning}
-
-The weights encode a scientific claim; changing them changes the question PS answers. They live in one dict (\code{COMPOSITE\_WEIGHTS}) and must sum to 1.0. Reasonable retunings for different research goals:
-
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}l Y@{}}
-\toprule
-Research goal & Adjustment\\
-\midrule
-Zero-shot capability only & FASR\(\rightarrow\)0.40, IWSR\(\rightarrow\)0.10\\
-\addlinespace
-Domain grounding focus & one\_minus\_halluc\(\rightarrow\)0.35, FASR\(\rightarrow\)0.15\\
-\addlinespace
-All dimensions equal & all five = 0.20 (simple average)\\
-\addlinespace
-Execution-centric & exec\_ratio\(\rightarrow\)0.35, PAS\(\rightarrow\)0.10\\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\begin{bmkeybox}{The discipline that makes PS safe}
-Always report the component scores next to PS. A PS of 0.60 from FASR=1.0 / exec=0.0 (always right on the first try, never produces a partially-executable failure) is a completely different model from a PS of 0.60 from moderate scores everywhere. The composite ranks; the components explain.
-\end{bmkeybox}
+PS should always be reported with the component table or radar view: the same score can come from very different behaviours, such as strong zero-shot success with weak execution diagnostics or balanced medium performance across all axes.

@@ -1,226 +1,205 @@
-\section{PDDL Problems Classification}
-The first thing to do since we wanted a trustable benchmark and since a lot of PDDL models were already provided as reference material was to classify the problems 
-using a numerical difficulty score. We used a numerical score because it is intuitively understandable by anyone who will ever want to compare the performance of 
-LLMs using these models.
-Another classification implemented consists into separating problems in different categories based on the type of reasoning they request.
-To compute the scores the code can be found in the file \texttt{score\_domains\_complexity.py}
+\section{PDDL Domain and Problem Classification}
 
-    \subsection{Difficulty Classification}
-    \subsubsection{Instances scores}
-    The complexity of a single problem instance is calculated using a weighted logarithmic combination of four key metrics. The use of the logarithm prevents any single feature from dominating the score excessively.\\
+Before running the benchmark, we classified the available PDDL material along two complementary axes. First, we assigned a numerical difficulty score to each domain and instance, so that benchmark results could be interpreted against an explicit complexity estimate. Second, we manually grouped the domains by the main type of reasoning they require.
 
-    The \textbf{Raw Score} is defined as:
+The initial classification was computed on the 20 source domains stored in the archive of planning domains. The scoring code is located in the framework scripts folder, and the generated CSV/JSON reports are stored in the domain-complexity folder under analysis.
+
+The script used for this step is \texttt{score\_domains\_complexity.py}.
+
+\subsection{Difficulty Classification}
+
+\subsubsection{Instance raw scores}
+
+The complexity of a single problem instance is estimated through a weighted logarithmic combination of four structural metrics. The logarithm reduces the impact of very large feature values, preventing a single component from dominating the score.
+
+The \textbf{raw score} is defined as:
+\begin{equation}
+    S_{\mathrm{raw}} = 0.45 \cdot \log(1 + A) + 0.20 \cdot \log(1 + G) + 0.20 \cdot \log(1 + N) + 0.15 \cdot T
+\end{equation}
+
+where:
+\begin{itemize}
+    \item \textbf{A (Actions):} estimated number of feasible grounded actions. This is computed by binding action parameters to objects compatible with the static preconditions observed in the initial state.
+    \item \textbf{G (Goals):} total number of atomic goal conditions.
+    \item \textbf{N (Numeric Score):} composite value representing numeric complexity:
     \begin{equation}
-        Raw\_score = 0.45 \cdot \log(1 + A) + 0.20 \cdot \log(1 + G) + 0.20 \cdot \log(1 + N) + 0.15 \cdot T
+        N = E_{\mathrm{num}} + 2 \cdot P_{\mathrm{num}} + 3 \cdot G_{\mathrm{num}} + M
     \end{equation}
+    where $E_{\mathrm{num}}$ is the number of numeric effects, $P_{\mathrm{num}}$ the number of numeric preconditions, $G_{\mathrm{num}}$ the number of numeric goal conditions, and $M$ a binary flag indicating whether the problem defines a metric.
+    \item \textbf{T (Topology Score):} spatial or relational complexity extracted from topology-like predicates such as \textit{adj}, \textit{connected}, or similar relations:
+    \begin{equation}
+        T = \log(1 + \mathrm{Nodes}) + \log(1 + \mathrm{Edges}) + \mathrm{Density}
+    \end{equation}
+\end{itemize}
 
-    Where:
-    \begin{itemize}
-        \item \textbf{A (Actions):} Number of feasible grounded actions. This is estimated by unifying action parameters with objects that satisfy static preconditions in the initial state.
-        \item \textbf{G (Goals):} Total number of atomic conditions in the goal state.
-        \item \textbf{N (Numeric Score):} A composite value representing numeric complexity:
-        \begin{equation}
-            N = E_{num} + 2 \cdot P_{num} + 3 \cdot G_{num} + M
-        \end{equation}
-        where $E_{num}$ are numeric effects, $P_{num}$ numeric preconditions, $G_{num}$ numeric goal conditions, and $M$ is a binary flag for the presence of a metric.
-        \item \textbf{T (Topology Score):} Evaluates the spatial/relational complexity based on predicates like \textit{adj} or \textit{connected}:
-        \begin{equation}
-            T = \log(1 + Nodes) + \log(1 + Edges) + Density
-        \end{equation}
-    \end{itemize}
-    Obviously a different weight could be assigned to each different part of the computation of raw scores depending on the operator that is doing the tests in order to higlight more for example the number of action present in the instances and so on.\\
-    Finally, an \textbf{Instance Score (0-100)} is calculated by normalizing the raw score relative to the minimum and maximum scores found within the same domain. The results can be found in the folder \texttt{domains\_complexity}.\\
-    Note that also some additional statistics for each domain are computed based on the results obtained from the instances, for example it could be of interest evaluating the mean and the median of the scores obtain form the instances of a single domain.
+The weights are heuristic and can be changed depending on the aspect of complexity that should be emphasized. For example, increasing the weight of $A$ would give more importance to the action branching factor.
 
-    \subsubsection{Domain scores}
-    The overall difficulty of a domain is not just the average of its instances, but a reflection of its total state-space and constraint complexity.
-    The \textbf{Domain Difficulty (0-100)} is computed by:
-    \begin{enumerate}
-        \item Summing the $S_{raw}$ of all instances belonging to the domain to obtain a \textit{Total Raw Score}.
-        \item Normalizing this total across all tested domains in the benchmark.
-    \end{enumerate}
-    This approach ensures that a domain with many complex instances is ranked higher than one with few simple instances, note that obviously the easiest problems gets a domain difficulty equal to 0 (in this case is the "fo-sailing" problem) and the problem with the highest difficulty has domain difficulty equal to 100, (in our case the "settlersnumeric" problem).
+The per-instance output is kept as a raw score. These raw scores are used to compare instances inside each domain and to compute domain-level summary statistics such as minimum, median, mean, and maximum raw score.
 
-    \subsubsection{Results obtained}
-    In order to obtain a visual representation of the classified problems, we produced heatmaps for both the overall normalized domain scores and the raw scores.
-    \begin{figure}[H]
+\subsubsection{Domain scores}
+
+The overall difficulty of a domain is not computed as a simple average of its instances. Instead, the framework uses the total amount of instance complexity available for that domain.
+
+The \textbf{Domain Difficulty (0--100)} is computed by:
+\begin{enumerate}
+    \item summing the $S_{\mathrm{raw}}$ values of all instances belonging to the domain, obtaining a \textit{Total Raw Score};
+    \item normalizing this total across all 20 source domains.
+\end{enumerate}
+
+With this normalization, the easiest domain receives difficulty 0 and the hardest receives difficulty 100. In the current data, \textit{fo-sailing} is the easiest domain, while \textit{settlersnumeric} is the hardest one.
+
+\subsubsection{Results obtained}
+
+The following heatmaps summarize the numerical classification. The first one shows the normalized domain difficulty score, while the second one compares raw-score statistics across domains.
+
+\begin{figure}[H]
     \centering
-        \includegraphics[width=0.6\linewidth]{domaincompl.png}
-    \end{figure}
+    \includegraphics[width=0.6\linewidth]{domaincompl.png}
+    \caption{Normalized domain difficulty scores computed from total raw scores.}
+    \label{fig:domain-difficulty-heatmap}
+\end{figure}
 
-    \begin{figure}[H]
+\begin{figure}[H]
     \centering
-        \includegraphics[width=0.6\linewidth]{rawscoreshm.png}
-    \end{figure}
+    \includegraphics[width=0.6\linewidth]{rawscoreshm.png}
+    \caption{Raw-score statistics used to compare the source PDDL domains.}
+    \label{fig:raw-score-heatmap}
+\end{figure}
 
-    
-    \subsection{Reasoning Classification}
-    Here the classification based on the type of reasoning these problems require the LLM to employ is shown. We decided to split the reasoning types into 5 categories:
-    \begin{itemize}
-        \item \textbf{Spatial:} These problems are typically about objects that have to be moved in a 2D (or more dimensional) spaceframe.
-        \item \textbf{Numerical Optimization:} These problems require from the LLM an extensive capacity to deal with numerical optimization problems, such as managing complex cost functions and resource constraints.
-        \item \textbf{Temporal Planning:} In this kind of problem it is required from the LLM to be able to reach the goal defining an order between objects having timing constraints and relations.
-        \item \textbf{Logistic:} In this kind of problems it is required to reach the goal by planning some kind of goods transportation and agents coordination.
-        \item \textbf{Logic:} These are abstract puzzles where the state space and actions represent symbolic or mathematical transformations rather than physical interactions. They test the model's ability to reason over purely formal rules without relying on world knowledge.
-    \end{itemize}
+\subsection{Reasoning Classification}
 
-    In the following table the classification of the 20 planning problems is shown, note that in this case all the work have been done by hand and that the problems in the table are ordered form hardest to easiest following the previous difficulty classification. Note also that the evaluation is based on how much the problem belong to the specific domain, for example in the problem "settlersnumeric" there is a dominant Numerical Optimization part hence the problem is going to be classified as a Numerical Optimization problem.
-    
-    \begin{table}[H]
+In addition to numerical difficulty, we classified each domain according to the main type of reasoning required from the LLM. We used five categories:
+\begin{itemize}
+    \item \textbf{Spatial:} problems involving objects, agents, or resources that must be moved or arranged in a spatial or graph-like environment.
+    \item \textbf{Numerical Optimization:} problems requiring management of numeric quantities, costs, resources, or objective functions.
+    \item \textbf{Temporal Planning:} problems where the solution depends on ordering actions under time-related constraints or temporal relations.
+    \item \textbf{Logistics:} problems focused on transportation, delivery, routing, or coordination between agents and goods.
+    \item \textbf{Logic:} abstract symbolic problems where state transitions represent formal or mathematical transformations rather than physical actions.
+\end{itemize}
+
+Table~\ref{tab:reasoning-category-classification} reports the manual classification of the 20 source domains. The rows are ordered from hardest to easiest according to the domain difficulty score described above. When a domain includes multiple reasoning aspects, we assign it to the category that dominates the problem structure. For example, \textit{settlersnumeric} is classified as \textit{Numerical Optimization} because its main challenge is the management of numeric resources and constraints.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{PDDL Domain} & \textbf{Reasoning Category} \\
+        \midrule
+        Settlersnumeric & Numerical Optimization \\
+        Rover & Logistics \\
+        Delivery & Logistics \\
+        Sugar & Numerical Optimization \\
+        Tpp & Numerical Optimization \\
+        Block-Grouping & Spatial \\
+        Zenotravel & Logistics \\
+        Hydropower & Temporal Planning \\
+        Mprime & Logic \\
+        Pathwaysmetric & Numerical Optimization \\
+        Expedition & Logistics \\
+        Markettrader & Numerical Optimization \\
+        Fo-farmland & Numerical Optimization \\
+        Drone & Spatial \\
+        Farmland & Numerical Optimization \\
+        Ext-Plant-Watering & Spatial \\
+        Counters & Numerical Optimization \\
+        Fo-Counters & Numerical Optimization \\
+        Sailing & Spatial \\
+        Fo-Sailing & Spatial \\
+        \bottomrule
+    \end{tabular}
+    \caption{Manual reasoning-category classification of the 20 source PDDL domains.}
+    \label{tab:reasoning-category-classification}
+\end{table}
+
+\subsection{Problems Chosen}
+
+To keep the benchmark compact while still covering different reasoning types, we selected two sets of three domains each. Both sets contain one domain from each of the three categories with enough alternatives for a hard/easy comparison: \textit{Numerical Optimization}, \textit{Spatial}, and \textit{Logistics}. Temporal Planning and Logic were not selected because the source collection contains only one domain for each of those categories; this would not allow a meaningful difficulty comparison inside the same reasoning type.
+
+The following table shows the domains available in the three selected categories, ordered by decreasing difficulty.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.5}
+
+    \begin{minipage}[t]{0.30\textwidth}
         \centering
-        \renewcommand{\arraystretch}{1.25} 
-        
-        \begin{tabular}{c|c}
-            \toprule
-            
-            \textbf{PDDL Problem} & \textbf{Reasoning Category} \\
-            
-            \midrule[1pt]
-            \addlinespace[0.25cm]
-            Settlersnumeric & Numerical Optimization \\
-            \midrule
-            Rover & Logistic \\
-            \midrule
-            Delivery & Logistic \\
-            \midrule
-            Sugar & Numerical Optimization \\
-            \midrule
-            Tpp & Numerical Optimization \\
-            \midrule
-            Block-Grouping & Spatial \\
-            \midrule
-            Zenotravel & Logistic \\
-            \midrule
-            Hydropower & Temporal Planning \\
-            \midrule
-            Mprime & Logic \\
-            \midrule
-            Pathwaysmetric & Numerical Optimization \\
-            \midrule
-            Expedition & Logistic \\
-            \midrule
-            Markettrader & Numerical Optimization \\
-            \midrule
-            Fo-farmland & Numerical Optimization \\
-            \midrule
-            Drone & Spatial \\
-            \midrule
-            Farmland & Numerical Optimization \\
-            \midrule
-            Ext-Plant-Watering & Spatial \\
-            \midrule
-            Counters & Numerical Optimization \\
-            \midrule
-            Fo-Counters & Numerical Optimization \\
-            \midrule
-            Sailing & Spatial \\
-            \midrule
-            Fo-Sailing & Spatial \\
-            
-        \end{tabular}
-        \vspace{0.2cm}
-        \caption{Reasoning Category Classification Tab}
-        \label{tab:dati_pfile_griglia}
-    \end{table}
-
-    \subsection{Problems chosen}
-    In order to chose the correct problem to be solved by LLMs we decided to pick 3 sets composed by 3 problems each. The sets are composed by 3 problems with different reasoning categories and specifically from the categories Numericaal Optimization, Spatial and Logistic. Problems related to Temporal Planning and Logic were not chosen since just one problem for each type was present; we suggest, in order to study the capabilities of LLMs in these domains, to use a PDDL problenms dataset specifically containing these kind of problems.\\
-    In order to better understand how we picked the problems the following tables are shown, the elements are ordered with decreasing difficulty.
-    
-    \begin{table}[H]
-    \centering
-    \renewcommand{\arraystretch}{1.5} 
-
-    % --- PRIMA TABELLA ---
-    % 0.31\textwidth significa che occupa il 31% della larghezza della pagina
-    \begin{minipage}[t]{0.31\textwidth}
-        \centering
-        \begin{tabular}[t]{ >{\centering\arraybackslash}p{0.9\linewidth} }
+        \begin{tabular}[t]{@{}>{\centering\arraybackslash}p{0.9\linewidth}@{}}
             \toprule
             \textbf{Numerical Optimization}\\
-            \midrule[1pt]
-            \addlinespace[0.15cm]
+            \midrule
             Settlersnumeric\\
-            \midrule
             Sugar\\
-            \midrule
             Tpp\\
-            \midrule
             Pathwaysmetric\\
-            \midrule
             Markettrader\\
-            \midrule
             Fo-farmland\\
-            \midrule
             Farmland\\
-            \midrule
             Counters\\
-            \midrule
             Fo-Counters\\
             \bottomrule
         \end{tabular}
     \end{minipage}%
-    \hfill % <--- TRUCCO: Inserisce uno spazio elastico automatico tra le tabelle
-    % --- SECONDA TABELLA ---
-    \begin{minipage}[t]{0.31\textwidth}
+    \hfill
+    \begin{minipage}[t]{0.30\textwidth}
         \centering
-        \begin{tabular}[t]{ >{\centering\arraybackslash}p{0.9\linewidth} }
+        \begin{tabular}[t]{@{}>{\centering\arraybackslash}p{0.9\linewidth}@{}}
             \toprule
             \textbf{Spatial}\\
-            \midrule[1pt]
-            \addlinespace[0.15cm]
+            \midrule
             Block-Grouping\\
-            \midrule
             Drone\\
-            \midrule
             Ext-Plant-Watering\\
-            \midrule
             Sailing\\
-            \midrule
             Fo-Sailing\\
             \bottomrule
         \end{tabular}
     \end{minipage}%
-    \hfill % <--- Altro spazio elastico automatico
-    % --- TERZA TABELLA ---
-    \begin{minipage}[t]{0.31\textwidth}
+    \hfill
+    \begin{minipage}[t]{0.30\textwidth}
         \centering
-        \begin{tabular}[t]{ >{\centering\arraybackslash}p{0.9\linewidth} }
+        \begin{tabular}[t]{@{}>{\centering\arraybackslash}p{0.9\linewidth}@{}}
             \toprule
-            \textbf{Logistic}\\
-            \midrule[1pt]
-            \addlinespace[0.15cm]
+            \textbf{Logistics}\\
+            \midrule
             Rover\\
-            \midrule
             Delivery\\
-            \midrule
             Zenotravel\\
-            \midrule
             Expedition\\
             \bottomrule
         \end{tabular}
     \end{minipage}
 
     \vspace{0.4cm}
-    \caption{Reasoning Categories Selected for Benchmark}
-    \label{tab:tre_tabelle_affiancate}
+    \caption{Reasoning categories used for the final benchmark selection.}
+    \label{tab:selected-reasoning-categories}
 \end{table}
-In order to obtain a more clear output from the LLM we decided to select two differents sets of three problems each and specifically:
-\begin{itemize}
-    \item \textbf{Hard Set:} composed by \textit{settlersnumeric, block-grouping, rover}
 
-    \item \textbf{Easy Set:} composed by \textit{fo counters, fo sailing, expedition}
-\end{itemize}
-It is clearly visible that we picked respectively the most three difficult problems and the three easiest ones. This has been done to ensure also in the outputs a visible difference in the metrics when evalauting the outputs.\\
-Additionally it can be seen from the following heatmap that the instances of these domains have increasing difficulty:
-    \begin{figure}[H]
-    \centering
-        \includegraphics[width=0.6\linewidth]{Instances.png}
-    \end{figure}
-It is clearly visible both the difference in terms of difficulty between the Hard set and the Easy set and the increasing difficulty related to the pfiles; because of this last consideration we applied an additional, partition to divide the pfiles in three different categories and specifically:
+The final benchmark uses two domain sets:
 \begin{itemize}
-    \item Easy (composed by pfiles from 1 to 4)
-    \item Medium (composed by pfiles from 8 to 11)
-    \item Hard (composed by pfiles from 15 to 18)
+    \item \textbf{Hard Set:} \textit{settlersnumeric}, \textit{block-grouping}, and \textit{rover}.
+    \item \textbf{Easy Set:} \textit{fo-counters}, \textit{fo-sailing}, and \textit{expedition}.
 \end{itemize}
-Also it is worth noticing that we did not use all the instances available for each selected domain but we decided to choose a small batch (4 instances) of instances representing the easy, medium and hard categories.
+
+The hard set contains the hardest domain in each selected reasoning category, while the easy set contains the easiest domain in the same categories. This keeps the reasoning-category distribution fixed and makes the difficulty gap easier to interpret when evaluating LLM outputs.
+
+The selected domains still contain multiple instances. The following heatmap shows that, in general, pfiles increase in raw difficulty as the pfile index grows.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{Instances.png}
+    \caption{Raw difficulty scores for the instances of the selected benchmark domains.}
+    \label{fig:selected-instance-difficulty}
+\end{figure}
+
+Based on this instance-level trend, we divided the selected pfiles into three difficulty tiers:
+\begin{itemize}
+    \item \textbf{Easy:} \texttt{pfile1}--\texttt{pfile4};
+    \item \textbf{Medium:} \texttt{pfile8}--\texttt{pfile11};
+    \item \textbf{Hard:} \texttt{pfile15}--\texttt{pfile18}.
+\end{itemize}
+
+Therefore, the final benchmark does not use all available instances from each selected domain. Instead, it uses four instances per difficulty tier, for a total of 12 instances per selected domain.
+
+
+

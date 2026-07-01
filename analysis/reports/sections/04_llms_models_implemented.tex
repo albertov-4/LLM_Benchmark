@@ -1,14 +1,14 @@
 \section{Configured LLMs}
 
-The benchmark framework was designed to support two execution backends: Leonardo HPC by CINECA and the NVIDIA API. Leonardo was used for local execution of Hugging Face models, while the NVIDIA API provided remote access to additional models without requiring every checkpoint to be installed and hosted locally.
+After defining the PDDL problem set and the selected instance tiers, the next step was to define the model pool used to generate candidate plans. The benchmark framework was designed to support two execution backends: Leonardo HPC by CINECA and the NVIDIA API. Leonardo was used for local execution of Hugging Face models, while the NVIDIA API provided remote access to additional models without requiring every checkpoint to be installed and hosted locally.
 
 \subsection{Execution Backends}
 
 \subsubsection{Leonardo HPC}
 
-Leonardo HPC was the main platform considered for local model execution. The models were loaded through the Hugging Face backend, allowing direct control over the execution environment, GPU resources, precision, prompt formatting, and generation parameters.
+Leonardo HPC was the main platform considered for local model execution. The models were loaded through the Hugging Face backend, allowing direct control over the execution environment, GPU resources, numerical precision, prompt formatting, and generation parameters.
 
-The selection of locally executable models was supported by whichLLM, a repository used to estimate which LLMs can run on a given hardware configuration and to compare models by release recency. This was useful to identify models that were realistic candidates for the available Leonardo resources before running the benchmark.
+The selection of locally executable models was supported by whichLLM, a repository used to estimate which LLMs can run on a given hardware configuration and to compare models by release recency. In this project it was used as a preliminary feasibility reference, not as an automatic selection rule: the final local set was still constrained by the available Leonardo environment, dependency compatibility, and model access.
 
 \subsubsection{NVIDIA API}
 
@@ -18,31 +18,42 @@ The benchmark pipeline remained the same across both backends: prompts, parsing,
 
 \subsection{Selection Criteria}
 
-The models were selected according to three practical criteria:
+The models were selected according to four practical criteria:
 
 \begin{itemize}
     \item \textbf{Hardware feasibility:} local models had to be compatible with the available Leonardo environment, using whichLLM as a practical reference for hardware requirements.
     \item \textbf{Recency:} priority was given to recent LLM families, using whichLLM as a reference to compare model release dates.
     \item \textbf{Model diversity:} the benchmark included models from different families to avoid evaluating a single architectural lineage.
+    \item \textbf{Evaluation availability:} models included in the reported comparison had to be executable through the same prompt, parsing, validation, and scoring workflow.
 \end{itemize}
 
 Using both backends made the framework more flexible than a Leonardo-only setup. Leonardo provided controlled local execution, while the NVIDIA API allowed the benchmark to cover additional hosted models through the same interface.
 
 \subsection{Configured Models}
 
-The implemented model set includes the models configured for experimentation in the framework. Since the benchmark runs were still being refined, this section describes the configured model pool rather than treating any single run as the definitive final result.
+Table~\ref{tab:implemented-llm-models} reports the model pool considered by the benchmark framework. For the Hugging Face backend, the table lists the active local models in the Leonardo registry. For the NVIDIA API backend, it lists the remote models for which scored benchmark outputs were available in the collected runs. Some additional endpoints may remain present in the registry for future experiments, but they are not treated as part of the analyzed model set unless they have corresponding scored outputs.
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
-\begin{tabular}{lll}
-\hline
-\textbf{Backend} & \textbf{Execution mode} & \textbf{Configured models} \\
-\hline
-Leonardo HPC & Local HF & Gemma 4 31B, Phi-4, Nemotron Nano, Qwen 3.6 \\
-NVIDIA API & Remote hosted & Phi-4 Mini, GPT-OSS 120B, Kimi K2.6, Llama 3.3 70B,\\ & &Nemotron Nano, Qwen 3.5 \\
-\hline
-\end{tabular}
-\caption{LLM models configured in the benchmark framework.}
+\small
+\begin{tabularx}{\linewidth}{p{0.17\linewidth}p{0.16\linewidth}p{0.31\linewidth}X}
+\toprule
+\textbf{Backend} & \textbf{Execution mode} & \textbf{Model identifier} & \textbf{Model name} \\
+\midrule
+Leonardo HPC & Local Hugging Face & \path{hf_gemma_4_31b_it} & Gemma 4 31B IT \\
+Leonardo HPC & Local Hugging Face & \path{hf_phi_4} & Phi-4 \\
+Leonardo HPC & Local Hugging Face & \path{hf_gpt_oss_120b} & GPT-OSS 120B \\
+Leonardo HPC & Local Hugging Face & \path{hf_qwen_3_6_27b} & Qwen 3.6 27B \\
+\midrule
+NVIDIA API & Remote hosted & \path{nvidia_phi_4_mini_instruct} & Phi-4 Mini Instruct \\
+NVIDIA API & Remote hosted & \path{nvidia_gpt_oss_120b} & GPT-OSS 120B \\
+NVIDIA API & Remote hosted & \path{nvidia_kimi_k2_6} & Kimi K2.6 \\
+NVIDIA API & Remote hosted & \path{nvidia_llama_3_3_70b_instruct} & Llama 3.3 70B Instruct \\
+NVIDIA API & Remote hosted & \path{nvidia_nemotron_3_nano_30b_a3b} & Nemotron 3 Nano 30B A3B \\
+NVIDIA API & Remote hosted & \path{nvidia_nemotron_3_ultra_550b_a55b} & Nemotron 3 Ultra 550B A55B \\
+NVIDIA API & Remote hosted & \path{nvidia_qwen_3_5_122b_a10b} & Qwen 3.5 122B A10B \\
+\bottomrule
+\end{tabularx}
+\caption{LLM models configured or included in the benchmark model pool.}
 \label{tab:implemented-llm-models}
 \end{table}
-

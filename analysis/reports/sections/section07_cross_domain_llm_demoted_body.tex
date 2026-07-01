@@ -1,97 +1,7 @@
-Within-domain ranking and its direction rules, the per-domain heatmap normalisation caveat, rank variance (generalist vs specialist), Spearman domain correlation, the failure-mode taxonomy quadrants, and the seven literature-grounded capability profiles with their NaN-aware assignment logic.
+Within-domain ranking and its direction rules, the per-domain heatmap normalisation caveat and the seven literature-grounded capability profiles with their NaN-aware assignment logic.
 
-A single overall leaderboard hides the most scientifically interesting fact about a model:\emph{where} it is good. This view documents the three machinery pieces that turn per-domain metrics into comparative claims --- within-domain ranking, rank variance, and the Spearman domain-correlation matrix --- and then the failure-mode taxonomy and the seven literature-grounded capability profiles that convert those numbers into a named diagnosis.
+A single overall leaderboard hides the most scientifically interesting fact about a model:\emph{where} it is good. This view documents the three machinery pieces that turn per-domain metrics into comparative claims, the Spearman domain-correlation matrix  and the seven literature-grounded capability profiles that convert those numbers into a named diagnosis.
 
-\subsubsection{Within-domain ranking: why rank, not raw value}
-
-Absolute metric values are not comparable across domains --- a 0.30 success rate in a hard transport domain and a 0.30 in an easy gripper domain mean different things. The framework therefore ranks models \textbf{inside each domain separately}, on every metric in \code{RANK\_METRICS}, then works with ranks. Ranking removes the domain-difficulty offset and answers the only question that survives it:\emph{among the models that faced this exact domain, who placed where?}
-
-The direction of "good" is metric-specific and is encoded once in \code{RANK\_METRICS}. Maximise for Success\_Rate, FASR, IWSR, Exec, PAS, CoT\_Alignment; minimise for Hallucination, Retry\_Gap, Temporal\_Distance. The rank call makes the direction explicit:
-
-\begin{lstlisting}
-for metric, direction in RANK_METRICS.items():
-    rank_table[metric] = sub[metric].rank(
-        ascending = direction == "min",   # min-metrics: smallest value = rank 1
-        method    = "min",                # ties share the best rank
-        na_option = "bottom",             # missing values rank last, never first
-    )
-# rank 1 = best in this domain on this metric
-\end{lstlisting}
-
-\begin{bmkeybox}{The rationale of the procedure}
-Ranking is a deliberate refusal to average raw scores across heterogeneous domains. "Model A beats Model B" is only ever asserted
-
-\emph{within a domain on a named metric}
-
-; a global statement is then built by aggregating those local verdicts (mean rank, rank variance), never by averaging raw metric values that live on incomparable scales.
-
-\code{na\_option="bottom"}
-
-is a fairness rule: a model that produced no usable plan cannot be handed a good rank by accident.
-\end{bmkeybox}
-
-\subsubsection{The ranking heatmap and its hard caveat}
-
-The \code{domain\_ranking\_heatmap} renders one sub-grid per domain (rows = models, columns = RANK\_METRICS). To share one colour scale across domains with different model counts, each raw rank is min-max normalised inside its domain to [0,1]:
-
-\begin{bmformulabox}
-\begin{align*}
-\text{norm\_rank}
-&= \frac{\text{rank} - 1}{\max(\text{n\_models} - 1, 1)} \\
-&\in [0,1],
-\quad 0 = \text{best in domain},
-\quad 1 = \text{worst in domain} \\
-&\text{Colormap: RdYlGn\_r, green = best.}
-\end{align*}
-\end{bmformulabox}
-
-\begin{bmcavbox}{Do not read normalised cells as cross-domain quality}
-The normalisation is
-
-\textbf{per-domain}
-
-. A 0.00 (green) cell means "best
-
-\emph{among the models present in this domain}
-
-", not "good in absolute terms". A model can be deep green in a domain where every model failed. Compare cells
-
-\emph{down a column within one domain block}
-
-; never compare the same model's colour across two different domain blocks as if it were a score. The colour encodes local standing, not capability.
-\end{bmcavbox}
-
-\subsubsection{Rank variance: generalist vs specialist}
-
-Rank variance compresses "where is this model good" into one number. For each model it takes the standard deviation of its within-domain rank across domains, per metric, then averages those across metrics (\code{mean\_rank\_std}). A model that places \textasciitilde{} 3rd everywhere has near-zero variance (a generalist); a model that wins one domain and trails in another has high variance (a domain specialist).
-
-\begin{lstlisting}
-var_df = rank_within_domain.groupby("Model")[RANK_METRICS_cols].std()
-var_df["mean_rank_std"] = var_df[RANK_METRICS_cols].mean(axis=1)
-var_df = var_df.sort_values("mean_rank_std", ascending=False)  # specialists on top
-\end{lstlisting}
-
-phi\_4 carries the highest \code{mean\_rank\_std \(\approx\) 2.394}(most domain-specific --- strong in a domain or two, weak elsewhere) while gpt\_oss sits lowest at \code{\(\approx\) 1.349}(most consistent across domains). High variance is not "bad": it flags a model whose single overall number is least trustworthy, because its behaviour is domain-contingent.
-
-\begin{bmcavbox}{Spec says "normalised rank", code uses raw rank}
-The plot docstring describes rank variance as the std of
-
-\emph{normalised}
-
-rank, but the implementation computes std over the
-
-\emph{raw}
-
-integer ranks in
-
-\code{rank\_within\_domain}
-
-(the normalisation is applied only inside the heatmap). With a fixed model count the two differ by a constant factor, so the ordering of models is unaffected --- but the absolute
-
-\code{mean\_rank\_std}
-
-values are on the raw-rank scale, not [0,1]. Worth aligning if you ever compare variance magnitudes across runs with different model counts.
-\end{bmcavbox}
 
 \subsubsection{Domain correlation: redundancy vs complementarity}
 
@@ -103,39 +13,14 @@ corr = sr_pivot.T.corr(method="spearman")   # Model \(\times\) Model rank correl
 \end{lstlisting}
 
 \begin{bmcavbox}{Correlation needs a domain spread}
-Spearman over success-rate vectors is only meaningful with several domains and some variance in them. In the bundled run the domain count is small and many models sit at SR\(\approx\)0, so \(\rho\) is dominated by ties and should be read as illustrative of the method, not as a stable finding.
+Spearman over success-rate vectors is only meaningful with several domains and some variance in them. if In the bundled run the domain count is small and many models sit at SR\(\approx\)0,\(\rho\) is dominated by ties and should be read as illustrative of the method, not as a stable finding.
 \end{bmcavbox}
 
 \subsubsection{Breadth of competence: stacked PS and the SR heatmap}
 
-\code{ps\_by\_domain\_stacked} stacks each model's per-domain Planning Score contributions into one bar. Two models can reach the same total bar height by opposite routes: a tall single segment (high PS concentrated in one domain) versus many even segments (competence spread across domains). The stack makes "broad vs concentrated" visible at a glance --- exactly the distinction the overall PS scalar destroys.
+\code{ps\_by\_domain\_stacked} stacks each model's per-domain Planning Score contributions into one bar. Two models can reach the same total bar height by opposite routes: a tall single segment (high PS concentrated in one domain) versus many even segments (competence spread across domains). The stack makes "broad vs concentrated" visible at a glance exactly the distinction the overall PS scalar destroys.
 
-The \code{success\_rate\_heatmap} is the raw companion: model\(\times\)domain SR with no normalisation, so here --- unlike the rank heatmap --- cells \emph{are} comparable across the whole grid. Use it to spot empty columns (domains no model solved \(\rightarrow\) an infrastructure or difficulty problem, not a model problem) and empty rows (models that solved nothing).
-
-\subsubsection{The failure-mode taxonomy plot}
-
-This is the framework's single most diagnostic figure. It places every model on two orthogonal failure axes ---\textbf{hallucination rate}(x, grounding failure) against \textbf{PAS}(y, precondition awareness) --- encoding \textbf{FASR as bubble size} and \textbf{SR as colour}. The point is that "the model failed" is not one phenomenon: the two axes separate four qualitatively different failure regimes.
-
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}Y Y Y@{}}
-\toprule
-Quadrant & Reading & Diagnosis\\
-\midrule
-low halluc \(\cdot\) high PAS & grounded, legal names, but mis-orders actions & Sequencing failure (e.g. gemma)\\
-\addlinespace
-low halluc \(\cdot\) low PAS & legal names, no coherent state model & Vocabulary-only\\
-\addlinespace
-high halluc \(\cdot\) high PAS & invents actions yet shows some precondition sense & Confused / mixed\\
-\addlinespace
-high halluc \(\cdot\) low PAS & not reading the domain; everything ungrounded & No grounding\\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\begin{bmkeybox}{What the taxonomy lets you conclude}
-Two models with identical success rates can sit in different quadrants --- and that difference is the actual research finding. In the bundled run gemma is the only sequencing-heavy model (failure breakdown 20 sequencing vs 28 fabrication, seq-proportion 0.417), so it lives in the grounded/high-PAS corner while the flat-zero models collapse toward the ungrounded corner. The taxonomy turns an undifferentiated pile of failures into named, citable failure phases.
-\end{bmkeybox}
+The \code{success\_rate\_heatmap} is the raw companion: model\(\times\)domain SR with no normalisation, so here unlike the rank heatmap cells \emph{are} comparable across the whole grid. Use it to spot empty columns (domains no model solved \(\rightarrow\) an infrastructure or difficulty problem, not a model problem) and empty rows (models that solved nothing).
 
 \subsubsection{The seven capability profiles}
 
@@ -180,24 +65,17 @@ else:
 \end{lstlisting}
 
 \begin{bmkeybox}{NaN-aware conditions: "unavailable" \(\neq\) "missing"}
-A condition whose metric is NaN (e.g. CoT when reasoning was never produced) is marked
-
-\emph{unavailable}
-
-, not
-
-\emph{failed}
-
-. This is what stops a model being thrown out of "Genuine Planner" merely because CoT could not be computed --- and it is why the report exposes the full matched/missing/unavailable breakdown per profile, so you can see exactly how close a model sat to each boundary rather than trusting a bare label.
+A condition whose metric is NaN (e.g. CoT when reasoning was never produced) is marked \emph{unavailable}, not \emph{failed}.
+This is what stops a model being thrown out of "Genuine Planner" merely because CoT could not be computed --- and it is why the report exposes the full matched/missing/unavailable breakdown per profile, so you can see exactly how close a model sat to each boundary rather than trusting a bare label.
 \end{bmkeybox}
 
 \begin{bmcavbox}{Profiles are thresholds, not ground truth}
-The cut-points (\(\mathrm{SR}>0.70\), \(\mathrm{IHR}>0.90\), ...) encode the literature's qualitative claims as hard numbers; they are defensible but not sacred. A model just under a boundary is reported as Mixed against its closest profile precisely so the threshold choice stays visible and auditable. Treat the label as a hypothesis the condition breakdown lets you check, not a verdict.
+The cut-points (\(\mathrm{SR}>0.70\), \(\mathrm{IHR}>0.90\), ...) encode the literature's qualitative claims as hard numbers; they are defensible but not sacred. A model just under a boundary is reported as Mixed against its closest profile precisely so the threshold choice stays visible and auditable. the label as to be treated as hypothesis that the condition breakdown lets you check, not a verdict.
 \end{bmcavbox}
 
 \subsubsection{Reading the metric set together: the diagnostic framework}
 
-No single metric is a verdict. The scientific meaning lives in \emph{combinations}--- and the within-domain ranking heatmap is where they are read side by side. There are three reading directions, and then a small set of metric pairs that must never be read in isolation.
+No single metric is a verdict. The scientific meaning lives in \emph{combinations} and the within-domain ranking heatmap is where they are read side by side. There are three reading directions, and then a small set of metric pairs that must never be read in isolation.
 
 \paragraph{Three ways to read the ranking heatmap.}
 
@@ -218,7 +96,7 @@ A \textbf{column}(one metric) & Which model dominates that metric. A column all 
 
 \paragraph{The metric pairs to always read together.}
 
-\textbf{Capability triangle --- SR + FASR + IWSR + RG}(is performance genuine or scaffolded by retriesc). Read SR and FASR first, then RG = SR - FASR, then IWSR position.
+\textbf{Capability triangle --- SR + FASR + IWSR + RG}(is performance genuine or scaffolded by retrieval). Read SR and FASR first, then RG = SR - FASR, then IWSR position.
 
 \begin{table}[h]\small
 \centering
@@ -239,7 +117,7 @@ Low & Low & \(\approx\)0--0.05 & \(\approx\)FASR & No capability --- nothing for
 \end{tabularx}
 \end{table}
 
-\textbf{Failure anatomy --- ER + PAS}(most useful when \(\mathrm{SR}<0.15\): how deep does it run, and why did it stopc)
+\textbf{Failure anatomy --- ER + PAS}(most useful when \(\mathrm{SR}<0.15\): how deep does it run, and why did it stop )
 
 \begin{table}[h]\small
 \centering
@@ -255,45 +133,43 @@ ER & PAS & What the model is doing & Valmeekam phase\\
 \addlinespace
 \(<0.30\) & \(<0.30\) & Fails immediately, invents states from step 1. & Phase 1 (vocabulary)\\
 \addlinespace
-Medium & NaN & Mixed; PAS undefined --- check halluc gate and temporal distance. & Mixed\\
+Medium & NaN & Mixed; PAS undefined ->check halluc gate and temporal distance. & Mixed\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\textbf{Reasoning test --- SR + CoT} and \textbf{refinement pair --- IHR + PAS}(genuine vs retrieved success; and which kind of failure).
+\textbf{Reasoning test SR + CoT} and \textbf{refinement pair IHR + PAS}(genuine vs retrieved success; and which kind of failure).
 
-\begin{table}[h]\small
+\begin{table}[H]\small
 \centering
-\begin{tabularx}{\linewidth}{@{}Y P I@{}}
+\begin{tabularx}{\linewidth}{@{}Y I@{}}
 \toprule
-Pair & Signature & Meaning\\
+Pair & Meaning\\
 \midrule
-\(\mathrm{SR}\) high \(\cdot\) \(\mathrm{CoT}>0.70\) & --- & Reasoning guides grounded plans --- strongest evidence of planning (Lanham).\\
+\(\mathrm{SR}\) high \(\cdot\) \(\mathrm{CoT}>0.70\)& Reasoning guides grounded plans --- strongest evidence of planning (Lanham).\\
 \addlinespace
-\(\mathrm{SR}\) high \(\cdot\) \(\mathrm{CoT}<0.40\) & --- & Fake reasoning --- correct plans, post-hoc CoT (Kambhampati).\\
+\(\mathrm{SR}\) high \(\cdot\) \(\mathrm{CoT}<0.40\)& Fake reasoning --- correct plans, post-hoc CoT (Kambhampati).\\
 \addlinespace
-\(\mathrm{SR}\) low \(\cdot\) \(\mathrm{CoT}>0.70\) & --- & Faithful but failing --- reasoning grounded, execution fails.\\
+\(\mathrm{SR}\) low \(\cdot\) \(\mathrm{CoT}>0.70\)& Faithful but failing --- reasoning grounded, execution fails.\\
 \addlinespace
-\(\mathrm{IHR}>0.90\) \(\cdot\) \(\mathrm{PAS}>0.70\) & top-left (good) & Knows vocabulary, ordering errors only --- most fixable.\\
+\(\mathrm{IHR}>0.90\) \(\cdot\) \(\mathrm{PAS}>0.70\)& Knows vocabulary, ordering errors only --- most fixable.\\
 \addlinespace
-\(\mathrm{IHR}>0.90\) \(\cdot\) \(\mathrm{PAS}<0.30\) & bottom-left & Knows words, lacks world model.\\
+\(\mathrm{IHR}>0.90\) \(\cdot\) \(\mathrm{PAS}<0.30\)& Knows words, lacks world model.\\
 \addlinespace
-\(\mathrm{IHR}<0.60\) \(\cdot\) \(\mathrm{PAS}\) low & bottom-right (worst) & Near-random output --- no grounding, no causal model.\\
+\(\mathrm{IHR}<0.60\) \(\cdot\) \(\mathrm{PAS}\) low& Near-random output --- no grounding, no causal model.\\
 \bottomrule
 \end{tabularx}
 \end{table}
-
+\vspace{-\parskip}
 \begin{bmcavbox}{IHR is a gate, not just a metric}
 If inverse-hallucination rate falls below \textasciitilde{} 0.6, ER, PAS and CoTaL are all unreliable: the model is failing at vocabulary, so the downstream causal metrics have nothing trustworthy to measure. Always clear the IHR gate before interpreting the process metrics.
 \end{bmcavbox}
 
 \paragraph{The diagnostic tree.}
 
-The pairs above compose into a single ordered procedure --- read the metrics in this sequence, taking the branch that matches, and the model classifies itself.
+The pairs above compose into a single ordered procedure read the metrics in this sequence, taking the branch that matches, and the model classifies itself.
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 \(\mathrm{IHR}<0.60\) & STOP. Not reading the schema --- vocabulary failure. Do not interpret exec/PAS/CoT.\\
 \addlinespace
@@ -301,12 +177,9 @@ IHR 0.60--0.90 & Proceed with caution; note partial vocabulary issues.\\
 \addlinespace
 \(\mathrm{IHR}>0.90\) & Proceed to Level 1.\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+\smallskip{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 \(\mathrm{SR}<0.15\) & Almost no valid plans --- skip to Level 4; the question is which failure dominates.\\
 \addlinespace
@@ -314,12 +187,9 @@ SR 0.15--0.50 & Partial capability --- Level 2.\\
 \addlinespace
 \(\mathrm{SR}>0.50\) & Can plan here --- Level 2 to test authenticity.\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+\smallskip{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 \(\mathrm{RG}<0.10\) & Retry-independent (FASR\(\approx\)SR) --- Level 3 + Level 5.\\
 \addlinespace
@@ -327,12 +197,9 @@ RG 0.10--0.30 & Moderate dependency --- report SR and FASR; Level 3.\\
 \addlinespace
 \(\mathrm{RG}>0.30\) & Strong dependency --- SR inflated, use FASR; confirm via flat P(Valid|k).\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+\smallskip{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 IWSR \(\approx\) FASR & All success on attempt 1 --- confirm with declining P(Valid|k).\\
 \addlinespace
@@ -340,12 +207,9 @@ IWSR near SR & Efficient corrector (attempts 2--3) --- verify with rising P(Vali
 \addlinespace
 IWSR near FASR, high RG & Late-retry luck (attempts 4--5) --- stochastic; flat P(Valid|k).\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+\smallskip{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 \(\mathrm{ER}>0.70\) \(\cdot\) \(\mathrm{PAS}>0.70\) & Long-horizon sequencing failure --- Phase 2 (Valmeekam).\\
 \addlinespace
@@ -355,12 +219,9 @@ IWSR near FASR, high RG & Late-retry luck (attempts 4--5) --- stochastic; flat P
 \addlinespace
 ER 0.30--0.70 & Mixed --- check temporal distance (low = near-miss, high = broken causal model).\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}P I@{}}
+\smallskip{\small\noindent\begin{tabularx}{\linewidth}{@{}P I@{}}
 \toprule
 \(\mathrm{CoT}>0.70\) \(\cdot\) \(\mathrm{SR}\) high & Genuine deliberation --- strongest result.\\
 \addlinespace
@@ -370,5 +231,4 @@ ER 0.30--0.70 & Mixed --- check temporal distance (low = near-miss, high = broke
 \addlinespace
 \(\mathrm{CoT}<0.40\) \(\cdot\) \(\mathrm{SR}\) low & Complete grounding failure --- return to Level 0 for a masked vocab issue.\\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabularx}}

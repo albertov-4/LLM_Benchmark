@@ -1,23 +1,12 @@
-Every figure the pipeline emits, documented by scope, reading procedure, the data-availability problems that distort it on sparse runs, and the justification for its chart type --- grouped by metric family.
+Every figure the pipeline emits, documented by scope, reading procedure, the data-availability problems that distort it on sparse runs, and the justification for its chart type grouped by metric family.
 
-The pipeline emits up to 27 figures, registered by name in \code{PLOT\_DESCRIPTIONS} and written by \code{maybe\_make\_plots}. This catalogue documents each one along the four axes that decide whether a figure earns its place: its \textbf{scope}(what slice of data it shows),\textbf{how to read it}, the \textbf{data-availability problems} that distort it on sparse runs, and the \textbf{justification} for that chart type over the alternatives.
+The pipeline emits up to 21 figures, registered by name in \code{PLOT\_DESCRIPTIONS} and written by \code{maybe\_make\_plots}. This catalogue documents each one along the four axes that decide whether a figure earns its place: its \textbf{scope}(what slice of data it shows),\textbf{how to read it}, the \textbf{data-availability problems} that distort it on sparse runs, and the \textbf{justification} for that chart type over the alternatives.
 
 \begin{bmkeybox}{One reading rule that governs half the figures}
-Several plots are bounded [0,1] and zero-inflated: on weak models the bars genuinely collapse to zero, and a zero can mean either "good" (no hallucination) or "nothing produced" (no actions emitted). Whenever a bar is flat-zero, disambiguate against Success\_Rate and plan counts before reading it as a strength. The atlas notes this per-plot where it bites.
+Several plots are bounded [0,1] and zero-inflated: on weak models the bars genuinely collapse to zero, and a zero can mean either "good" (no hallucination) or "nothing produced" (no actions emitted). Whenever a bar is flat-zero, disambiguate against SR and plan counts before reading it as a strength. The atlas notes this per-plot where it can cause problems.
 \end{bmkeybox}
 
 \subsubsection{Grounding / discriminatory}
-
-\begin{bmplotcard}{Hallucination heatmap}
-\code{hallucination\_heatmap}
-\begin{description}
-\item[chart] heatmap
-\item[scope] Mean action-hallucination rate per model\(\times\)domain. Lower = better grounded.
-\item[how to read] Read down a column to compare models in one domain; dark = invents illegal actions. Empty cells = no plans produced there.
-\item[data problems] A model with SR\(\approx\)0 can still show 0 hallucination if it never emitted a parseable action --- read alongside Exec.
-\item[why this form] Heatmap is right because the data is a dense model\(\times\)domain grid of one bounded scalar; small multiples would waste space.
-\end{description}
-\end{bmplotcard}
 
 \begin{bmplotcard}{Action hallucination (bars)}
 \code{hallucination\_by\_model\_domain}
@@ -37,7 +26,7 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \item[scope] Fraction of action arguments referencing objects absent from the problem file.
 \item[how to read] Separates' wrong object' errors from' wrong action' errors; compare against the action-hallucination twin.
 \item[data problems] Undefined when a model emits no arguments; appears as 0 and must not be read as' good'.
-\item[why this form] Splitting object- from action-hallucination is the whole point --- two distinct grounding failures need two plots.
+\item[why this form] Splitting object- from action-hallucination is the whole point two distinct grounding failures need two plots.
 \end{description}
 \end{bmplotcard}
 
@@ -100,17 +89,6 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \end{description}
 \end{bmplotcard}
 
-\begin{bmplotcard}{SR vs FASR}
-\code{sr\_vs\_fasr}
-\begin{description}
-\item[chart] paired bars
-\item[scope] Overall success rate beside first-attempt success rate, per model.
-\item[how to read] The vertical gap between the pair is the Retry Gap; a large gap = retry-dependent success.
-\item[data problems] Both can be 0 for weak models --- the pair collapses and the gap is trivially zero.
-\item[why this form] Pairing the two bars makes the gap a visual quantity instead of a number to subtract mentally.
-\end{description}
-\end{bmplotcard}
-
 \begin{bmplotcard}{FASR by difficulty}
 \code{fasr\_by\_difficulty}
 \begin{description}
@@ -155,17 +133,6 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \end{description}
 \end{bmplotcard}
 
-\begin{bmplotcard}{FASR vs IWSR scatter}
-\code{fasr\_iwsr\_scatter}
-\begin{description}
-\item[chart] bubble scatter
-\item[scope] FASR (x) vs IWSR (y) with SR encoded as dot size and colour.
-\item[how to read] On-diagonal = first-try-dominated; below-diagonal with large dot = success built by efficient repair.
-\item[data problems] Overplotting at the origin when many models score \textasciitilde{} 0; jitter or label to separate.
-\item[why this form] Encoding three metrics (x,y,size/colour) in one scatter is denser than three separate bar charts.
-\end{description}
-\end{bmplotcard}
-
 \begin{bmplotcard}{P(Valid | reached k)}
 \code{p\_valid\_given\_k}
 \begin{description}
@@ -190,28 +157,6 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \end{description}
 \end{bmplotcard}
 
-\begin{bmplotcard}{Success rate by CoT flag}
-\code{cot\_success\_rate}
-\begin{description}
-\item[chart] paired bars
-\item[scope] Success rate split by whether CoT was present/enabled.
-\item[how to read] A lift with CoT suggests reasoning helps; no lift suggests post-hoc rationalisation.
-\item[data problems] Confounded if CoT presence correlates with model family rather than being randomised.
-\item[why this form] A two-bar split is the minimal correct contrast for a binary flag.
-\end{description}
-\end{bmplotcard}
-
-\begin{bmplotcard}{CoT alignment: valid vs invalid}
-\code{cot\_alignment\_validity}
-\begin{description}
-\item[chart] box / violin
-\item[scope] Distribution of CoTaL for valid versus invalid plans.
-\item[how to read] Higher alignment on valid plans = faithful reasoning; overlap = alignment doesn' t track correctness.
-\item[data problems] Needs enough valid AND invalid reasoning plans; the bundled run has few of either (18 both-valid, 8 both-invalid).
-\item[why this form] A distribution contrast is needed because the claim is about separation, not means.
-\end{description}
-\end{bmplotcard}
-
 \subsubsection{Composite \& cross-domain}
 
 \begin{bmplotcard}{Success-rate heatmap}
@@ -222,17 +167,6 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \item[how to read] Empty columns = domains nobody solved (difficulty or infrastructure); empty rows = models that solved nothing.
 \item[data problems] Genuinely sparse: many cells are 0, which is informative rather than missing.
 \item[why this form] Unlike the rank heatmap, raw SR is on one common scale, so a single-scale heatmap is valid.
-\end{description}
-\end{bmplotcard}
-
-\begin{bmplotcard}{Failure-mode taxonomy}
-\code{failure\_mode\_taxonomy}
-\begin{description}
-\item[chart] quadrant bubble
-\item[scope] Halluc (x) vs PAS (y), bubble size = FASR, colour = SR --- four named failure regimes.
-\item[how to read] Locate each model in a quadrant; same-SR models in different quadrants fail differently. (See Cross-Domain view.)
-\item[data problems] Bubbles collapse near an axis when a metric is 0/NaN for many models; small samples make positions unstable.
-\item[why this form] Two orthogonal failure axes plus two encodings packs the entire failure diagnosis into one figure.
 \end{description}
 \end{bmplotcard}
 
@@ -314,7 +248,7 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \end{bmplotcard}
 
 \begin{bmcavbox}{Why the PNGs are not embedded here}
-The 27 figures are run-specific --- they depend on which models and domains were in the bundle and would be stale the moment the suite is re-run. This catalogue documents what each figure
+The 21 figures are run-specific --- they depend on which models and domains were in the bundle and would be stale the moment the suite is re-run. This catalogue documents what each figure
 
 \emph{means and how to read it}
 

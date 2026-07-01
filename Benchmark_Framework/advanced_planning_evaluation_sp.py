@@ -94,6 +94,7 @@ ROW_METRIC_COLUMNS = [
     "Chain_of_Thought",
     "parsed_file_path",
     "pddl_available",
+    "is_gen_error_instance",
     "hallucinated_action_count",
     "fuzzy_hallucinated_count",
     "object_hallucination_count",
@@ -706,6 +707,12 @@ def load_artifact_rows(
                 scored_attempts = scored.get("attempts", [])
                 scored_attempts = scored_attempts if isinstance(scored_attempts, list) else []
 
+            is_gen_error_instance = bool(scored_attempts) and all(
+                (a.get("validation_result") or {}).get("status") == "generation_error"
+                for a in scored_attempts
+                if isinstance(a, dict)
+            )
+
             rows.append(
                 {
                     "Model": model,
@@ -718,6 +725,7 @@ def load_artifact_rows(
                     "Length": len(actions),
                     "Iterations": iterations,
                     "Chain_of_Thought": protocol_cot.get(protocol, False) or bool(cot_text.strip()) or any(parsed_plan_reasoning_actions((attempt.get("parsed_plan") or {})) for attempt in attempts if isinstance(attempt, dict)),
+                    "is_gen_error_instance": is_gen_error_instance,
                     "_actions": actions,
                     "_cot_text": cot_text,
                     "_parsed_attempts": attempts,
@@ -742,6 +750,7 @@ def load_artifact_rows(
                 "Length",
                 "Iterations",
                 "Chain_of_Thought",
+                "is_gen_error_instance",
                 "_actions",
                 "_cot_text",
                 "_parsed_attempts",
@@ -1277,7 +1286,20 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
             "rank_within_domain": empty,
         }
 
-    overall = df_metrics.groupby("Model", dropna=False).agg(
+    # Exclude instances where every attempt was a generation_error (infrastructure
+    # failure, not a model failure) from all metric aggregations.  The rows remain
+    # in df_metrics so they appear in row_metrics for diagnostics.
+    _gen_err_mask = df_metrics.get("is_gen_error_instance", pd.Series(False, index=df_metrics.index)).fillna(False).astype(bool)
+    df_for_agg = df_metrics[~_gen_err_mask].copy()
+
+    gen_error_overall = df_metrics.groupby("Model", dropna=False).agg(
+        gen_error_count=("is_gen_error_instance", "sum"),
+    ).reset_index()
+    gen_error_by_domain = df_metrics.groupby(["Model", "Domain"], dropna=False).agg(
+        gen_error_count=("is_gen_error_instance", "sum"),
+    ).reset_index()
+
+    overall = df_for_agg.groupby("Model", dropna=False).agg(
         N=("Problem", "count"),
         Runs=("Run_id", "nunique"),
         Domains=("Domain", "nunique"),
@@ -1305,8 +1327,10 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
     overall["Retry_Gap"] = overall["Success_Rate"] - overall["FASR"]
+    overall = overall.merge(gen_error_overall, on="Model", how="left")
+    overall["gen_error_count"] = overall["gen_error_count"].fillna(0).astype(int)
 
-    by_domain = df_metrics.groupby(["Model", "Domain"], dropna=False).agg(
+    by_domain = df_for_agg.groupby(["Model", "Domain"], dropna=False).agg(
         N=("Problem", "count"),
         Runs=("Run_id", "nunique"),
         Success_Rate=("Valid", "mean"),
@@ -1332,8 +1356,10 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
     by_domain["Retry_Gap"] = by_domain["Success_Rate"] - by_domain["FASR"]
+    by_domain = by_domain.merge(gen_error_by_domain, on=["Model", "Domain"], how="left")
+    by_domain["gen_error_count"] = by_domain["gen_error_count"].fillna(0).astype(int)
 
-    by_difficulty = df_metrics.groupby(["Model", "Difficulty"], dropna=False).agg(
+    by_difficulty = df_for_agg.groupby(["Model", "Difficulty"], dropna=False).agg(
         N=("Problem", "count"),
         Success_Rate=("Valid", "mean"),
         FASR=("_iter1", "mean"),
@@ -1347,7 +1373,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
     ).reset_index()
 
-    cot_summary = df_metrics.groupby(["Model", "Chain_of_Thought"], dropna=False).agg(
+    cot_summary = df_for_agg.groupby(["Model", "Chain_of_Thought"], dropna=False).agg(
         N=("Problem", "count"),
         Success_Rate=("Valid", "mean"),
         CoT_Alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
@@ -1361,7 +1387,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
     ).reset_index()
 
-    failure_breakdown = df_metrics.groupby("Model", dropna=False).agg(
+    failure_breakdown = df_for_agg.groupby("Model", dropna=False).agg(
         sequencing_error_count=("sequencing_error_count", "sum"),
         state_fabrication_count=("state_fabrication_count", "sum"),
     ).reset_index()
@@ -1391,7 +1417,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     rng = np.random.default_rng(seed=42)
     ci_rows: list[dict[str, Any]] = []
-    for model, model_df in df_metrics.groupby("Model", dropna=False):
+    for model, model_df in df_for_agg.groupby("Model", dropna=False):
         contribs = model_df.apply(
             lambda row: compute_composite_score(
                 {

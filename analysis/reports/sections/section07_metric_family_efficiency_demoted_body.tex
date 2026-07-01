@@ -33,8 +33,13 @@ Fraction of instances the model ever solves, across all allowed iterations. The 
 \begin{lstlisting}
 Success_Rate=("Valid", "mean")
 \end{lstlisting}
-\item[Range \& meaningful bands] Bands used by the profile thresholds: \(\approx\)0 \(\rightarrow\) No Grounding \(\cdot\)<0.2 \(\rightarrow\) Understander/Vocabulary \(\cdot\)>0.5 capable \(\cdot\)>0.7 strong. Always read against FASR; SR alone cannot distinguish retrieval from reasoning.
-\item[In the plots] \code{success\_rate\_heatmap}(model\(\times\)domain), the SR bars in \code{sr\_vs\_fasr} and \code{sr\_fasr\_iwsr\_by\_model}, and it drives the colour in \code{failure\_mode\_taxonomy} and \code{fasr\_iwsr\_scatter}.
+\item[Range \& meaningful bands] Bands used by the profile thresholds: \(\approx 0\) \(\rightarrow\) No Grounding \(\cdot\) \(<0.2\) \(\rightarrow\) Understander/Vocabulary \(\cdot\) \(>0.5\) capable \(\cdot\) \(>0.7\) strong. Always read against FASR; SR alone cannot distinguish retrieval from reasoning.
+\item[In the plots] \raggedright
+\code{success\_rate\_heatmap} (model\(\times\)domain),\allowbreak{}
+the SR bars in \code{sr\_vs\_fasr} and
+\code{sr\_fasr\_iwsr\_by\_model},\allowbreak{}
+and it drives the colour in \code{failure\_mode\_taxonomy} and
+\code{fasr\_iwsr\_scatter}.
 \item[Rationale] SR is the necessary baseline but the framework's thesis is that it is \emph{insufficient}: it conflates first-try success with retry-dependent success and says nothing about \emph{why} a failure happened. Every other metric exists to decompose it.
 \end{description}
 \end{bmmcard}
@@ -49,8 +54,13 @@ Fraction solved on iteration 1 with no feedback at all. The framework treats thi
 df["_iter1"] = (df["Valid"] == True) & (df["Iterations"] == 1)
 FASR=("_iter1", "mean")
 \end{lstlisting}
-\item[Range \& meaningful bands] FASR>0.50 with low Retry Gap \(\rightarrow\) genuine zero-shot capability. FASR \(\approx\) 0 while SR is high \(\rightarrow\) the model only ever succeeds by resampling (the entire qwen / nemotron pattern in the bundled run).
-\item[In the plots] \code{fasr\_by\_model\_domain},\code{fasr\_by\_difficulty}, the FASR bar in \code{sr\_vs\_fasr}/\code{sr\_fasr\_iwsr\_by\_model}, both axes of \code{fasr\_iwsr\_scatter}, and the y-axis of \code{failure\_mode\_taxonomy} bubble size.
+\item[Range \& meaningful bands] \(\mathrm{FASR}>0.50\) with low Retry Gap \(\rightarrow\) genuine zero-shot capability. FASR \(\approx\) 0 while SR is high \(\rightarrow\) the model only ever succeeds by resampling (the entire qwen / nemotron pattern in the bundled run).
+\item[In the plots] \raggedright
+\code{fasr\_by\_model\_domain},\allowbreak{}
+\code{fasr\_by\_difficulty},\allowbreak{}
+the FASR bar in \code{sr\_vs\_fasr}/\allowbreak{}\code{sr\_fasr\_iwsr\_by\_model},\allowbreak{}
+both axes of \code{fasr\_iwsr\_scatter},\allowbreak{}
+and the y-axis of \code{failure\_mode\_taxonomy} bubble size.
 \item[Rationale] Under the retrieval hypothesis (Kambhampati 2024) and the irrelevant-feedback finding (Stechly 2023), only the un-retried attempt reflects what the model can do in one shot. FASR carries the highest weight in the composite score (0.25) for exactly this reason.
 \end{description}
 \end{bmmcard}
@@ -80,7 +90,7 @@ How much of the reported success depends on retries. A pure diagnostic, not a ca
 \begin{lstlisting}
 overall["Retry_Gap"] = overall["Success_Rate"] - overall["FASR"]
 \end{lstlisting}
-\item[Range \& meaningful bands] RG<0.10 \(\rightarrow\) near-zero-shot. 0.10--0.30 \(\rightarrow\) Efficient Corrector territory.>0.30 \(\rightarrow\) Stochastic Searcher: success is mostly resampling. In the bundled run qwen\_3\_5 hits 0.500.
+\item[Range \& meaningful bands] \(\mathrm{RG}<0.10\) \(\rightarrow\) near-zero-shot. 0.10--0.30 \(\rightarrow\) Efficient Corrector territory. \(\mathrm{RG}>0.30\) \(\rightarrow\) Stochastic Searcher: success is mostly resampling. In the bundled run qwen\_3\_5 hits 0.500.
 \item[In the plots] \code{retry\_gap\_by\_model}(diverging horizontal bars, red = positive gap). RG is also a ranked metric (direction = min) in the within-domain ranking.
 \item[Rationale] RG operationalises the difference between "solved" and "solved on its own". It is the cleanest single read on whether a model's SR is trustworthy.
 \end{description}
@@ -125,7 +135,7 @@ Gap pattern & Meaning\\
 \midrule
 SR \(\approx\) FASR, both high & Genuine zero-shot capability. Retries add almost nothing.\\
 \addlinespace
-SR moderately>FASR & Partial capability, partly scaffolded by the retry mechanism.\\
+\(\mathrm{SR}\) moderately \(>\) \(\mathrm{FASR}\) & Partial capability, partly scaffolded by the retry mechanism.\\
 \addlinespace
 SR \(\gg\) FASR (large gap) & Stochastic search. Per Stechly et al. (2023), retries are re-sampling, not correction --- SR alone misleads.\\
 \addlinespace
@@ -202,7 +212,7 @@ Low-flat near 0 & No valid plans at any attempt; the iteration budget is wasted 
 
 \paragraph{Retry-gap bar \& the FASR--IWSR scatter.}
 
-The diverging retry-gap bar colours each model by \code{SR - FASR}(tomato for the usual positive gap; a steelblue/negative bar would be a data anomaly, since SR \(\ge\) FASR by construction). Models at the top --- lowest gap --- are the most independent of the retry scaffold. The FASR-vs-IWSR scatter then encodes three axes at once:\textbf{x = FASR}(zero-shot skill),\textbf{y = IWSR}(retry efficiency),\textbf{dot size+colour = SR}(deep-red small = SR 0 \(\rightarrow\) deep-green large = SR 1). No point can fall below the FASR=IWSR diagonal.
+The diverging retry-gap bar colours each model by \code{SR - FASR}\allowbreak{}(tomato for the usual positive gap; a steelblue/negative bar would be a data anomaly, since SR \(\ge\) FASR by construction). Models at the top --- lowest gap --- are the most independent of the retry scaffold. The FASR-vs-IWSR scatter then encodes three axes at once:\textbf{x = FASR}(zero-shot skill),\textbf{y = IWSR}(retry efficiency),\textbf{dot size+colour = SR}(deep-red small = SR 0 \(\rightarrow\) deep-green large = SR 1). No point can fall below the FASR=IWSR diagonal.
 
 \begin{table}[h]\small
 \centering

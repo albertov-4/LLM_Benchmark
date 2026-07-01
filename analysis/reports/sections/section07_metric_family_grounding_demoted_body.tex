@@ -14,21 +14,24 @@ These metrics rarely correlate with success on their own --- most capable models
 \emph{rate = illegal\_action\_names / total\_actions}
 Fraction of plan steps whose action name is not in the domain's legal action set. The headline grounding gate.
 \begin{description}
-\item[How it is computed] Each parsed action name is checked for membership in \code{domain\_info["action\_names"]}.
+\item[How it is computed] \raggedright
+Each parsed action name is checked for membership in the action-name set stored
+in \texttt{domain\_\allowbreak info} under the key
+\texttt{action\_\allowbreak names}.
 
 \begin{lstlisting}
 if action_name not in legal_actions:
     hall_strict += 1
 hallucination_rate = hall_strict / total_actions   # NaN if empty
 \end{lstlisting}
-\item[Range \& meaningful bands] NaN for empty plans / absent domain file. The profile gate is strict: IHR>0.90 (i.e. hallucination<0.10) is required for the grounded profiles; IHR<0.60 marks No Grounding.
+\item[Range \& meaningful bands] NaN for empty plans / absent domain file. The profile gate is strict: \(\mathrm{IHR}>0.90\) (i.e. hallucination \(<0.10\)) is required for the grounded profiles; \(\mathrm{IHR}<0.60\) marks No Grounding.
 \item[In the plots] \code{hallucination\_heatmap}(model\(\times\)domain),\code{hallucination\_by\_model\_domain}(bars), the x-axis of \code{failure\_mode\_taxonomy}, and a ranked metric (direction min).
 \item[Rationale] Valmeekam's obfuscation result (35\%\(\rightarrow\)0.16\% when action names are scrambled) shows that apparent planning can collapse to nothing once the model can no longer pattern-match on familiar names. Hallucination rate is the everyday proxy for that grounding.
 \end{description}
 \end{bmmcard}
 
 \begin{bmmcard}{METRIC \(\cdot\) Fuzzy: Fuzzy Hallucination Rate}
-\emph{counted only if min Levenshtein>2}
+\emph{counted only if min Levenshtein \(>2\)}
 Strict hallucination minus the near-misses. An illegal name is counted here only if its edit distance to \emph{every} legal name exceeds 2, so "pick-up" vs "pickup" is forgiven but a genuine invention is not.
 \begin{description}
 \item[How it is computed] Among strict hallucinations, only those far from any legal name survive.
@@ -70,7 +73,12 @@ The same signal flipped so higher is better, for use in the composite score and 
 \begin{lstlisting}
 inverse_hallucination_rate = 1 - hallucination_rate
 \end{lstlisting}
-\item[Range \& meaningful bands] IHR is the radar axis and composite component (weight 0.20 via \code{one\_minus\_halluc}). Profile gates:>0.90 grounded \(\cdot\)<0.60 No Grounding.
+\item[Range \& meaningful bands] \raggedright
+IHR is used as a radar axis and as a composite component
+(weight \(0.20\), via
+\texttt{one\_\allowbreak minus\_\allowbreak halluc}).
+Profile gates: \(\mathrm{IHR} > 0.90\) indicates grounded behaviour,
+whereas \(\mathrm{IHR} < 0.60\) indicates the \emph{No Grounding} profile.
 \item[In the plots] Radar axis (\code{radar\_chart}); component of the Composite Planning Score.
 \item[Rationale] Purely a sign convention so every composite input points the same direction (higher = better) and the weighted sum stays interpretable.
 \end{description}

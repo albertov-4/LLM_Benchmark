@@ -58,10 +58,23 @@ line interface. After validation, the framework normalizes the validator output
 into a common result schema. This makes the rest of the benchmark independent
 from the exact textual format printed by the external validator.
 
+Only the validation summary belongs to the scored layer. The raw layer keeps
+the prompt and model generation payloads, the parsed layer keeps the extracted
+actions and parser diagnostics, and the scored layer keeps the validation
+results, repair data, and metrics. This lets the report discuss validation
+without repeating the full output structure described in the previous section.
+
 \subsection{Normalized Validation Result}
 
 The normalized validation record stores both the final decision and the
 diagnostic information needed for analysis and repair.
+
+A parse failure and a validation failure are not the same event. If no clean
+PDDL action sequence can be extracted, VAL cannot judge the plan semantics and
+the attempt is treated as a formatting or parsing failure. If actions are
+extracted but VAL rejects them, the attempt reached the symbolic validation
+stage and the error describes a planning failure or a validator-side technical
+problem.
 
 \begin{table}[H]
 \centering
@@ -130,34 +143,77 @@ symbolic validation rather than in a generic request to try again.
 
 \subsection{Feedback Generation for Iterative Repair}
 
-The repair feedback is generated from the previous attempt record. The framework
-can include the previous final answer, the previous reasoning text when present,
-and the diagnostic result produced by parsing and validation. Long texts are
-truncated before being reused, so the next prompt keeps the useful evidence
-without letting one failed attempt consume the whole context budget.
+The repair feedback is generated as a deterministic diagnostic step over the
+previous attempt. It is not a generic request to try again: the feedback selects
+the most relevant failure signal and turns it into a constrained instruction for
+the next model call.
 
-The feedback generator first separates technical failures from planning
-failures. If the generation failed, VAL was unavailable, or validation timed out,
-the next prompt asks for a clean action sequence that can be checked again,
-without treating the result as a confirmed planning mistake. If the final answer
-is not parseable, the feedback focuses on producing only a valid PDDL action
-sequence.
+\subsubsection{Inputs Used to Build Feedback}
 
-For semantic planning errors, the message is built from the normalized validator
-fields. An \texttt{invalid\_precondition} error asks the model to repair the
-ordering or applicability of actions; an \texttt{unsatisfied\_goal} error asks it
-to modify or extend the plan until the goal is reached; failed steps and failed
-actions are included when VAL exposes them. If a valid prefix was found but the
-model added extra actions after reaching the goal, the feedback explicitly asks
-the model to stop at the first valid solution.
+The feedback builder can use the previous final answer, the previous reasoning
+text when present, parser issues, the raw-plan validation result, the
+reasoning-plan validation result, prefix-validation fields, and alignment
+signals between the final answer and the reasoning trace. The protocol may also
+add a custom feedback prompt before the generated diagnostic text.
 
-The same mechanism also uses reasoning diagnostics. When the reasoning trace
-contains a valid action sequence but the final answer does not validate, the
-feedback tells the model to transfer the valid reasoning plan into the final
-answer. When reasoning and final answer are poorly aligned, it asks for one
-coherent corrected sequence. In all cases, the final instruction is strict: the
-next answer must contain only the complete PDDL action sequence, with no
-explanation or formatting around it.
+\subsubsection{Decision Order}
+
+The feedback is written by following a priority order. Technical failures are
+handled first: if generation failed, VAL was unavailable, or validation timed
+out, the feedback states that the attempt could not yet be judged as a confirmed
+planning mistake and asks for a clean plan that can be validated again.
+
+Formatting and parsing failures are handled next. If the final answer is empty,
+does not contain a valid action sequence, or mixes reasoning text into the final
+answer, the feedback focuses on output format rather than plan semantics: one
+parenthesized PDDL action per line, with no surrounding prose.
+
+If the answer reached semantic validation, the feedback uses the normalized VAL
+fields. An \texttt{invalid\_precondition} error points to action applicability
+or ordering. An \texttt{unsatisfied\_goal} error points to a plan that executes
+but does not reach the goal. If VAL exposes a failed step or failed action, that
+information is included so the next attempt can repair the concrete failing
+part of the sequence.
+
+After this, the feedback checks whether prefix validation or reasoning
+validation changes the diagnosis. If a valid prefix exists but the final answer
+continues with extra actions, the model is told to stop at the first valid
+solution. If the reasoning trace contains a valid plan but the final answer is
+invalid, the model is told to transfer the reasoning plan into the final answer.
+If reasoning and final answer are inconsistent, the model is asked to rebuild
+one coherent corrected sequence.
+
+\subsubsection{Feedback Templates}
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Detected condition} & \textbf{Feedback content} \\
+\midrule
+Technical validation failure & Explain that the attempt could not be judged as a planning mistake and request a clean plan for re-validation. \\
+Parser or format failure & Ask for only one parenthesized PDDL action per line, without explanations or markdown. \\
+Reasoning valid, final answer invalid & Ask to copy the valid reasoning plan into the final answer. \\
+Valid prefix with extra actions & Ask to stop immediately after the goal is reached. \\
+\texttt{invalid\_precondition} & Ask to reorder or replace actions so every precondition is satisfied. \\
+\texttt{unsatisfied\_goal} & Ask to extend or modify the plan until the goal condition is reached. \\
+Low reasoning/final-answer alignment & Ask to rebuild one coherent plan and make the final answer match it. \\
+\bottomrule
+\end{tabularx}
+\caption{How validation and reasoning diagnostics shape iterative-repair feedback.}
+\label{tab:repair-feedback-flow}
+\end{table}
+
+\subsubsection{Prompt-Budget Control and Final Constraint}
+
+The previous raw answer and reasoning text can be included in the feedback
+prompt, but they are truncated with separate limits. This keeps the useful
+evidence from the failed attempt while avoiding a prompt dominated by old
+outputs. After the diagnostic text is assembled, every branch ends with the same
+final constraint: the next answer must contain only the complete PDDL action
+sequence, one parenthesized action per line, with no explanation, headings,
+markdown, numbering, or comments.
 \subsection{Reasoning Validation}
 
 Some models expose a separate reasoning trace in addition to the final answer.
@@ -166,6 +222,11 @@ it can also validate an action sequence extracted from the reasoning text. This
 second validation is diagnostic: it helps identify cases where the model derives
 a valid plan in its reasoning but fails to transfer it correctly into the final
 answer.
+
+The scored result is therefore intentionally conservative: the official solved
+flag comes from the final answer, not from a hidden or separate reasoning plan.
+Reasoning validation is preserved to explain model behaviour, not to replace
+the answer that would actually be submitted by the model.
 
 This distinction avoids giving credit for hidden reasoning when the final answer
 is invalid, while still preserving useful information for the reasoning

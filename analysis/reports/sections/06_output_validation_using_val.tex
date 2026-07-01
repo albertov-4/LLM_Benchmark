@@ -128,6 +128,36 @@ status, the error type, the failed step, the failed action, and a compact
 description of the validator output. This makes the repair loop grounded in
 symbolic validation rather than in a generic request to try again.
 
+\subsection{Feedback Generation for Iterative Repair}
+
+The repair feedback is generated from the previous attempt record. The framework
+can include the previous final answer, the previous reasoning text when present,
+and the diagnostic result produced by parsing and validation. Long texts are
+truncated before being reused, so the next prompt keeps the useful evidence
+without letting one failed attempt consume the whole context budget.
+
+The feedback generator first separates technical failures from planning
+failures. If the generation failed, VAL was unavailable, or validation timed out,
+the next prompt asks for a clean action sequence that can be checked again,
+without treating the result as a confirmed planning mistake. If the final answer
+is not parseable, the feedback focuses on producing only a valid PDDL action
+sequence.
+
+For semantic planning errors, the message is built from the normalized validator
+fields. An \texttt{invalid\_precondition} error asks the model to repair the
+ordering or applicability of actions; an \texttt{unsatisfied\_goal} error asks it
+to modify or extend the plan until the goal is reached; failed steps and failed
+actions are included when VAL exposes them. If a valid prefix was found but the
+model added extra actions after reaching the goal, the feedback explicitly asks
+the model to stop at the first valid solution.
+
+The same mechanism also uses reasoning diagnostics. When the reasoning trace
+contains a valid action sequence but the final answer does not validate, the
+feedback tells the model to transfer the valid reasoning plan into the final
+answer. When reasoning and final answer are poorly aligned, it asks for one
+coherent corrected sequence. In all cases, the final instruction is strict: the
+next answer must contain only the complete PDDL action sequence, with no
+explanation or formatting around it.
 \subsection{Reasoning Validation}
 
 Some models expose a separate reasoning trace in addition to the final answer.

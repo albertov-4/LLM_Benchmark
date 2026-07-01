@@ -67,7 +67,6 @@ def compute_iteration_profile(model_df: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 PLOT_DESCRIPTIONS = {
-    "hallucination_heatmap": "Mean hallucination rate by model and domain. Lower is better.",
     "hallucination_by_model_domain": "Action hallucination rate by model and domain.",
     "object_hallucination_by_model_domain": "Object hallucination rate by model and domain.",
     "executability_by_model_domain": "Executability ratio distribution by model and domain.",
@@ -75,17 +74,12 @@ PLOT_DESCRIPTIONS = {
     "executability_vs_length": "Executability ratio against plan length, faceted by domain.",
     "temporal_distance_by_model": "Mean temporal distance for sequencing errors per model.",
     "cot_alignment_by_model_domain": "Mean CoT plan alignment score by model and domain.",
-    "cot_success_rate": "Success rate split by CoT flag.",
-    "cot_alignment_validity": "CoT plan alignment distribution for valid versus invalid plans.",
     "fasr_by_model_domain": "First-attempt success rate by model and domain.",
-    "sr_vs_fasr": "Overall success rate compared with first-attempt success rate.",
     "fasr_by_difficulty": "First-attempt success rate by difficulty tier.",
     "iwsr_by_model_domain": "Iteration-weighted success rate by model and domain.",
     "sr_fasr_iwsr_by_model": "SR, FASR, and IWSR comparison per model.",
     "retry_gap_by_model": "SR minus FASR; higher values mean stronger retry dependence.",
-    "fasr_iwsr_scatter": "FASR versus IWSR with success rate encoded by dot size and color.",
     "success_rate_heatmap": "Success rate heatmap by model and domain.",
-    "failure_mode_taxonomy": "Failure taxonomy by hallucination rate and PAS.",
     "composite_scores": "Composite Planning Score by model.",
     "p_valid_given_k": "P(Valid | reached attempt k) iteration profile — discriminates Stochastic Searcher (flat line) from Efficient Corrector (rising curve).",
     "domain_ranking_heatmap": "Normalised within-domain rank heatmap (0=best, 1=worst) for all RANK_METRICS across all domains.",
@@ -107,7 +101,7 @@ def maybe_make_plots(
 ) -> list[dict[str, Any]]:
     """Generate all benchmark visualisation plots and optionally save / display them.
 
-    Metric correlation: all 27 plots cover every computed metric — hallucination
+    Metric correlation: all 21 retained plots cover every computed metric — hallucination
     (strict, fuzzy, object), executability, PAS, temporal distance, CoT plan alignment,
     FASR, IWSR, SR, Retry Gap, PS, within-domain rank, cross-model correlation,
     and the iteration profile.
@@ -150,12 +144,6 @@ def maybe_make_plots(
         figures.append((name, fig, related_models or all_models))
 
     if not df_metrics["hallucination_rate"].isna().all():
-        pivot = df_metrics.pivot_table(values="hallucination_rate", index="Model", columns="Domain", aggfunc="mean")
-        fig, ax = plt.subplots(figsize=(max(8, len(pivot.columns) * 1.4), max(4, len(pivot.index) * 0.5 + 1)))
-        sns.heatmap(pivot, annot=True, fmt=".2f", cmap="YlOrRd", linewidths=0.5, vmin=0, vmax=1, ax=ax)
-        ax.set_title("Mean Hallucination Rate (Model x Domain)")
-        register("hallucination_heatmap", fig)
-
         agg = df_metrics.groupby(["Model", "Domain"])["hallucination_rate"].mean().reset_index()
         fig, ax = plt.subplots(figsize=(9, 5))
         sns.barplot(data=agg, x="Model", y="hallucination_rate", hue="Domain", ax=ax, palette="Set2")
@@ -221,24 +209,6 @@ def maybe_make_plots(
         ax.tick_params(axis="x", rotation=30)
         register("cot_alignment_by_model_domain", fig)
 
-        cot_sr = df_metrics.copy()
-        cot_sr["_cot_flag"] = cot_sr["Chain_of_Thought"].apply(lambda value: str(value).lower() in {"true", "1", "yes"})
-        cot_sr = cot_sr.groupby(["Model", "_cot_flag"])["Valid"].mean().reset_index()
-        cot_sr["CoT"] = cot_sr["_cot_flag"].map({True: "CoT=True", False: "CoT=False"})
-        fig, ax = plt.subplots(figsize=(9, 5))
-        sns.barplot(data=cot_sr, x="Model", y="Valid", hue="CoT", ax=ax, palette="Set1")
-        ax.set_title("Success Rate: CoT=True vs CoT=False")
-        ax.tick_params(axis="x", rotation=30)
-        register("cot_success_rate", fig)
-
-        cot_valid = cot_sub.copy()
-        cot_valid["Validity"] = cot_valid["Valid"].map({True: "Valid", False: "Invalid"})
-        fig, ax = plt.subplots(figsize=(9, 5))
-        sns.violinplot(data=cot_valid, x="Model", y="cot_plan_alignment_score", hue="Validity", ax=ax, palette="Set1", inner="quart", dodge=True, cut=0, bw_adjust=0.8)
-        ax.set_title("CoT Plan Alignment Distribution: Valid vs Invalid Plans")
-        ax.tick_params(axis="x", rotation=30)
-        register("cot_alignment_validity", fig)
-
     fasr_agg = tables["by_domain"][["Model", "Domain", "FASR", "Success_Rate", "IWSR"]]
     if not fasr_agg.empty:
         fig, ax = plt.subplots(figsize=(9, 5))
@@ -246,17 +216,6 @@ def maybe_make_plots(
         ax.set_title("First-Attempt Success Rate by Model and Domain")
         ax.tick_params(axis="x", rotation=30)
         register("fasr_by_model_domain", fig)
-
-        model_rates = tables["overall"][["Model", "Success_Rate", "FASR"]]
-        x_pos = np.arange(len(model_rates))
-        fig, ax = plt.subplots(figsize=(9, 5))
-        ax.bar(x_pos - 0.18, model_rates["Success_Rate"], 0.36, label="Success Rate", color="steelblue")
-        ax.bar(x_pos + 0.18, model_rates["FASR"], 0.36, label="FASR", color="tomato")
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(model_rates["Model"], rotation=30)
-        ax.set_title("Success Rate vs FASR")
-        ax.legend()
-        register("sr_vs_fasr", fig)
 
         diff_table = tables["by_difficulty"].copy()
         diff_table["Difficulty"] = pd.Categorical(diff_table["Difficulty"], categories=DIFF_ORDER, ordered=True)
@@ -292,33 +251,12 @@ def maybe_make_plots(
         ax.set_title("Retry Gap (SR - FASR) per Model")
         register("retry_gap_by_model", fig)
 
-        scatter = tables["overall"][["Model", "FASR", "IWSR", "Success_Rate"]]
-        fig, ax = plt.subplots(figsize=(8, 6))
-        points = ax.scatter(scatter["FASR"], scatter["IWSR"], s=scatter["Success_Rate"] * 1500 + 50, c=scatter["Success_Rate"], cmap="RdYlGn", vmin=0, vmax=1, edgecolors="gray")
-        for _, row in scatter.iterrows():
-            ax.annotate(row["Model"], (row["FASR"], row["IWSR"]), textcoords="offset points", xytext=(6, 4), fontsize=8)
-        fig.colorbar(points, ax=ax, label="Overall Success Rate")
-        ax.set_title("FASR vs IWSR (size = Success Rate)")
-        register("fasr_iwsr_scatter", fig)
-
     sr_pivot = df_metrics.groupby(["Model", "Domain"])["Valid"].mean().unstack("Domain").fillna(0)
     if not sr_pivot.empty:
         fig, ax = plt.subplots(figsize=(max(8, len(sr_pivot.columns) * 1.4), max(4, len(sr_pivot.index) * 0.5 + 1)))
         sns.heatmap(sr_pivot, annot=True, fmt=".2f", cmap="YlGn", linewidths=0.4, vmin=0, vmax=1, ax=ax)
         ax.set_title("Success Rate Heatmap (Model x Domain)")
         register("success_rate_heatmap", fig)
-
-    taxonomy = tables["overall"].copy()
-    if not taxonomy.empty:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        points = ax.scatter(taxonomy["Halluc"], taxonomy["PAS"], s=taxonomy["FASR"] * 1200 + 80, c=taxonomy["Success_Rate"], cmap="RdYlGn", vmin=0, vmax=1, edgecolors="dimgray")
-        for _, row in taxonomy.iterrows():
-            ax.annotate(row["Model"], (row["Halluc"], row["PAS"]), textcoords="offset points", xytext=(8, 4), fontsize=8)
-        fig.colorbar(points, ax=ax, label="Overall Success Rate")
-        ax.set_xlabel("Hallucination Rate")
-        ax.set_ylabel("Precondition Awareness Score")
-        ax.set_title("Failure Mode Taxonomy")
-        register("failure_mode_taxonomy", fig)
 
     composite = tables["composite_score"]
     if not composite.empty:
@@ -329,7 +267,7 @@ def maybe_make_plots(
         ax.set_xlabel("PS")
         register("composite_scores", fig)
 
-    # ── Plot 21: P(Valid | reached attempt k) ─────────────────────────────────────
+    # P(Valid | reached attempt k)
     # Metric: Iteration profile — P(valid | reached attempt k) for k = 1…max_iter.
     # Rationale: A Stochastic Searcher produces a flat curve (each retry is an
     # independent sample, success probability stays constant). An Efficient Corrector
@@ -360,7 +298,7 @@ def maybe_make_plots(
             ax.legend(fontsize=8)
             register("p_valid_given_k", fig)
 
-    # ── Plots 22–23: Within-domain ranking heatmap and rank variance ───────────────
+    # Within-domain ranking heatmap and rank variance
     # Metric: RANK_METRICS — one rank per model per metric per domain.
     # Rationale: Absolute metric values are hard to compare across domains with
     # different difficulty distributions. Ranking within each domain removes this
@@ -411,7 +349,7 @@ def maybe_make_plots(
         ax.set_xlabel("Mean Std of Normalised Within-Domain Rank")
         register("rank_variance", fig)
 
-    # ── Plot 24: Spearman correlation of success rates across domains ──────────────
+    # Spearman correlation of success rates across domains
     # Metric: SR (success rate) per model per domain.
     # Rationale: Builds a Model×Model Spearman ρ matrix using each model's vector
     # of domain success rates as its "signature". High positive ρ means two models
@@ -430,7 +368,7 @@ def maybe_make_plots(
         ax.set_title("Spearman Correlation of Model Success Rates Across Domains")
         register("domain_correlation", fig)
 
-    # ── Plot 25: PS stacked by domain ─────────────────────────────────────────────
+    # PS stacked by domain
     # Metric: Composite Planning Score (PS) per model per domain.
     # Rationale: A high overall PS can hide an uneven domain distribution. If one
     # model scores 0.9 on one domain and 0.1 on four others, its overall PS is
@@ -452,7 +390,7 @@ def maybe_make_plots(
             fig.tight_layout()
             register("ps_by_domain_stacked", fig)
 
-    # ── Plot 26: Metrics summary table ────────────────────────────────────────────
+    # Metrics summary table
     # Metric: All major aggregate metrics from tables["overall"].
     # Rationale: A matplotlib table figure is captured alongside the graphical plots
     # in the plot archive, making it easy to include in a PDF report or share as a
@@ -481,7 +419,7 @@ def maybe_make_plots(
         ax.set_title("Key Metrics Summary", pad=14, fontsize=10)
         register("metrics_summary_table", fig)
 
-    # ── Plot 27: Capability radar chart ───────────────────────────────────────────
+    # Capability radar chart
     # Metrics: FASR, IWSR, Exec (executability ratio), IHR (inverse hallucination),
     # PAS (precondition awareness) — all already in [0, 1].
     # Rationale: The pentagon shape encodes the five orthogonal capability axes

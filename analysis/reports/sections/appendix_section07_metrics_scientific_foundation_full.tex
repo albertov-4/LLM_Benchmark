@@ -1,0 +1,203 @@
+The ten papers that license the metric set --- each pinned to the exact paragraph, table, figure or definition it is taken from, with numbers, paraphrased, linked, and mapped to the design decision it grounds; plus the literature-motivated metrics not yet implemented.
+
+The framework's thesis is that binary validity is not enough: two models can both fail and be failing for completely different reasons. Every metric isolates one mechanism, and each is anchored to a specific result in the literature. Each card below pins the \emph{exact} location the claim is taken from, paraphrases what that spot reports (with its numbers), states what it grounds here, and links to the source.
+
+\begin{bmkeybox}{The one-line argument}
+If LLM planning is closer to approximate retrieval than to search (Kambhampati 2024; Valmeekam 2023), then (a) retries are near-independent samples so success must be discounted by retry count ---
+
+\emph{FASR, IWSR}
+
+; (b) feedback content is largely irrelevant so a large retry gap is not correction ---
+
+\emph{Stechly 2023}
+
+; and (c) the only way to separate retrieval from reasoning is to probe execution, grounding and reasoning-faithfulness directly ---
+
+\emph{exec\_ratio, PAS, hallucination, CoTaL}
+
+.
+\end{bmkeybox}
+
+\begin{bmcavbox}{Provenance and a corrected citation}
+Locations, page numbers and quantitative results below follow the project's verified reference apparatus. The Critical Investigation is cited from the NeurIPS 2023 proceedings (the version of record) with preprint arXiv:2302.06706 --- this supersedes the arXiv:2305.15771 id used in an earlier pass. The 2022 benchmark ("Still Can't Plan", arXiv:2206.10498) and the 2025 frontier study (Correa et al., arXiv:2511.09378) are added here. Findings are paraphrased; quoted fragments are short technical phrases; numbers are reported as facts.
+\end{bmcavbox}
+
+\begin{bmmcard}{REFERENCE: Large Language Models Still Can't Plan (A Benchmark for LLMs on Planning and Reasoning about Change)}
+\emph{Valmeekam, Olmo, Sreedharan \&Kambhampati (2022) \(\cdot\) NeurIPS 2022 FMDM Workshop}
+\href{https://arxiv.org/abs/2206.10498}{arXiv:2206.10498 \(\nearrow\)} DOI 10.48550/arXiv.2206.10498
+\begin{description}
+\item[Where in the paper] \S{}5" Current Curriculum for Testing", the seven test cases (pp. 6--8); \S{}5.2 Optimal Planning + Table 1; \S{}7 Conclusion (p. 9).
+\item[What that location reports] Introduces a seven-task curriculum --- plan generation, cost-optimal planning, reasoning about plan execution, robustness to goal reformulation, plan reuse, replanning, plan generalisation --- precisely because plan-validity alone captures only one dimension; only the first two are "actual planning", the rest are auxiliary reasoning-about-change tasks. InstructGPT-3 solved \textasciitilde{} 3.2\% of optimal-planning vs \textasciitilde{} 5\% of plan-generation instances (valid \(\neq\) efficient). The conclusion explicitly lists adding a partial-correctness metric as future work.
+\item[What it grounds here] The original literature justification for going beyond pass/fail --- the framework's whole thesis. Motivates the (not-yet-implemented) partial-credit / Goal-Achievement score and an Optimality Ratio.
+\item[Read it] \href{https://arxiv.org/abs/2206.10498}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: On the Planning Abilities of Large Language Models --- A Critical Investigation}
+\emph{Valmeekam, Marquez, Sreedharan \&Kambhampati (2023) \(\cdot\) NeurIPS 2023}
+\href{https://proceedings.neurips.cc/paper_files/paper/2023/file/efb2072a358cefb75886a315a6fcf880-Paper-Conference.pdf}{NeurIPS 2023 \(\cdot\) arXiv:2302.06706 \(\nearrow\)} DOI 10.48550/arXiv.2302.06706
+\begin{description}
+\item[Where in the paper] \S{}2 Related Work para.5 (p. 3) Phase 1/Phase 2; \S{}4 Autonomous Mode" Obfuscating names..."(pp. 7--8) + Table 1; \S{}4 Figure 3 (p. 7) relaxations; \S{}5.2" Verifier-assisted repeated backprompting", Table 4 (p. 9); Table 1 CoT rows (p. 5).
+\item[What that location reports] Splits planning into Phase 1 (discovering actions and their precondition/effect dependencies) and Phase 2 (sequencing them without harmful interactions); LLMs are strong on Phase 1, weak on Phase 2. Renaming Blocksworld into Mystery Blocksworld collapses GPT-4 zero-shot from 210/600 (35\%) to 1/600 (0.16\%) --- "pattern matching rather than reasoning". Figure 3 classifies failures as inexecutable vs executable-but-goal-not-reached. Backprompting (\(\le\)15 rounds) eventually solves 82\% Blocksworld / 70\% Logistics at avg 3.68 / 3.31 rounds, but only 10\% in Mystery Blocksworld. CoT barely helps (Blocksworld 210\(\rightarrow\)214/600; Mystery 1\(\rightarrow\)54/600).
+\item[What it grounds here] Grounds the exec\_ratio + PAS pair (Figure 3's classification, refined into sequencing vs fabrication), the hallucination gate (obfuscation collapse), FASR (pre-backprompt performance), cross-domain consistency (the obfuscation gap), the Lucky-Retriever profile, and CoT as diagnostic not performative.
+\item[Read it] \href{https://proceedings.neurips.cc/paper_files/paper/2023/file/efb2072a358cefb75886a315a6fcf880-Paper-Conference.pdf}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: GPT-4 Doesn't Know It's Wrong: An Analysis of Iterative Prompting for Reasoning Problems}
+\emph{Stechly, Marquez \&Kambhampati (2023) \(\cdot\) NeurIPS 2023 FMDM Workshop}
+\href{https://arxiv.org/abs/2310.12397}{arXiv:2310.12397 \(\nearrow\)} DOI 10.48550/arXiv.2310.12397
+\begin{description}
+\item[Where in the paper] Abstract, findings (i)--(iii); Abstract para.2 (the complexity-argument paragraph).
+\item[What that location reports] On graph colouring GPT-4 is bad at solving and no better at verifying, so LLM-critiques-LLM loops do not help; crucially the content of the criticisms --- from an LLM or an external solver --- is "largely irrelevant" to iterative-prompting performance. The intuition that verification is easier than generation is a complexity argument that does not apply to approximate retrieval. Apparent iterative gains come from the correct answer fortuitously appearing across repeated independent samples.
+\item[What it grounds here] The keystone of the retry apparatus: if feedback is irrelevant, each retry is an independent re-sample \(\rightarrow\) a large Retry Gap is stochastic search, IWSR discounts late wins, and a flat P(Valid|k) is the Stochastic-Searcher signature.
+\item[Read it] \href{https://arxiv.org/abs/2310.12397}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Can Large Language Models Reason and Plan?}
+\emph{Kambhampati (2024) \(\cdot\) Annals of the New York Academy of Sciences 1534(1):15--18}
+\href{https://arxiv.org/abs/2403.04121}{arXiv:2403.04121 \(\nearrow\)} DOI 10.1111/nyas.15125
+\begin{description}
+\item[Where in the paper] para.4--7 the two-phase model; pp. 3--4 the self-critique paragraphs; p. 2 the approximate-retrieval / CoT paragraph.
+\item[What that location reports] Distinguishes having planning-domain knowledge (Phase 1) from assembling it into an executable plan that handles subgoal interactions (Phase 2). What LLMs do is "universal approximate retrieval", not principled reasoning; self-critique is of questionable utility because they hallucinate both false positives and false negatives when verifying their own solutions. Hence the fake-reasoning vs genuine-deliberation distinction.
+\item[What it grounds here] The theoretical organiser of the failure-mode quadrant; the justification for IWSR penalising late convergence; and the SR-high + CoT-low "fake reasoning" diagnosis.
+\item[Read it] \href{https://arxiv.org/abs/2403.04121}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Language Models as Zero-Shot Planners: Extracting Actionable Knowledge for Embodied Agents}
+\emph{Huang, Abbeel, Pathak \&Mordatch (2022) \(\cdot\) ICML 2022 \(\cdot\) PMLR 162:9118--9147}
+\href{https://proceedings.mlr.press/v162/huang22a.html}{arXiv:2201.07207 \(\nearrow\)} DOI 10.48550/arXiv.2201.07207
+\begin{description}
+\item[Where in the paper] \S{}2.2" Metrics" and Figure 1 (pp. 2--3).
+\item[What that location reports] First formal separation of executability from correctness as two independent axes: large models (GPT-3 175B, Codex 12B) produce plans with high semantic correctness but low executability --- as low as \textasciitilde{} 18\% for raw Codex. A wander-around program is highly executable but incorrect; a human-written plan is correct but often inexecutable --- so both axes are needed.
+\item[What it grounds here] The direct basis for exec\_ratio as a metric separate from Success\_Rate; the framework's exec\_ratio is a continuous, finer-grained version of Huang's binary executability.
+\item[Read it] \href{https://proceedings.mlr.press/v162/huang22a.html}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Measuring Faithfulness in Chain-of-Thought Reasoning}
+\emph{Lanham, Chen, Radhakrishnan et al. (2023) \(\cdot\) Anthropic (2023)}
+\href{https://arxiv.org/abs/2307.13702}{arXiv:2307.13702 \(\nearrow\)} DOI 10.48550/arXiv.2307.13702
+\begin{description}
+\item[Where in the paper] Abstract + \S{}3 (the Early-Answering intervention and post-hoc-reasoning definition).
+\item[What that location reports] Truncating the chain of thought before the answer tests whether the stated reasoning is causal or post-hoc; models vary widely in how much they condition on the CoT, and faithfulness tends to decrease as models scale.
+\item[What it grounds here] CoTaL operationalises faithfulness as content/structure overlap between the reasoning trace and the emitted plan; the SR-high + CoT-low = fake-reasoning diagnosis is the direct application.
+\item[Read it] \href{https://arxiv.org/abs/2307.13702}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Embers of Autoregression: Understanding LLMs Through the Problem They Are Trained to Solve}
+\emph{McCoy, Yao, Friedman, Hardy \&Griffiths (2024) \(\cdot\) PNAS (2024)}
+\href{https://arxiv.org/abs/2309.13638}{arXiv:2309.13638 \(\nearrow\)} DOI 10.48550/arXiv.2309.13638
+\begin{description}
+\item[Where in the paper] Abstract (cipher example); \S{}5 sensitivity to task probability; \S{}6 sensitivity to output probability; Table 1.
+\item[What that location reports] Even on deterministic tasks, accuracy tracks the probability of the task / output / input. GPT-4 decodes a shift cipher \textasciitilde{} 51\% of the time when the answer is high-probability but only \textasciitilde{} 13\% when low-probability.
+\item[What it grounds here] Grounds the FASR-by-difficulty analysis: a sharp easy\(\rightarrow\)hard cliff signals sensitivity to training-data frequency, not logical complexity.
+\item[Read it] \href{https://arxiv.org/abs/2309.13638}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Faith and Fate: Limits of Transformers on Compositionality}
+\emph{Dziri, Lu, Sclar et al. (2023) \(\cdot\) NeurIPS 2023 (Spotlight)}
+\href{https://arxiv.org/abs/2305.18654}{arXiv:2305.18654 \(\nearrow\)} DOI 10.48550/arXiv.2305.18654
+\begin{description}
+\item[Where in the paper] The computation-graph formulation of compositional tasks and the error-by-depth analysis.
+\item[What that location reports] Multi-step tasks (multi-digit multiplication, a logic puzzle, a DP problem) are cast as computation graphs; transformers reduce multi-step reasoning to "linearised subgraph matching", with success tied to having seen graph fragments in training and accuracy decaying as compositional depth grows (e.g. \textasciitilde{} 59\% on 3\(\times\)3 multiplication).
+\item[What it grounds here] Grounds the temporal-distance reading and the exec-vs-length decay slope (local steps fine, long-horizon sequencing collapses) --- and the Understander profile, where the collapse depth is itself measurable.
+\item[Read it] \href{https://arxiv.org/abs/2305.18654}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: Evaluating the World Model Implicit in a Generative Model}
+\emph{Vafa, Chen, Rambachan, Kleinberg \&Mullainathan (2024) \(\cdot\) NeurIPS 2024 (Spotlight)}
+\href{https://arxiv.org/abs/2406.03689}{arXiv:2406.03689 \(\nearrow\)} DOI 10.48550/arXiv.2406.03689
+\begin{description}
+\item[Where in the paper] Abstract + \S{}2: the DFA / Myhill-Nerode framework, the MNI and MNB constructions, and the two metrics.
+\item[What that location reports] Treats a deterministic domain (PDDL planning is a DFA) and asks whether a model's implicit world model is coherent. Two states are equivalent iff all future sequences agree; the Myhill-Nerode interior (MNI) is the set of continuations valid from both states, the boundary (MNB) the minimal suffixes that separate them. From these: a compression score (do same-state histories yield an empty implied boundary?) and a distinction score (does the model reproduce the true boundary between different states?). Models look fine on standard diagnostics yet their world models are "far less coherent than they appear".
+\item[What it grounds here] Grounds the Vocabulary-Only profile (high exec / low PAS = surface fluency over an incoherent world model) --- and is the strong form of which PAS is explicitly the weak version.
+\item[Read it] \href{https://arxiv.org/abs/2406.03689}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\begin{bmmcard}{REFERENCE: The 2025 Planning Performance of Frontier LLMs (rev.: Frontier LLMs Rival State-of-the-Art Planners)}
+\emph{Correa, Pereira et al. (2025) \(\cdot\) preprint (2025)}
+\href{https://arxiv.org/abs/2511.09378}{arXiv:2511.09378 \(\nearrow\)} DOI 10.48550/arXiv.2511.09378
+\begin{description}
+\item[Where in the paper] Abstract, results tables and Figure 1; eight domains of the IPC 2023 Learning Track; plans VAL-verified.
+\item[What that location reports] The most directly comparable contemporary benchmark. Evaluates DeepSeek R1, Gemini 2.5 Pro and GPT-5 against the classical planner LAMA; on standard PDDL tasks GPT-5 is competitive with LAMA. Under obfuscation (predicate/action names stripped of semantics) every LLM degrades while LAMA is invariant to renaming (GPT-5 152, Gemini 2.5 Pro 146, DeepSeek R1 93 solved). The expanded version adds Gemini 3/3.1 Pro (245 vs 234 baseline) and notes some obfuscated re-identification, hinting performance is not wholly reducible to training exposure.
+\item[What it grounds here] Its Figure 1 is essentially the target plot. Introduces the standard-obfuscated gap as a metric (small gap = structural reasoning, large gap = semantic exploitation) --- a cleaner operationalisation of the hallucination/grounding axis, and endorses VAL verification + freshly-generated tasks against contamination.
+\item[Read it] \href{https://arxiv.org/abs/2511.09378}{Open the source \(\nearrow\)}
+\end{description}
+\end{bmmcard}
+
+\subsubsection{Claim \(\rightarrow\) paper \(\rightarrow\) location \(\rightarrow\) support}
+
+The spine of the design: each implementation decision tied to the precise spot that licenses it, with the supporting result paraphrased.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}I P P I@{}}
+\toprule
+Framework claim & Paper & Location & Support\\
+\midrule
+Binary validity is insufficient & Valmeekam 2022 & \S{}5 seven-task curriculum & Only 2 of 7 tasks are "actual planning"\\
+\addlinespace
+Partial credit / optimality needed & Valmeekam 2022 & \S{}7; \S{}5.2 Table 1 & Partial-correctness flagged as future work; 3.2\% optimal vs 5\% valid\\
+\addlinespace
+Hallucination gate threshold & Valmeekam 2023 & \S{}4 Obfuscation, Table 1 & GPT-4 35\% \(\rightarrow\) 0.16\% under name obfuscation\\
+\addlinespace
+Phase 1 / Phase 2 distinction & Valmeekam 2023 & \S{}2 Related Work, p. 3 & discovering actions vs sequencing a subset\\
+\addlinespace
+exec\_ratio + PAS pair & Valmeekam 2023 & \S{}4 Figure 3 & inexecutable vs goal-not-reached classification\\
+\addlinespace
+FASR as honest metric & Valmeekam 2023 & \S{}5.2 Table 4, p. 9 & 82\%/70\% eventual, avg 3.68/3.31 rounds; Mystery 10\%\\
+\addlinespace
+Lucky-Retriever profile & Valmeekam 2023 & \S{}4 Obfuscation & "pattern matching rather than reasoning"\\
+\addlinespace
+Stochastic Searcher / retry gap & Stechly 2023 & Abstract, finding (iii) & criticism content "largely irrelevant"\\
+\addlinespace
+IWSR penalises late retries & Stechly 2023 & Abstract para.2 & approximate retrieval voids the complexity argument\\
+\addlinespace
+Fake reasoning (SR high + CoT low) & Kambhampati 2024 & p. 2 approximate retrieval & retrieval vs deliberation\\
+\addlinespace
+exec \&SR independent axes & Huang 2022 & \S{}2.2 Metrics, Figure 1 & executability/correctness trade-off\\
+\addlinespace
+CoT alignment metric & Lanham 2023 & Abstract + \S{}3 & CoT faithfulness operationalised\\
+\addlinespace
+Cliff drop easy \(\rightarrow\) hard & McCoy 2024 & Abstract + \S{}5--6 & performance follows training probability\\
+\addlinespace
+High exec + low PAS = incoherent world model & Vafa 2024 & Abstract + \S{}2 (MNI/MNB) & surface fluency without a coherent world model\\
+\addlinespace
+Long-horizon collapse (Understander) & Dziri 2023 & computation-graph error-by-depth & reasoning decays with compositional depth\\
+\addlinespace
+Standard - obfuscated gap & Correa 2025 & Results, Figure 1 & LLMs degrade under renaming; LAMA invariant\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Literature-motivated metrics beyond the current set}
+
+The same papers also point to metrics the framework does not yet implement. Listed here as honest future directions, not as shipped features.
+
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}Y P I@{}}
+\toprule
+Candidate metric & Source & What it would add\\
+\midrule
+Goal-Achievement / partial-credit score & Valmeekam 2022 \S{}7 & Fraction of goal atoms achieved, instead of all-or-nothing validity --- the benchmark authors' own stated gap.\\
+\addlinespace
+Optimality Ratio & Valmeekam 2022 \S{}5.2 & Plan length / optimal length, so a long valid plan is not scored equal to a minimal one.\\
+\addlinespace
+Standard - obfuscated gap & Correa 2025 & Per-model delta between named and renamed domains --- a direct, cleaner grounding measure than hallucination rate alone.\\
+\addlinespace
+Strong world-model score (MNI/MNB) & Vafa 2024 & Compression + distinction scores over shared mid-plan sub-states; PAS is the weak, single-step version of this.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{bmcavbox}{On DOIs and versions of record}
+arXiv preprints resolve through \texttt{10.48550/arXiv.\textless id\textgreater}; Kambhampati 2024 (Annals NYAS, 10.1111/nyas.15125) and McCoy 2024 (PNAS) also carry publisher DOIs. The Critical Investigation links to the NeurIPS proceedings PDF; Huang 2022 is canonically PMLR 162 (preprint arXiv:2201.07207). Correa et al. 2025 (arXiv:2511.09378) has a v1 title ("The 2025 Planning Performance...") and an expanded later version ("...Rival State-of-the-Art Planners"); both share the id.
+\end{bmcavbox}

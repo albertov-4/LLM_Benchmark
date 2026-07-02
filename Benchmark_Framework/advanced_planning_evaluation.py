@@ -234,6 +234,10 @@ def nanmean_or_default(series: pd.Series, default: float = float("nan")) -> floa
     return float(values.mean()) if len(values) else default
 
 
+def bool_mean(series: pd.Series) -> float:
+    return float(pd.Series(series, dtype="boolean").fillna(False).mean())
+
+
 def find_framework_root(start: Optional[Path] = None) -> Path:
     """Locate the Benchmark_Framework root by walking up the directory tree.
 
@@ -1287,7 +1291,7 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     # Exclude instances where every attempt was a generation_error (infrastructure
     # failure, not a model failure) from all metric aggregations.  The rows remain
-    # in df_metrics so they appear in row_metrics for diagnostics.
+    # in df_metrics so internal diagnostics can still use them.
     _gen_err_mask = df_metrics.get("is_gen_error_instance", pd.Series(False, index=df_metrics.index)).fillna(False).astype(bool)
     df_for_agg = df_metrics[~_gen_err_mask].copy()
 
@@ -1319,8 +1323,8 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
         inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
         mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
-        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
-        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", bool_mean),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", bool_mean),
         cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
         cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
@@ -1348,8 +1352,8 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
         inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
         mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
-        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
-        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", bool_mean),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", bool_mean),
         cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
         cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
@@ -1379,8 +1383,8 @@ def build_aggregate_tables(df_metrics: pd.DataFrame) -> dict[str, pd.DataFrame]:
         strict_mean_cot_plan_alignment=("cot_plan_alignment_score", lambda x: nanmean_or_default(x, float("nan"))),
         inclusive_mean_cot_alignment=("strict_or_proxy_alignment_value", lambda x: nanmean_or_default(x, float("nan"))),
         mean_cot_semantic_support=("cot_semantic_support_score", lambda x: nanmean_or_default(x, float("nan"))),
-        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
-        cot_exact_sequence_match_rate=("cot_exact_sequence_match", lambda x: pd.Series(x).fillna(False).astype(bool).mean()),
+        cot_reasoning_plan_available_rate=("cot_reasoning_plan_available", bool_mean),
+        cot_exact_sequence_match_rate=("cot_exact_sequence_match", bool_mean),
         cot_semantic_proxy_only_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "semantic_proxy_only").mean()),
         cot_comparable_but_both_invalid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_but_both_invalid").mean()),
         cot_comparable_and_both_valid_rate=("cot_alignment_status", lambda x: (pd.Series(x) == "comparable_and_both_valid").mean()),
@@ -1642,7 +1646,7 @@ def classify_capability_profile(overall_row: dict[str, Any], iteration_profile: 
     grounded in the LLM planning literature (Stechly 2023, Kambhampati 2024,
     Valmeekam 2023, Dziri 2023, McCoy 2024). Each profile has a distinct combination
     of metric thresholds that distinguishes it from the others. The full reference
-    table is included in the JSON output under ``possible_profiles_reference`` so
+    table is included once in the JSON output under ``profile_definitions`` so
     the reader can verify the classification without consulting the source code.
     Code purpose: called in ``build_model_payloads`` for each model's overall row;
     the returned dict is stored under ``models.<model>.reasoning_notes``.
@@ -1690,36 +1694,39 @@ def classify_capability_profile(overall_row: dict[str, Any], iteration_profile: 
         "unavailable_conditions": unavailable,
         "interpretation": chosen_profile["interpretation"],
         "key_reference": chosen_profile["key_reference"],
-        "possible_profiles_reference": [
-            {
-                "profile": profile["name"],
-                "conditions": [label for label, _ in profile["conditions"]],
-                "interpretation": profile["interpretation"],
-                "key_reference": profile["key_reference"],
-            }
-            for profile in PROFILE_DEFINITIONS
-        ],
     }
+
+
+def profile_definitions_payload() -> list[dict[str, Any]]:
+    return [
+        {
+            "profile": profile["name"],
+            "conditions": [label for label, _ in profile["conditions"]],
+            "optional_conditions": [label for label, _ in profile.get("optional_conditions", [])],
+            "interpretation": profile["interpretation"],
+            "key_reference": profile["key_reference"],
+        }
+        for profile in PROFILE_DEFINITIONS
+    ]
 
 
 def build_model_payloads(df_metrics: pd.DataFrame, tables: dict[str, pd.DataFrame], saved_plots: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the per-model section of the JSON report.
 
-    Metric correlation: all metrics — assembles row-level metrics, aggregate tables,
+    Metric correlation: all metrics — assembles aggregate tables,
     plot references, capability profile classification, and iteration profile into
     one dict per model.
     Rationale: the JSON report is structured around models as the primary key so
     that a consumer (notebook, dashboard, API) can extract everything about a single
     model in O(1) without scanning the entire report. Each model payload is self-
-    contained: it includes its own row_metrics table, all relevant aggregate slices,
+    contained: it includes all relevant aggregate slices,
     the paths to its plots, and the full profile reasoning chain.
     Code purpose: called in ``build_report`` after plots are generated; uses the
     ``saved_plots`` list to build a ``plot_index`` mapping models to their plots.
     Detail: for each model, slices all aggregate tables to model-specific rows,
     computes the iteration profile (not stored globally to save memory), then calls
     ``classify_capability_profile`` with the model's overall row and iteration
-    profile. Private columns (_actions, _cot_text, _file_path) are excluded from
-    ``row_metrics`` via ``ROW_METRIC_COLUMNS`` filtering.
+    profile.
     """
     models: dict[str, Any] = {}
     if df_metrics.empty:
@@ -1744,9 +1751,7 @@ def build_model_payloads(df_metrics: pd.DataFrame, tables: dict[str, pd.DataFram
         overall_row = overall_records[0] if overall_records else {}
         iteration_profile = compute_iteration_profile(model_df)
 
-        row_metric_df = model_df[[column for column in ROW_METRIC_COLUMNS if column in model_df.columns]].copy()
         models[model] = {
-            "row_metrics": records_from_df(row_metric_df),
             "tables": model_tables,
             "plots": json_safe(plot_index.get(model, [])),
             "reasoning_notes": classify_capability_profile(overall_row, iteration_profile),
@@ -1817,6 +1822,7 @@ def build_report(
                 "tasks_root": str(framework_root / "tasks"),
             },
             "loaded_data_summary": loaded_summary,
+            "profile_definitions": profile_definitions_payload(),
             "models": models,
             "warnings": warnings_out,
         }
@@ -1886,5 +1892,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
 

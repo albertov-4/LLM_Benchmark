@@ -156,6 +156,164 @@ reasoning-plan validation result, prefix-validation fields, and alignment
 signals between the final answer and the reasoning trace. The protocol may also
 add a custom feedback prompt before the generated diagnostic text.
 
+\subsubsection{Reasoning-Text Parsing as Feedback Input}
+
+The \texttt{reasoning\_text} field is parsed through a separate diagnostic path.
+This is a deliberate design choice: the visible final answer remains the only
+official plan used to decide whether the benchmark case is solved, while the
+reasoning trace is used to understand whether a useful plan was present before
+the model wrote the final answer. In other words, reasoning extraction can change
+the repair feedback, but it does not replace the raw final answer as the scored
+submission.
+
+The parsing starts from \texttt{generation.reasoning\_text} in the raw artifact.
+The parser first removes Markdown fences, reads the domain action schemas and,
+when available, the problem objects. It then extracts only domain-valid action
+forms: the first token must be an action declared in the PDDL domain and the
+number of arguments must match the action arity. If an argument is missing, the
+parser fills it only when the problem contains exactly one compatible object for
+the required type. This prevents the reasoning parser from inventing ambiguous
+groundings. Unknown action names, wrong arity, empty expressions, embedded prose
+and ambiguous compressed actions are kept as \texttt{format\_issues}.
+
+Reasoning traces often contain more than one possible plan: an early attempt, an
+alternative, and then a final candidate. For this reason the parser does not
+treat the entire reasoning text as one flat sequence. It builds candidate action
+segments, marks whether a segment appears near a final-answer marker, detects
+truncated candidates, and may build a composite candidate when nearby action-like
+fragments look like parts of the same plan. Composite construction stops at
+strong textual boundaries such as \texttt{alternative}, \texttt{maybe},
+\texttt{instead}, \texttt{check}, \texttt{verify}, \texttt{wrong}, or
+\texttt{invalid}. Safe shorthand forms are expanded only when they map to
+unambiguous domain actions, for example local repeats such as
+\texttt{(action) x3}, \texttt{repeat 3 times (action)}, and one-argument
+compressed forms such as \texttt{b2 up x3}.
+
+Listing~\ref{lst:reasoning_parser_code_refs} shows the main code references for
+this path. The excerpt points to the parser entry point, the reasoning-specific
+section builder, and the candidate extractor used for reasoning traces.
+
+\begin{lstlisting}[language=Python, caption={Code references for reasoning-text parsing.}, label={lst:reasoning_parser_code_refs}]
+# Benchmark_Framework/evaluators/parser.py
+
+def parse_plan_text(raw_text, reasoning_text="", domain_text=None, problem_text=None):
+    schemas = _parse_domain_actions(domain_text)
+    objects_by_type = _parse_problem_objects(problem_text)
+    return ParsedPlan(
+        raw=_raw_section(raw_text, schemas, objects_by_type),
+        reasoning=_reasoning_section(reasoning_text, schemas, objects_by_type),
+    )
+
+def _reasoning_section(reasoning_text, schemas, objects_by_type):
+    if not reasoning_text.strip():
+        return {"actions": [], "format_issues": ["reasoning_text_empty"]}
+
+    cleaned_text, fence_issues = _strip_markdown_fences(reasoning_text)
+    actions, extraction_issues = _extract_actions(
+        cleaned_text,
+        schemas,
+        objects_by_type,
+        select_candidate=True,
+    )
+    return {"actions": actions, "format_issues": fence_issues + extraction_issues}
+
+def extract_reasoning_candidates(reasoning_text, domain_text=None, problem_text=None):
+    schemas = _parse_domain_actions(domain_text)
+    objects_by_type = _parse_problem_objects(problem_text)
+    cleaned_text, fence_issues = _strip_markdown_fences(reasoning_text)
+    candidates, shared_issues = _extract_action_candidates(
+        cleaned_text,
+        schemas,
+        objects_by_type,
+    )
+    return candidates
+\end{lstlisting}
+
+After extraction, the runner validates the reasoning candidates with the same VAL
+prefix-validation routine used for the final answer. Each candidate is checked as
+a complete sequence and through all non-empty prefixes. The selected diagnostic
+candidate is chosen by a deterministic priority order: prefer a fully valid
+candidate; otherwise prefer a candidate with a valid prefix; penalize truncated
+candidates; prefer candidates near final-answer markers; prefer candidates with
+fewer extra actions after the first valid prefix; then use source order, fewer
+format issues and candidate length as tie breakers. If the best reasoning
+candidate has a valid prefix but invalid trailing actions, the runner can shorten
+the diagnostic reasoning plan to that first valid prefix before storing it in the
+attempt record.
+
+Listing~\ref{lst:reasoning_feedback_bridge_code_refs} shows where this parsed
+reasoning signal becomes an input for the next feedback prompt. The key point is
+that \texttt{reasoning\_validation\_result},
+\texttt{reasoning\_first\_valid\_prefix\_length},
+\texttt{reasoning\_final\_plan\_valid},
+\texttt{reasoning\_candidate\_count} and
+\texttt{reasoning\_selected\_candidate\_index} are stored in the same attempt
+record that is later passed to \texttt{build\_repair\_feedback(...)}.
+
+\begin{lstlisting}[language=Python, caption={Code references connecting reasoning parsing to repair feedback.}, label={lst:reasoning_feedback_bridge_code_refs}]
+# Benchmark_Framework/runner/run_case.py
+
+parsed_plan = _parse_generation_output(
+    raw_text,
+    generation.get("reasoning_text", ""),
+    task_inputs.get("domain_text"),
+    task_inputs.get("problem_text"),
+)
+
+reasoning_selection = _select_reasoning_candidate(
+    validator,
+    task_spec,
+    _extract_reasoning_candidates(
+        generation.get("reasoning_text", ""),
+        task_inputs.get("domain_text"),
+        task_inputs.get("problem_text"),
+    ),
+)
+
+if reasoning_selection:
+    selected_candidate = reasoning_selection["candidate"]
+    parsed_plan["reasoning"]["actions"] = selected_candidate.get("actions", [])
+    parsed_plan["reasoning"]["format_issues"] = selected_candidate.get("format_issues", [])
+
+attempt_record["reasoning_validation_result"] = reasoning_summary["validation_result"]
+attempt_record["reasoning_first_valid_prefix_length"] = reasoning_summary["first_valid_prefix_length"]
+attempt_record["reasoning_final_plan_valid"] = reasoning_summary["final_plan_valid"]
+
+feedback = build_repair_feedback(
+    attempt_record=attempt_record,
+    feedback_prompt=feedback_prompt,
+    config=protocol_spec.repair_feedback,
+)
+
+# Benchmark_Framework/evaluators/repair_feedback.py
+
+reasoning_valid = bool(
+    attempt_record.get("reasoning_final_plan_valid")
+    or reasoning_result.get("valid")
+)
+
+if reasoning_valid and not raw_valid:
+    core = (
+        "A valid action sequence was decoded from the reasoning text, "
+        "but the final answer/raw plan did not validate. "
+        "This points to a transfer problem from reasoning to final answer."
+    )
+\end{lstlisting}
+
+This bridge explains how the final \texttt{feedback\_to\_next\_iteration} text is
+produced. The feedback is not generated from the raw reasoning prose directly.
+It is generated from normalized diagnostics derived from that prose: the parsed
+reasoning actions, candidate-selection metadata, VAL validation results, prefix
+validation results and alignment between \texttt{parsed\_plan.raw.actions} and
+\texttt{parsed\_plan.reasoning.actions}. Therefore, when the reasoning trace
+contains a valid plan but the final answer does not, the feedback frames the
+error as a transfer problem. When reasoning and final answer contain mostly the
+same actions but VAL reports an \texttt{invalid\_precondition}, the feedback
+points to ordering or applicability. When reasoning and final answer diverge
+strongly, the feedback asks the model to rebuild one coherent plan and make the
+final answer match it. If no reasoning plan is available, the repair message
+falls back to the raw parser issues and the validator result.
+
 \subsubsection{Decision Order}
 
 The feedback is written by following a priority order. Technical failures are
@@ -205,6 +363,54 @@ Low reasoning/final-answer alignment & Ask to rebuild one coherent plan and make
 \label{tab:repair-feedback-flow}
 \end{table}
 
+\subsubsection{Iteration Budget and the Eight-Attempt Cap}
+
+The repair loop also has an iteration budget. This budget is different from the
+prompt-token budget: it limits how many complete generate--parse--validate--repair
+cycles can be executed for a single benchmark instance. In the implemented
+iterative-repair protocol the maximum is eight attempts, as shown in
+Listing~\ref{lst:iterative_repair_iteration_budget}. The same cap is used for all
+models and domains so that retry-dependent success is comparable across runs.
+
+\begin{lstlisting}[caption={Iteration budget in the iterative-repair protocol.}, label={lst:iterative_repair_iteration_budget}]
+# Benchmark_Framework/protocols/iterative_repair.yaml
+
+evaluation:
+  max_iterations: 8
+  require_final_plan_only: true
+\end{lstlisting}
+
+The choice of eight is not meant to claim that the eighth attempt has a special
+planning meaning. It is a bounded experimental compromise. Valmeekam et al.
+(2023, Section 5.2 and Table 4) motivate verifier-assisted repeated
+backprompting: an external checker can be used to return failure information and
+measure whether later attempts improve. At the same time, Stechly, Marquez and
+Kambhampati (2023, Section 4) show that, in iterative reasoning settings,
+criticism or feedback can be largely irrelevant and later attempts can behave
+like independent re-samples rather than genuine corrections. For this reason the
+benchmark should allow enough attempts to observe possible feedback-driven
+correction, but it should not allow an unbounded retry search.
+
+The analysis notebook uses this literature to justify a finite range of roughly
+3--15 iterations: fewer than three attempts would mostly test one-shot
+performance and leave little room for repair, while values much larger than
+fifteen would mainly increase compute cost and inflate success through repeated
+sampling. The value
+\texttt{max\_iterations = 8} is chosen as a conservative middle point in that
+range. It is high enough to observe early and medium-depth correction, but low
+enough that a model cannot rely on unlimited sampling until it eventually emits a
+valid plan.
+
+This design is also tied to the metrics. First-attempt success rate
+(\texttt{FASR}) isolates the retry-free planning signal. Iteration-weighted
+success rate (\texttt{IWSR}) discounts late wins by assigning a success at attempt
+k a contribution of \(1/k\). Retry gap (\texttt{SR - FASR}) measures how much of
+the final success rate depends on retries. Consequently, an eighth-attempt
+solution is still recorded as valid, but it is interpreted as much weaker evidence
+of planning competence than a first- or second-attempt solution. If no valid plan
+is found within the eight attempts, the scored artifact records that the run hit
+the iteration limit.
+
 \subsubsection{Prompt-Budget Control and Final Constraint}
 
 The previous raw answer and reasoning text can be included in the feedback
@@ -253,3 +459,4 @@ reported separately from genuine planning failures. Finally, the parser that
 normalizes VAL output uses conservative textual heuristics; for this reason the
 raw validator output is stored together with the normalized fields whenever
 manual inspection is needed.
+

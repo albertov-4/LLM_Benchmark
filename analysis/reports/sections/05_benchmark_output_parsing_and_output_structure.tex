@@ -1,25 +1,31 @@
 \section{Benchmark Output Parsing and Output Structure}
 
-The benchmark execution pipeline produces traceable and independently analyzable artifacts. All generated data is stored under \texttt{Benchmark\_Framework/outputs}, which is divided according to the main stages of the evaluation: generation, parsing, and scoring.
+The benchmark execution pipeline produces traceable and independently analyzable artifacts. All generated data is stored under \texttt{Benchmark\_Framework/outputs}, which is divided according to the main stages of the evaluation: generation, parsing and scoring.
 
 This separation is a core design choice. It makes it possible to distinguish between different failure modes: a model may generate text that contains a reasonable plan but is not cleanly parseable, or it may produce a syntactically valid action sequence that still fails during formal validation. The artifacts are persisted when a benchmark case terminates, either because a valid plan has been found or because the configured maximum number of iterations has been reached.
 
 The \texttt{outputs} directory is organized into three main subdirectories:
 \begin{itemize}
     \item \textbf{raw}: stores the direct model interaction and generation metadata.
-    \item \textbf{parsed}: stores the structured action sequences extracted from the raw text.
-    \item \textbf{scored}: stores validation outcomes, repair information, and aggregate metrics for the case.
+    \item \textbf{parsed}: stores the structured action sequences extracted from the raw text and reasoning text.
+    \item \textbf{scored}: stores validation outcomes, repair information and aggregate metrics for the case.
 \end{itemize}
 
 Each layer follows the same hierarchical path:
 \begin{center}
 \texttt{<run\_id>/<model>/<protocol>/<domain>/<difficulty>/<instance>.json}
 \end{center}
-This layout makes the three artifacts for the same benchmark instance directly comparable across the raw, parsed, and scored layers.
+This layout makes the three artifacts for the same benchmark instance directly comparable across the raw, parsed and scored layers.
 
 \subsection{Raw}
 
-The files in \texttt{outputs/raw/} are the closest record of the interaction with the LLM. Each artifact stores the prompts sent to the model, the model response, any provider-side reasoning text when available, and generation metadata such as token usage, latency, and notes.
+The files in \texttt{outputs/raw/} are the closest record of the interaction with the LLM. Each artifact stores: 
+\begin{itemize}
+  \item prompts sent to the model
+  \item model response
+  \item any provider-side reasoning text when available
+  \item generation metadata such as token usage, latency and notes
+\end{itemize}
 
 This layer is the baseline record of what the model produced before any interpretation by the parser or validator.
 
@@ -64,7 +70,7 @@ Listing~\ref{lst:raw_json_structure} shows the main fields stored in a raw artif
         ],
         "reasoning_text": #reasoning text given us by the LLM
         "We need to produce a plan moving blocks to satisfy goal: blocks b1,b2,b3,b4 must be at same location (both x and y equal). b5 must be at a different location..."
-        "finish_reason": finish reason for example stop of numb of max iter reached,
+        "finish_reason": #finish reason for example stop of numb of max iter reached,
         "stop_reason": #for example error or stop,
         "reached_max_tokens": false,
         "stream_complete": #true or false,
@@ -86,7 +92,7 @@ The \texttt{outputs/parsed/} directory contains the result of the first processi
 Each parsed artifact includes:
 \begin{itemize}
     \item the sequence of actions extracted from the visible model answer;
-    \item parser diagnostics such as missing actions, unknown action names, wrong arity, markdown removal, or compressed-action expansion;
+    \item parser diagnostics such as missing actions, unknown action names, wrong arity(number of parameters of an action), markdown removal or compressed-action expansion;
     \item a separate reasoning-derived action sequence when provider-side reasoning text contains a candidate plan;
     \item a pointer to the corresponding raw artifact.
 \end{itemize}
@@ -149,7 +155,7 @@ Each scored artifact includes:
 \begin{itemize}
     \item the final \texttt{solved} decision for the benchmark instance;
     \item the number of iterations used and whether the iteration limit was reached;
-    \item aggregate metrics such as \texttt{validity\_at\_1}, \texttt{validity\_at\_k}, plan length, repair success, and failure type;
+    \item aggregate metrics such as \texttt{validity\_at\_1}, \texttt{validity\_at\_k}, plan length, repair success and failure type;
     \item one validation-style record for each attempt;
     \item repair feedback and reasoning-plan diagnostics when the iterative protocol or reasoning extraction uses them.
 \end{itemize}
@@ -194,15 +200,36 @@ Listing~\ref{lst:scored_json_structure} shows the main scored fields. The VAL-sp
         "details": {
             #details of the validator, for example external or internal validator
         },
-        "reasoning_first_valid_prefix_length": ,
-        "reasoning_first_valid_plan_text": ,
+        
+      "first_valid_prefix_length": #lenght of the first subplan valid within the raw plan,
+      "first_valid_plan_text": #text of the valid plan (obtained with first valid prefix) as a sequence of actions,
+      "final_plan_valid": #true or false,
+      "extra_actions_after_first_valid": #N of action done after valid subplan,
+      
+      "reasoning_validation_result": {
+        "valid": #true or false,
+        "status": #status of reasoning plan,
+        "error_type": #error type of reasoning,
+        "feedback_text": #feedback text for next iteration ,
+        "failed_step": null,
+        "failed_action": null,
+        "goal_satisfied": #true or false,
+        "plan_length": #N of reasoning plan's actions,
+        "validation_time_ms": #time necessary for validation,
+        "raw_validator_output": #path of the validation done by validator,
+        "details": {
+          #details of the validator, for example external or internal validator
+        }
+
+        "reasoning_first_valid_prefix_length": #lenght of the first subplan valid within the reasoning plan,
+        "reasoning_first_valid_plan_text": ##text of the valid reasoning plan as a sequence of actions,
         "reasoning_final_plan_valid": #true or false,
         "reasoning_extra_actions_after_first_valid": null,
-        "reasoning_candidate_count": 5,
-        "reasoning_valid_candidate_count": 0,
-        "reasoning_selected_candidate_index": 3,
-        "reasoning_selected_candidate_truncated": false,
-        "feedback_to_next_iteration": 
+        "reasoning_candidate_count": #N of candidate plans parsed from reasoning,
+        "reasoning_valid_candidate_count": #N of valid candidate plans parsed from reasoning,
+        "reasoning_selected_candidate_index": #the index of the selected plan,
+        "reasoning_selected_candidate_truncated": #true or false,
+        "feedback_to_next_iteration": #feedback test to be used from next iteration
       },
     }
   ]

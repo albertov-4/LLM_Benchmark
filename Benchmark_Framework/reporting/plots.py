@@ -71,7 +71,7 @@ PLOT_DESCRIPTIONS = {
     "object_hallucination_by_model_domain": "Object hallucination rate by model and domain.",
     "executability_by_model_domain": "Executability ratio distribution by model and domain.",
     "failure_type_breakdown": "Sequencing errors versus state fabrications per model.",
-    "executability_vs_length": "Executability ratio against plan length, faceted by domain.",
+    "executability_vs_length": "Executability ratio against plan length, one plot per model, coloured by difficulty tier.",
     "temporal_distance_by_model": "Mean temporal distance for sequencing errors per model.",
     "cot_alignment_by_model_domain": "Mean CoT plan alignment score by model and domain.",
     "fasr_by_model_domain": "First-attempt success rate by model and domain.",
@@ -82,7 +82,7 @@ PLOT_DESCRIPTIONS = {
     "success_rate_heatmap": "Success rate heatmap by model and domain.",
     "composite_scores": "Composite Planning Score by model.",
     "p_valid_given_k": "P(Valid | reached attempt k) iteration profile — discriminates Stochastic Searcher (flat line) from Efficient Corrector (rising curve).",
-    "domain_ranking_heatmap": "Normalised within-domain rank heatmap (0=best, 1=worst) for all RANK_METRICS across all domains.",
+    "domain_ranking_heatmap": "Normalised within-domain rank heatmap (1=best, 0=worst), saved as one plot per domain.",
     "rank_variance": "Mean rank standard deviation across domains per model — high variance signals domain specialisation.",
     "domain_correlation": "Spearman correlation matrix of model success rates across domains — detects redundancy or complementarity.",
     "ps_by_domain_stacked": "Composite Planning Score stacked by domain contribution — reveals whether high PS is broad or concentrated.",
@@ -134,11 +134,31 @@ def maybe_make_plots(
         return []
 
     sns.set_theme(style="whitegrid", palette="tab10")
+    save_dpi = 150
     saved: list[dict[str, Any]] = []
     figures: list[tuple[str, Any, list[str]]] = []
     all_models = sorted(df_metrics["Model"].dropna().unique())
     base_colors = sns.color_palette("tab20", n_colors=max(len(all_models), 1))
     model_palette = {model: base_colors[index] for index, model in enumerate(all_models)}
+
+    def safe_plot_slug(value: Any) -> str:
+        slug = "".join(char if char.isalnum() else "_" for char in str(value).strip().lower())
+        return "_".join(part for part in slug.split("_") if part) or "unknown"
+
+    def screen_figsize(dpi: int = save_dpi) -> tuple[float, float]:
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.withdraw()
+            width_px = root.winfo_screenwidth()
+            height_px = root.winfo_screenheight()
+            root.destroy()
+            if width_px > 0 and height_px > 0:
+                return width_px / dpi, height_px / dpi
+        except Exception:
+            pass
+        return 16, 9
 
     def register(name: str, fig: Any, related_models: Optional[list[str]] = None) -> None:
         figures.append((name, fig, related_models or all_models))
@@ -172,19 +192,57 @@ def maybe_make_plots(
         ax.tick_params(axis="x", rotation=30)
         register("failure_type_breakdown", fig)
 
-        domains = sorted(df_metrics["Domain"].dropna().unique())
-        fig, axes = plt.subplots(max(1, len(domains)), 1, figsize=(6, max(4, 4 * len(domains))), squeeze=False)
-        for ax, domain in zip(axes[:, 0], domains):
-            sub = df_metrics[df_metrics["Domain"] == domain].dropna(subset=["executability_ratio", "Length"])
-            for model, group in sub.groupby("Model"):
-                ax.scatter(group["Length"], group["executability_ratio"], label=model, alpha=0.65, s=30, color=model_palette.get(model, "gray"))
-            ax.set_title(f"Domain: {domain}")
-            ax.set_xlabel("Plan Length")
-            ax.set_ylabel("Executability Ratio")
-            ax.legend(fontsize=7)
-        fig.suptitle("Executability Ratio vs Plan Length")
-        fig.tight_layout()
-        register("executability_vs_length", fig)
+        difficulty_palette = {"easy": "seagreen", "medium": "goldenrod", "hard": "tomato", "unknown": "gray"}
+        exec_length = df_metrics.dropna(subset=["executability_ratio", "Length"])
+        for model in all_models:
+            model_exec = exec_length[exec_length["Model"] == model].copy()
+            if model_exec.empty:
+                continue
+            model_exec["Difficulty"] = model_exec["Difficulty"].fillna("unknown")
+            domains = sorted(model_exec["Domain"].dropna().unique())
+            if not domains:
+                continue
+            n_cols = min(len(domains), 3)
+            n_rows = math.ceil(len(domains) / n_cols)
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(max(9, 4.8 * n_cols), max(5, 3.8 * n_rows)), squeeze=False, sharey=True)
+            legend_handles: dict[str, Any] = {}
+            for idx, domain in enumerate(domains):
+                row, col = divmod(idx, n_cols)
+                ax = axes[row][col]
+                domain_exec = model_exec[model_exec["Domain"] == domain]
+                for difficulty in DIFF_ORDER:
+                    group = domain_exec[domain_exec["Difficulty"] == difficulty]
+                    if group.empty:
+                        continue
+                    scatter = ax.scatter(
+                        group["Length"],
+                        group["executability_ratio"],
+                        label=difficulty,
+                        alpha=0.7,
+                        s=36,
+                        color=difficulty_palette.get(difficulty, "gray"),
+                        edgecolor="white",
+                        linewidth=0.4,
+                    )
+                    legend_handles.setdefault(difficulty, scatter)
+                ax.set_title(str(domain), fontsize=9)
+                ax.set_xlabel("Plan Length")
+                ax.set_ylabel("Executability Ratio")
+                ax.set_ylim(-0.02, 1.02)
+            for idx in range(len(domains), n_rows * n_cols):
+                row, col = divmod(idx, n_cols)
+                axes[row][col].set_visible(False)
+            if legend_handles:
+                fig.legend(
+                    [legend_handles[difficulty] for difficulty in DIFF_ORDER if difficulty in legend_handles],
+                    [difficulty for difficulty in DIFF_ORDER if difficulty in legend_handles],
+                    title="Difficulty",
+                    loc="upper right",
+                    fontsize=8,
+                )
+            fig.suptitle(f"Executability Ratio vs Plan Length - {model}")
+            fig.tight_layout(rect=(0, 0, 0.96, 0.95))
+            register(f"executability_vs_length_{safe_plot_slug(model)}", fig, [model])
 
         temporal = df_metrics.dropna(subset=["mean_temporal_distance"])
         if not temporal.empty:
@@ -313,30 +371,19 @@ def maybe_make_plots(
     _rank_metrics_cols = [m for m in RANK_METRICS if not _rank_df.empty and m in _rank_df.columns]
     if not _rank_df.empty and _rank_metrics_cols:
         _domains_ranked = sorted(_rank_df["Domain"].dropna().unique())
-        _n_dom = len(_domains_ranked)
-        _n_cols_grid = min(_n_dom, 3)
-        _n_rows_grid = math.ceil(_n_dom / _n_cols_grid)
-        _fig_w = max(6, 4.5 * _n_cols_grid)
-        _fig_h = max(4, (len(all_models) * 0.8 + 2.0) * _n_rows_grid)
-        fig, axes = plt.subplots(_n_rows_grid, _n_cols_grid, figsize=(_fig_w, _fig_h), squeeze=False)
-        for _idx, _dom in enumerate(_domains_ranked):
-            _ri, _ci = divmod(_idx, _n_cols_grid)
-            _ax = axes[_ri][_ci]
+        for _dom in _domains_ranked:
             _dom_df = _rank_df[_rank_df["Domain"] == _dom].set_index("Model")
             _pivot = _dom_df[[c for c in _rank_metrics_cols if c in _dom_df.columns]]
             _n_mod = len(_pivot)
-            _pivot_norm = (_pivot - 1) / max(_n_mod - 1, 1) if _n_mod > 1 else _pivot.clip(0, 0)
-            sns.heatmap(_pivot_norm, annot=True, fmt=".2f", cmap="RdYlGn_r", vmin=0, vmax=1,
-                        linewidths=0.3, ax=_ax, cbar=False)
-            _ax.set_title(_dom, fontsize=9)
-            _ax.tick_params(axis="x", rotation=45, labelsize=7)
-            _ax.tick_params(axis="y", labelsize=7)
-        for _idx in range(_n_dom, _n_rows_grid * _n_cols_grid):
-            _ri, _ci = divmod(_idx, _n_cols_grid)
-            axes[_ri][_ci].set_visible(False)
-        fig.suptitle("Normalised Within-Domain Rank (0 = best, 1 = worst)")
-        fig.tight_layout()
-        register("domain_ranking_heatmap", fig)
+            _pivot_norm = 1 - ((_pivot - 1) / max(_n_mod - 1, 1)) if _n_mod > 1 else _pivot * 0 + 1
+            fig, ax = plt.subplots(figsize=(max(8, len(_rank_metrics_cols) * 1.2), max(4, len(_pivot_norm) * 0.65 + 1.5)))
+            sns.heatmap(_pivot_norm, annot=True, fmt=".2f", cmap="RdYlGn", vmin=0, vmax=1,
+                        linewidths=0.3, ax=ax, cbar=True)
+            ax.set_title(f"Normalised Within-Domain Rank (1 = best) - {_dom}")
+            ax.tick_params(axis="x", rotation=45, labelsize=8)
+            ax.tick_params(axis="y", labelsize=8)
+            fig.tight_layout()
+            register(f"domain_ranking_heatmap_{safe_plot_slug(_dom)}", fig)
 
         # Rank variance: std of rank across domains reveals domain specialisation
         _var_df = _rank_df.groupby("Model")[_rank_metrics_cols].std().reset_index()
@@ -460,17 +507,21 @@ def maybe_make_plots(
     if save_plots:
         plots_dir.mkdir(parents=True, exist_ok=True)
 
+    save_figsize = screen_figsize(save_dpi)
     for name, fig, related_models in figures:
         description = PLOT_DESCRIPTIONS.get(name, "")
+        if not description and name.startswith("executability_vs_length_"):
+            description = PLOT_DESCRIPTIONS["executability_vs_length"]
+        if not description and name.startswith("domain_ranking_heatmap_"):
+            description = PLOT_DESCRIPTIONS["domain_ranking_heatmap"]
         print(f"\nGrafico: {name}")
         if description:
             print(f"  {description}")
         path = None
         if save_plots:
             path = plots_dir / f"{name}.png"
-            width, height = fig.get_size_inches()
-            fig.set_size_inches(max(width, 16), max(height, 9), forward=True)
-            fig.savefig(path, dpi=150)
+            fig.set_size_inches(*save_figsize, forward=True)
+            fig.savefig(path, dpi=save_dpi)
         saved.append(
             {
                 "name": name,

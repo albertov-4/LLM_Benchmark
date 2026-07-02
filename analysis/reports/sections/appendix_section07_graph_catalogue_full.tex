@@ -1,6 +1,6 @@
 Every figure the pipeline emits, documented by scope, reading procedure, the data-availability problems that distort it on sparse runs, and the justification for its chart type --- grouped by metric family.
 
-The pipeline emits up to 21 figures, registered by name in \code{PLOT\_DESCRIPTIONS} and written by \code{maybe\_make\_plots}. This catalogue documents each one along the four axes that decide whether a figure earns its place: its \textbf{scope}(what slice of data it shows),\textbf{how to read it}, the \textbf{data-availability problems} that distort it on sparse runs, and the \textbf{justification} for that chart type over the alternatives.
+The pipeline emits up to 32 figures, registered by name in \code{PLOT\_DESCRIPTIONS} and written by \code{maybe\_make\_plots}. This catalogue documents each one along the four axes that decide whether a figure earns its place: its \textbf{scope}(what slice of data it shows),\textbf{how to read it}, the \textbf{data-availability problems} that distort it on sparse runs, and the \textbf{justification} for that chart type over the alternatives.
 
 \begin{bmkeybox}{One reading rule that governs half the figures}
 Several plots are bounded [0,1] and zero-inflated: on weak models the bars genuinely collapse to zero, and a zero can mean either "good" (no hallucination) or "nothing produced" (no actions emitted). Whenever a bar is flat-zero, disambiguate against SR and plan counts before reading it as a strength. The atlas notes this per-plot where it can cause problems.
@@ -46,9 +46,9 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \begin{bmplotcard}{Executability vs plan length}
 \code{executability\_vs\_length}
 \begin{description}
-\item[chart] scatter (faceted)
-\item[scope] exec\_ratio against plan length, one facet per domain.
-\item[how to read] A downward trend = the model breaks down on longer horizons (the Embers-of-Autoregression length cliff).
+\item[chart] per-model scatter grid, faceted by domain/task
+\item[scope] for each model, exec\_ratio against plan lenght, with one subplot per domain/task and points colored by difficulty tier.
+\item[how to read] within one model, compare domain/task subplots: a downward trend means executability decays on longer plans. A trend present in every subplot suggests a general lenght/state-tracking limit, while a trend isolated to one subplot suggests a domain/task-specific weakness.
 \item[data problems] Needs many instances spanning a length range; sparse runs show a near-empty scatter with no visible trend.
 \item[why this form] Scatter is the only honest way to show a per-instance relationship between two continuous quantities.
 \end{description}
@@ -184,10 +184,10 @@ Several plots are bounded [0,1] and zero-inflated: on weak models the bars genui
 \begin{bmplotcard}{Within-domain rank heatmap}
 \code{domain\_ranking\_heatmap}
 \begin{description}
-\item[chart] heatmap (faceted)
-\item[scope] Per-domain normalised rank (0=best,1=worst) for every RANK\_METRIC.
-\item[how to read] Compare cells DOWN a column WITHIN one domain block only --- never across domain blocks.
-\item[data problems] Normalisation is per-domain, so identical colours in different blocks are not comparable scores.
+\item[chart] one heatmap per domain.
+\item[scope] Per-domain normalised rank for every RANK\_METRIC. Each cell is a rank-derived value, not the raw metric value: \(1=\) best model for that metric within that domain, \(0=\) worst.
+\item[how to read] Read each domain file independently. Compare cells down a column to see which model leads on that metric within that domain. Do not read the annotated number as SR, FASR, Exec, PAS, etc.; it is the normalised rank position.
+\item[data problems] Normalisation is per-domain and rank-based. Equal colours across different domain heatmaps mean equal relative position, not equal raw performance.
 \item[why this form] Per-domain normalisation onto one colour scale is what lets many domains share a figure.
 \end{description}
 \end{bmplotcard}

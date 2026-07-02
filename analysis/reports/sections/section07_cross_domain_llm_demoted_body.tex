@@ -1,5 +1,97 @@
 A single overall leaderboard hides the most scientifically interesting fact about a model:\emph{where} it is good. This view documents the three machinery pieces that turn per-domain metrics into comparative claims, the Spearman domain-correlation matrix  and the seven literature-grounded capability profiles that convert those numbers into a named diagnosis.
 
+\subsubsection{Normalized within-domain Rank}
+\paragraph{Within-domain ranking interpretation.}
+The heatmaps report \emph{normalised within-domain rankings}, not raw metric
+scores. For each domain, models are ranked relative to the other evaluated
+models on the same metric. A value of $1.00$ indicates the best relative rank,
+whereas values closer to $0.00$ indicate lower ranks. Therefore, these figures
+should be read as comparative performance profiles rather than absolute measures
+of planning capability. This distinction is especially important for metrics
+affected by ties or low variance, such as hallucination, retry gap, PAS, and
+temporal distance.
+
+\paragraph{Preliminary cross-domain interpretation.}
+Read jointly, the heatmaps suggest that \texttt{nvidia\_gpt\_oss\_120b} and
+\texttt{nvidia\_nemotron\_3\_ultra\_550b\_a55b} are the most broadly competitive
+models, since they obtain high ranks across multiple domains and success-oriented
+metrics such as Success Rate, FASR, and IWSR. The former is particularly strong
+in rover and fo-counters, while the latter performs strongly in settlersnumeric,
+expedition, and fo-counters.
+
+By contrast, \texttt{nvidia\_qwen\_3\_5\_122b\_a10b} and
+\texttt{nvidia\_nemotron\_3\_nano\_30b\_a3b} show more domain-specialised
+profiles: Qwen is especially competitive in block-grouping and fo-sailing,
+whereas Nemotron Nano is strongest in fo-sailing but less consistent elsewhere.
+\texttt{nvidia\_llama\_3\_3\_70b\_instruct} and
+\texttt{nvidia\_phi\_4\_mini\_instruct} should not be considered broadly
+competitive, since their success-oriented rankings remain low despite some high
+diagnostic ranks caused by ties or non-discriminative metrics.
+
+Overall, these ranking heatmaps indicate a preliminary separation between
+broadly competitive models and domain-specialised models. The most reliable
+evidence comes from consistency across success-oriented metrics, rather than
+from isolated green cells in diagnostic columns.
+
+
+\begin{figure}[H]
+    \centering
+    
+    % --- PRIMA RIGA ---
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_block_grouping.png}
+        \caption{Domain Ranking Heatmap Block Grouping}
+        \label{fig:grafico1}
+    \end{subfigure}
+    \hfill % Mette lo spazio orizzontale in mezzo alla coppia
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_expedition.png}
+        \caption{Domain Ranking Heatmap Expedition}
+        \label{fig:grafico2}
+    \end{subfigure}
+    
+    \vspace{0.8cm} % Spazio verticale tra la prima e la seconda riga
+    
+    % --- SECONDA RIGA ---
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_fo_counters.png}
+        \caption{Domain Ranking Heatmap Fo Counters}
+        \label{fig:grafico3}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_fo_sailing.png}
+        \caption{Domain Ranking Heatmap Fo Sailing}
+        \label{fig:grafico4}
+    \end{subfigure}
+    
+    \vspace{0.8cm} % Spazio verticale tra la seconda e la terza riga
+    
+    % --- TERZA RIGA ---
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_rover.png}
+        \caption{Domain Ranking Heatmap Rover}
+        \label{fig:grafico5}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../results/final_evaluation_results/domain_ranking_heatmap_settlersnumeric.png}
+        \caption{Domain Ranking Heatmap SettlersNumeric}
+        \label{fig:grafico6}
+    \end{subfigure}
+
+    % Didascalia generale e label per citare l'intero blocco nel testo
+    \caption{Domain ranking heatmaps}
+    \label{fig:gruppo_grafici}
+\end{figure}
+
+
 
 \subsubsection{Domain correlation: redundancy vs complementarity}
 
@@ -10,6 +102,13 @@ sr_pivot = df_metrics.pivot_table(index="Model", columns="Domain", values="Succe
 corr = sr_pivot.T.corr(method="spearman")   # Model \(\times\) Model rank correlation
 \end{lstlisting}
 
+\begin{figure}[H]
+    \raggedleft
+    \includegraphics[width=0.90\linewidth]{../../results/final_evaluation_results/domain_correlation.png}
+    \caption{Spearman graph}
+\end{figure}
+\textbf{Note:} LLama and Phi4 mini do not have any rows or columns since their success rate vector is zero.
+
 \begin{bmcavbox}{Correlation needs a domain spread}
 Spearman over success-rate vectors is only meaningful with several domains and some variance in them. if In the bundled run the domain count is small and many models sit at SR\(\approx\)0,\(\rho\) is dominated by ties and should be read as illustrative of the method, not as a stable finding.
 \end{bmcavbox}
@@ -17,8 +116,19 @@ Spearman over success-rate vectors is only meaningful with several domains and s
 \subsubsection{Breadth of competence: stacked PS and the SR heatmap}
 
 \code{ps\_by\_domain\_stacked} stacks each model's per-domain Planning Score contributions into one bar. Two models can reach the same total bar height by opposite routes: a tall single segment (high PS concentrated in one domain) versus many even segments (competence spread across domains). The stack makes "broad vs concentrated" visible at a glance exactly the distinction the overall PS scalar destroys.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\linewidth]{../../results/final_evaluation_results/ps_by_domain_stacked.png}
+    \caption{Planning Score by domain}
+\end{figure}
 
-The \code{success\_rate\_heatmap} is the raw companion: model\(\times\)domain SR with no normalisation, so here unlike the rank heatmap cells \emph{are} comparable across the whole grid. Use it to spot empty columns (domains no model solved \(\rightarrow\) an infrastructure or difficulty problem, not a model problem) and empty rows (models that solved nothing).
+The \code{success\_rate\_heatmap} is the raw companion: model\(\times\)domain SR with no normalisation, so here unlike the rank heatmap cells \emph{are} comparable across the whole grid. Use it to spot empty columns (domains no model solved \(\rightarrow\) an infrastructure or difficulty problem, not a model problem) and empty rows (models that solved nothing).By contrast, \code{domain\_ranking\_heatmap} is rank-normalised and should not be read as raw metric values.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\linewidth]{../../results/final_evaluation_results/success_rate_heatmap.png}
+    \caption{SR Heathmap}
+\end{figure}
 
 \subsubsection{The seven capability profiles and How a model is assigned a profile}
 
@@ -60,6 +170,12 @@ Profile & Conditions & Interpretation \(\cdot\) reference\\
 \end{tabularx}
 \end{table}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\linewidth]{../../results/final_evaluation_results/radar_chart.png}
+    \caption{Capability Radar graph}
+\end{figure}
+
 
 \begin{bmkeybox}{NaN-aware conditions: "unavailable" \(\neq\) "missing"}
 A condition whose metric is NaN (e.g. CoT when reasoning was never produced) is marked \emph{unavailable}, not \emph{failed}.
@@ -72,7 +188,8 @@ The cut-points (\(\mathrm{SR}>0.70\), \(\mathrm{IHR}>0.90\), ...) encode the lit
 
 \subsubsection{Reading the metric set together: the diagnostic framework}
 
-No single metric is a verdict. The scientific meaning lives in \emph{combinations} and the within-domain ranking heatmap is where they are read side by side. There are three reading directions, and then a small set of metric pairs that must never be read in isolation.
+No single metric is a verdict. The scientific meaning lives in \emph{combinations} and the within-domain ranking heatmap is where they are read side by side. There are three reading directions, and then a small set of metric pairs that must never be read in isolation.\\
+Important: this heatmap is a comparative diagnostic, not the source of the capability-profile thresholds. The seven capability profiles are assigned from raw aggregate scores stored in the model's \code{overall} table and \code{threshold\_signature}; the heatmap cells are within-domain normalised ranks.
 
 \paragraph{Three ways to read the ranking heatmap.}
 

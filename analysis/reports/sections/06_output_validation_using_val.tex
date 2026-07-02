@@ -26,16 +26,10 @@ action sequence validates against the corresponding PDDL task.
 
 \subsection{Validator Setup and Preflight}
 
-VAL is not a Python dependency of the project. It is an external executable that
-can be resolved in three ways: by putting \texttt{Validate} or
-\texttt{Validate.exe} on the system path, by passing an explicit executable path
-with \texttt{--validator-command}, or by using one of the bundled platform
-utilities under \texttt{utils/linux64/bin/} or \texttt{utils/win64/bin/}.
-
-The benchmark can also run a task preflight before launching model generation.
+VAL is not a Python dependency of the project. The benchmark can also run a task preflight before launching model generation.
 In this stage the framework checks the selected domain and problem files with
 VAL. This prevents malformed or unsupported PDDL inputs from being interpreted
-later as model failures. If VAL cannot be resolved, or if the preflight fails,
+later as model failures. If VAL cannot be used, or if the preflight fails,
 the error is stored as an orchestration problem instead of being mixed with the
 LLM planning results.
 
@@ -58,17 +52,10 @@ line interface. After validation, the framework normalizes the validator output
 into a common result schema. This makes the rest of the benchmark independent
 from the exact textual format printed by the external validator.
 
-Only the validation summary belongs to the scored layer. The raw layer keeps
-the prompt and model generation payloads, the parsed layer keeps the extracted
-actions and parser diagnostics, and the scored layer keeps the validation
-results, repair data, and metrics. This lets the report discuss validation
-without repeating the full output structure described in the previous section.
-
 \subsection{Normalized Validation Result}
 
 The normalized validation record stores both the final decision and the
-diagnostic information needed for analysis and repair.
-
+diagnostic information needed for analysis and repair.\\
 A parse failure and a validation failure are not the same event. If no clean
 PDDL action sequence can be extracted, VAL cannot judge the plan semantics and
 the attempt is treated as a formatting or parsing failure. If actions are
@@ -101,17 +88,15 @@ problem.
 \subsection{Prefix Validation}
 
 The framework does not validate only the full action sequence. It validates
-every non-empty prefix of the parsed final answer. This provides a more precise
-view of the model behaviour.
-
+every non-empty prefix of the parsed final answer this provides a more precise
+view of the model behaviour.\\
 For example, a model may reach the goal after five actions and then continue
-with unnecessary or invalid actions. In that case, validating only the complete
+with unnecessary or invalid actions, in that case validating only the complete
 sequence would mark the attempt as invalid, while prefix validation reveals that
 a valid solution was present inside the answer. The scored artifact therefore
 records the first valid prefix length, the first valid plan text, whether the
-final full plan is valid, and how many extra actions appear after the first
-valid prefix.
-
+final full plan is valid and how many extra actions appear after the first
+valid prefix.\\
 This distinction is useful for the later reasoning analysis: it separates models
 that never find a valid plan from models that find a plan but fail to stop cleanly
 after satisfying the goal.
@@ -137,14 +122,14 @@ are:
 
 In the iterative repair protocol, this normalized failure information is turned
 into feedback for the next model attempt. The feedback can include the validation
-status, the error type, the failed step, the failed action, and a compact
-description of the validator output. This makes the repair loop grounded in
+status, the error type, the failed step, the failed action and a compact
+description of the validator output; this makes the repair loop grounded in
 symbolic validation rather than in a generic request to try again.
 
 \subsection{Feedback Generation for Iterative Repair}
 
 The repair feedback is generated as a deterministic diagnostic step over the
-previous attempt. It is not a generic request to try again: the feedback selects
+previous attempt, it is not a generic request to try again: the feedback selects
 the most relevant failure signal and turns it into a constrained instruction for
 the next model call.
 
@@ -152,9 +137,9 @@ the next model call.
 
 The feedback builder can use the previous final answer, the previous reasoning
 text when present, parser issues, the raw-plan validation result, the
-reasoning-plan validation result, prefix-validation fields, and alignment
-signals between the final answer and the reasoning trace. The protocol may also
-add a custom feedback prompt before the generated diagnostic text.
+reasoning-plan validation result, prefix-validation fields and alignment
+signals between the final answer and the reasoning trace.\\
+The protocol may also add a custom feedback prompt before the generated diagnostic text.
 
 \subsubsection{Reasoning-Text Parsing as Feedback Input}
 
@@ -162,8 +147,8 @@ The \texttt{reasoning\_text} field is parsed through a separate diagnostic path.
 This is a deliberate design choice: the visible final answer remains the only
 official plan used to decide whether the benchmark case is solved, while the
 reasoning trace is used to understand whether a useful plan was present before
-the model wrote the final answer. In other words, reasoning extraction can change
-the repair feedback, but it does not replace the raw final answer as the scored
+the model wrote the final answer.\\
+In other words, reasoning extraction can change the repair feedback, but it does not replace the raw final answer as the scored
 submission.
 
 The parsing starts from \texttt{generation.reasoning\_text} in the raw artifact.
@@ -172,26 +157,15 @@ when available, the problem objects. It then extracts only domain-valid action
 forms: the first token must be an action declared in the PDDL domain and the
 number of arguments must match the action arity. If an argument is missing, the
 parser fills it only when the problem contains exactly one compatible object for
-the required type. This prevents the reasoning parser from inventing ambiguous
-groundings. Unknown action names, wrong arity, empty expressions, embedded prose
-and ambiguous compressed actions are kept as \texttt{format\_issues}.
+the required type; this prevents the reasoning parser from inventing ambiguous
+groundings.\\
+Unknown action names, wrong arity, empty expressions, embedded prose and ambiguous compressed actions are kept as \texttt{format\_issues}.
 
-Reasoning traces often contain more than one possible plan: an early attempt, an
-alternative, and then a final candidate. For this reason the parser does not
-treat the entire reasoning text as one flat sequence. It builds candidate action
-segments, marks whether a segment appears near a final-answer marker, detects
-truncated candidates, and may build a composite candidate when nearby action-like
-fragments look like parts of the same plan. Composite construction stops at
-strong textual boundaries such as \texttt{alternative}, \texttt{maybe},
-\texttt{instead}, \texttt{check}, \texttt{verify}, \texttt{wrong}, or
-\texttt{invalid}. Safe shorthand forms are expanded only when they map to
-unambiguous domain actions, for example local repeats such as
-\texttt{(action) x3}, \texttt{repeat 3 times (action)}, and one-argument
-compressed forms such as \texttt{b2 up x3}.
+Reasoning traces often contain more than one possible plan: an early attempt, analternative and then a final candidate, for this reason the parser does nottreat the entire reasoning text as one flat sequence but it builds candidate actionsegments, marks whether a segment appears near a final-answer marker, detectstruncated candidates, and may build a composite candidate when nearby action-likefragments look like parts of the same plan.\\
+Composite construction stops at strong textual boundaries such as \texttt{alternative}, \texttt{maybe}, \texttt{instead}, \texttt{check}, \texttt{verify}, \texttt{wrong} or \texttt{invalid}. Safe shorthand forms are expanded only when they map to
+unambiguous domain actions, for example local repeats such as \texttt{(action) x3}, \texttt{repeat 3 times (action)}, and one-argument compressed forms such as \texttt{b2 up x3}.
 
-Listing~\ref{lst:reasoning_parser_code_refs} shows the main code references for
-this path. The excerpt points to the parser entry point, the reasoning-specific
-section builder, and the candidate extractor used for reasoning traces.
+Listing~\ref{lst:reasoning_parser_code_refs} shows the main code references for this path: the extracted points to the parser entry point, the reasoning-specific section builder and the candidate extractor used for reasoning traces.
 
 \begin{lstlisting}[language=Python, caption={Code references for reasoning-text parsing.}, label={lst:reasoning_parser_code_refs}]
 # Benchmark_Framework/evaluators/parser.py
@@ -230,16 +204,9 @@ def extract_reasoning_candidates(reasoning_text, domain_text=None, problem_text=
 \end{lstlisting}
 
 After extraction, the runner validates the reasoning candidates with the same VAL
-prefix-validation routine used for the final answer. Each candidate is checked as
-a complete sequence and through all non-empty prefixes. The selected diagnostic
-candidate is chosen by a deterministic priority order: prefer a fully valid
-candidate; otherwise prefer a candidate with a valid prefix; penalize truncated
-candidates; prefer candidates near final-answer markers; prefer candidates with
-fewer extra actions after the first valid prefix; then use source order, fewer
-format issues and candidate length as tie breakers. If the best reasoning
-candidate has a valid prefix but invalid trailing actions, the runner can shorten
-the diagnostic reasoning plan to that first valid prefix before storing it in the
-attempt record.
+prefix-validation routine used for the final answer. Each candidate is checked as a complete sequence and through all non-empty prefixes then the selected diagnostic candidate is chosen by a deterministic priority order: prefer a fully valid candidate; otherwise prefer a candidate with a valid prefix; penalize truncated candidates; prefer candidates near final-answer markers; prefer candidates with fewer extra actions after the first valid prefix; then use source order, fewer
+format issues and candidate length as tie breakers.\\
+If the best reasoning candidate has a valid prefix but invalid trailing actions, the runner can shorten the diagnostic reasoning plan to that first valid prefix before storing it in the attempt record.
 
 Listing~\ref{lst:reasoning_feedback_bridge_code_refs} shows where this parsed
 reasoning signal becomes an input for the next feedback prompt. The key point is
@@ -300,46 +267,27 @@ if reasoning_valid and not raw_valid:
     )
 \end{lstlisting}
 
-This bridge explains how the final \texttt{feedback\_to\_next\_iteration} text is
-produced. The feedback is not generated from the raw reasoning prose directly.
-It is generated from normalized diagnostics derived from that prose: the parsed
-reasoning actions, candidate-selection metadata, VAL validation results, prefix
-validation results and alignment between \texttt{parsed\_plan.raw.actions} and
-\texttt{parsed\_plan.reasoning.actions}. Therefore, when the reasoning trace
-contains a valid plan but the final answer does not, the feedback frames the
-error as a transfer problem. When reasoning and final answer contain mostly the
-same actions but VAL reports an \texttt{invalid\_precondition}, the feedback
-points to ordering or applicability. When reasoning and final answer diverge
-strongly, the feedback asks the model to rebuild one coherent plan and make the
-final answer match it. If no reasoning plan is available, the repair message
-falls back to the raw parser issues and the validator result.
+This bridge explains how the final \texttt{feedback\_to\_next\_iteration} text is produced.\\
+The feedback is not generated from the raw reasoning prose directly, it is generated from normalized diagnostics derived from that prose: the parsed reasoning actions, candidate-selection metadata, VAL validation results, prefix validation results and alignment between \texttt{parsed\_plan.raw.actions} and \texttt{parsed\_plan.reasoning.actions}. Therefore, when the reasoning trace contains a valid plan but the final answer does not, the feedback frames the error as a transfer problem. When reasoning and final answer contain mostly the same actions but VAL reports an \texttt{invalid\_precondition}, the feedback points to ordering or applicability. When reasoning and final answer diverge strongly, the feedback asks the model to rebuild one coherent plan and make the final answer match it.\\
+If no reasoning plan is available, the repair message falls back to the raw parser issues and the validator result.
 
 \subsubsection{Decision Order}
 
-The feedback is written by following a priority order. Technical failures are
+The feedback is written by following a priority order where technical failures are
 handled first: if generation failed, VAL was unavailable, or validation timed
 out, the feedback states that the attempt could not yet be judged as a confirmed
 planning mistake and asks for a clean plan that can be validated again.
 
-Formatting and parsing failures are handled next. If the final answer is empty,
-does not contain a valid action sequence, or mixes reasoning text into the final
-answer, the feedback focuses on output format rather than plan semantics: one
+Formatting and parsing failures are handled next: if the final answer is empty,
+does not contain a valid action sequence or mixes reasoning text into the final
+answer the feedback focuses on output format rather than plan semantics: one
 parenthesized PDDL action per line, with no surrounding prose.
 
-If the answer reached semantic validation, the feedback uses the normalized VAL
-fields. An \texttt{invalid\_precondition} error points to action applicability
-or ordering. An \texttt{unsatisfied\_goal} error points to a plan that executes
-but does not reach the goal. If VAL exposes a failed step or failed action, that
-information is included so the next attempt can repair the concrete failing
-part of the sequence.
+If the answer reached semantic validation the feedback uses the normalized VAL fields. An \texttt{invalid\_precondition} error points to action applicability or ordering. An \texttt{unsatisfied\_goal} error points to a plan that executes but does not reach the goal.\\
+If VAL exposes a failed step or failed action that information is included so the next attempt can repair the concrete failing part of the sequence.
 
-After this, the feedback checks whether prefix validation or reasoning
-validation changes the diagnosis. If a valid prefix exists but the final answer
-continues with extra actions, the model is told to stop at the first valid
-solution. If the reasoning trace contains a valid plan but the final answer is
-invalid, the model is told to transfer the reasoning plan into the final answer.
-If reasoning and final answer are inconsistent, the model is asked to rebuild
-one coherent corrected sequence.
+After this the feedback checks whether prefix validation or reasoning validation changes the diagnosis. If a valid prefix exists but the final answer continues with extra actions the model is told to stop at the first valid solution. If the reasoning trace contains a valid plan but the final answer is invalid, the model is told to transfer the reasoning plan into the final answer. If reasoning and final answer are inconsistent, the model is asked to rebuild one coherent corrected sequence.
+
 
 \subsubsection{Feedback Templates}
 
@@ -365,12 +313,7 @@ Low reasoning/final-answer alignment & Ask to rebuild one coherent plan and make
 
 \subsubsection{Iteration Budget and the Eight-Attempt Cap}
 
-The repair loop also has an iteration budget. This budget is different from the
-prompt-token budget: it limits how many complete generate--parse--validate--repair
-cycles can be executed for a single benchmark instance. In the implemented
-iterative-repair protocol the maximum is eight attempts, as shown in
-Listing~\ref{lst:iterative_repair_iteration_budget}. The same cap is used for all
-models and domains so that retry-dependent success is comparable across runs.
+The repair loop also has an iteration budget. This budget is different from the prompt-token budget: it limits how many complete generate--parse--validate--repair cycles can be executed for a single benchmark instance: in the implemented iterative-repair protocol the maximum is eight attempts, as shown in Listing~\ref{lst:iterative_repair_iteration_budget}. The same cap is used for all models and domains so that retry-dependent success is comparable across runs.
 
 \begin{lstlisting}[caption={Iteration budget in the iterative-repair protocol.}, label={lst:iterative_repair_iteration_budget}]
 # Benchmark_Framework/protocols/iterative_repair.yaml
@@ -380,39 +323,25 @@ evaluation:
   require_final_plan_only: true
 \end{lstlisting}
 
-The choice of eight is not meant to claim that the eighth attempt has a special
-planning meaning. It is a bounded experimental compromise. Valmeekam et al.
+The choice of eight it is a bounded experimental compromise: Valmeekam et al.
 (2023, Section 5.2 and Table 4) motivate verifier-assisted repeated
 backprompting: an external checker can be used to return failure information and
 measure whether later attempts improve. At the same time, Stechly, Marquez and
 Kambhampati (2023, Section 4) show that, in iterative reasoning settings,
 criticism or feedback can be largely irrelevant and later attempts can behave
-like independent re-samples rather than genuine corrections. For this reason the
-benchmark should allow enough attempts to observe possible feedback-driven
-correction, but it should not allow an unbounded retry search.
+like independent re-samples rather than genuine corrections.\\
+For this reason the benchmark should allow enough attempts to observe possible feedback-driven correction, but it should not allow an unbounded retry search.
 
-The analysis notebook uses this literature to justify a finite range of roughly
-3--15 iterations: fewer than three attempts would mostly test one-shot
-performance and leave little room for repair, while values much larger than
-fifteen would mainly increase compute cost and inflate success through repeated
-sampling. The value
-\texttt{max\_iterations = 8} is chosen as a conservative middle point in that
-range. It is high enough to observe early and medium-depth correction, but low
-enough that a model cannot rely on unlimited sampling until it eventually emits a
+The analysis notebook uses this literature to justify a finite range of roughly 3 to 15 iterations: fewer than three attempts would mostly test one-shot performance and leave little room for repair, while values much larger than fifteen would mainly increase compute cost and inflate success through repeated sampling.\\
+The value \texttt{max\_iterations = 8} is chosen as a conservative middle point in that range. It is high enough to observe early and medium-depth correction but low enough that a model cannot rely on unlimited sampling until it eventually emits a
 valid plan.
 
 This design is also tied to the metrics. First-attempt success rate
-(\texttt{FASR}) isolates the retry-free planning signal. Iteration-weighted
-success rate (\texttt{IWSR}) discounts late wins by assigning a success at attempt
-k a contribution of \(1/k\). Retry gap (\texttt{SR - FASR}) measures how much of
-the final success rate depends on retries. Consequently, an eighth-attempt
-solution is still recorded as valid, but it is interpreted as much weaker evidence
-of planning competence than a first- or second-attempt solution. If no valid plan
-is found within the eight attempts, the scored artifact records that the run hit
-the iteration limit.
+(\texttt{FASR}) isolates the retry-free planning signal.\\
+Iteration-weighted success rate (\texttt{IWSR}) discounts late wins by assigning a success at attempt k a contribution of \(1/k\). Retry gap (\texttt{SR - FASR}) measures how much of the final success rate depends on retries.\\ 
+Consequently, an eighth-attempt solution is still recorded as valid, but it is interpreted as much weaker evidence of planning competence than a first- or second-attempt solution. If no valid plan is found within the eight attempts, the scored artifact records that the run hit the iteration limit.
 
 \subsubsection{Prompt-Budget Control and Final Constraint}
-
 The previous raw answer and reasoning text can be included in the feedback
 prompt, but they are truncated with separate limits. This keeps the useful
 evidence from the failed attempt while avoiding a prompt dominated by old
@@ -420,8 +349,8 @@ outputs. After the diagnostic text is assembled, every branch ends with the same
 final constraint: the next answer must contain only the complete PDDL action
 sequence, one parenthesized action per line, with no explanation, headings,
 markdown, numbering, or comments.
-\subsection{Reasoning Validation}
 
+\subsection{Reasoning Validation}
 Some models expose a separate reasoning trace in addition to the final answer.
 The benchmark keeps the final answer as the official plan used for scoring, but
 it can also validate an action sequence extracted from the reasoning text. This

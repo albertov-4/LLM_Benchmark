@@ -345,21 +345,20 @@ def print_run_status(statuses: list[dict[str, Any]]) -> None:
     complete = complete_run_ids(statuses)
     incomplete = [status for status in statuses if not status.get("complete")]
 
-    print("\nRun completi:")
+    print("\nComplete Runs:")
     if complete:
         for run_id in complete:
             print(f"  - {run_id}")
     else:
-        print("  Nessun run completo trovato.")
+        print("  No complete runs found.")
 
-    print("\nRun incompleti:")
+    print("\nIncomplete Runs:")
     if incomplete:
         for status in incomplete:
             missing = ", ".join(status["missing"])
-            print(f"  - {status['run_id']} (manca: {missing})")
+            print(f"  - {status['run_id']} (missing: {missing})")
     else:
-        print("  Nessun run incompleto trovato.")
-
+        print("  No incomplete runs found.")
 
 def select_run_ids_interactively(
     statuses: list[dict[str, Any]],
@@ -370,34 +369,34 @@ def select_run_ids_interactively(
     if not complete:
         raise RuntimeError("No complete run ids are available in raw, parsed, and scored.")
 
-    do_merge = yes_no_prompt("Vuoi fare il merge logico di piu run?", default=False, input_fn=input_fn)
+    do_merge = yes_no_prompt("do you want to do the logic merge?", default=False, input_fn=input_fn)
     selected: list[str] = []
 
     if do_merge:
-        print("Inserisci i run id uno alla volta. Scrivi 'stop' per terminare.")
+        print("Enter run ids one at a time. Type 'stop' to finish.")
         while True:
             run_id = input_fn("Run id: ").strip()
             if run_id.lower() == "stop":
                 if selected:
                     break
-                print("Devi selezionare almeno un run completo prima di usare stop.")
+                print("You must select at least one complete run before using stop.")
                 continue
             if run_id not in complete:
-                print("Run id non valido o incompleto. Riprova.")
+                print("Run id is not valid or incomplete. Please try again.")
                 add_warning(warnings_out, "rejected_run_id", "Run id is not complete.", run_id=run_id)
                 continue
             if run_id in selected:
-                print("Run id gia selezionato.")
+                print("Run id already selected.")
                 continue
             selected.append(run_id)
-            print(f"Aggiunto: {run_id}")
+            print(f"Added: {run_id}")
     else:
         while True:
-            run_id = input_fn("Run id da analizzare: ").strip()
+            run_id = input_fn("Run id to analyze: ").strip()
             if run_id in complete:
                 selected = [run_id]
                 break
-            print("Run id non valido o incompleto. Riprova.")
+            print("Run id is not valid or incomplete. Please try again.")
             add_warning(warnings_out, "rejected_run_id", "Run id is not complete.", run_id=run_id)
 
     return do_merge, selected, warnings_out
@@ -408,9 +407,9 @@ def choose_output_paths_interactively(
     timestamp_file: str,
     input_fn: Callable[[str], str] = input,
 ) -> tuple[Path, Path, bool, str]:
-    use_custom_name = yes_no_prompt("Vuoi dare un nome diverso al file JSON?", default=False, input_fn=input_fn)
+    use_custom_name = yes_no_prompt("do you want to give a different name to the JSON file?", default=False, input_fn=input_fn)
     if use_custom_name:
-        raw_name = input_fn("Nome file JSON: ").strip()
+        raw_name = input_fn("JSON file name: ").strip()
         json_name = sanitize_json_filename(raw_name)
     else:
         json_name = f"advanced_planning_evaluation_{timestamp_file}.json"
@@ -1853,8 +1852,8 @@ def main() -> int:
     merged, selected_run_ids, selection_warnings = select_run_ids_interactively(run_statuses)
     warnings_out.extend(selection_warnings)
 
-    show_plots = yes_no_prompt("Vuoi mostrare i grafici alla fine dei calcoli?", default=False)
-    save_plots = yes_no_prompt("Vuoi salvare i grafici?", default=False)
+    show_plots = yes_no_prompt("DO you want to see the plots?", default=False)
+    save_plots = yes_no_prompt("DO you want to save the plots?", default=False)
 
     now = datetime.now().astimezone()
     timestamp_file = now.strftime("%Y-%m-%d_%H-%M-%S")

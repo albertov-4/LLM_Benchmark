@@ -468,7 +468,9 @@ def maybe_make_plots(
         path = None
         if save_plots:
             path = plots_dir / f"{name}.png"
-            fig.savefig(path, dpi=150, bbox_inches="tight")
+            width, height = fig.get_size_inches()
+            fig.set_size_inches(max(width, 16), max(height, 9), forward=True)
+            fig.savefig(path, dpi=150)
         saved.append(
             {
                 "name": name,

@@ -1,8 +1,17 @@
 \section{Results}
 
 \subsection{Is it achievable a valid plan? If yes how many iterations are necessary?}
-As already stated valid palns are achievable but the real question is how many iterationsmare necvassry, based on the literature (as already seen) we selected 8 iterations max and by defining the capacity profiles we can create the following table:
-\begin{table}[h!]
+As already stated valid plans are achievable but the real question is how many iterations are necessary, based on the literature (as already seen) and with the values obtained by the metrics use we find:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\linewidth]{../../results/final_evaluation_results/metrics_summary_table.png}
+    \caption{Metrics Summary}
+    \label{fig:metricstab}
+\end{figure}
+
+Based on these values we can therefore build the following table keeping in mind that we set max iterations value equal to 8:
+
+\begin{table}[H]
 \centering
 \begin{tabular}{l|l}
 
@@ -21,8 +30,48 @@ As already stated valid palns are achievable but the real question is how many i
 \end{tabular}
 \caption{Capacity Profile for each model}
 \end{table}
-The only LLMs capable of obtaining a reasonly good result, after a few iterations they are able to solve problems effectively.\\
-However the majority of LLMs is not able to solve problems effectively, 
+The only LLMs capable of obtaining a reasonably good result are \texttt{nvidia\_gpt\_oss\_120b} and \texttt{nvidia\_llama\_3\_3\_70b\_instruct} that after a few iterations are able to solve problems effectively.\\
+However the majority of LLMs is not able to solve problems effectively, ending up being classified in the \textit{No Grounding} profile.
 
 
-\subsection{Strengths and Weaknesses of our Repository}
+
+\subsection{Do the selected LLMs have reasoning capabilities?}
+Being the datasets we gathered during our runs not complete due to: problems interfacing with NVIDIA API, Generation errors caused by the models internal procedures and some drawbacks encountered on Leonardo HPC due to wrong dependencies in the setup we can't give a definitve answer to this question.\\
+However from the results we can see that some LLMs show partial reasoning-related behaviour, but not robust planning reasoning. Several models can produce syntactically valid PDDL actions and sometimes reach valid plans, especially with iterative repair; but low Success Rates, large retry gaps, and frequent validation failures show that they often fail to maintain a coherent world state over long action sequences. In the end the evaluated LLMs should be described as partial planners or repair-assisted generators rather than reliable autonomous planners.\\
+It is worth keeping in mind that we implemented the parsing from reasoning text to further asses the reasoning capabilities of the LLM, in fact as shown in the following table only a small percentage of the parsed plans is valid:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l|c|c}
+
+\hline
+\label{tab:llm_reasoning_plans}
+\textbf{Model} & \textbf{Valid Reasoning Plan} & \textbf{Valid reasoning but Invalid Output}\\
+\hline
+\texttt{nvidia\_gpt\_oss\_120b} & 44.4\% & 29.9\% \\
+\texttt{nvidia\_kimi\_k2\_6} & 1.9\% & 50.0\% \\
+\texttt{nvidia\_llama\_3\_3\_70b\_instruct} & -- & -- \\
+\texttt{nvidia\_nemotron\_3\_nano\_30b\_a3b} & 33.7\% & 27.8\% \\
+\texttt{nvidia\_nemotron\_3\_ultra\_550b\_a55b} & 50.0\% & 31.3\% \\
+\texttt{nvidia\_phi\_4\_mini\_instruct} & -- & -- \\
+\texttt{nvidia\_qwen\_3\_5\_122b\_a10b} & 27.9\% & 33.8\% \\
+\hline
+\end{tabular}
+\caption{Reasoning plan Table}
+\end{table}
+
+
+\subsection{Why and How could our Benchmark answer the previous questions?}
+The benchmark combines controlled PDDL tasks, formal validation, iterative repair and reasoning diagnostics; the selected domains cover different reasoning categories and difficulty levels, allowing model performance to be compared across both task type and complexity: each model output is stored in a traceable pipeline.\\
+Also correctness is not judged from the apparent plausibility of the answer: A case is counted as solved only when the final submitted action sequence is formally valid and reaches the goal; iteration-based metrics then show whether the model solved the task immediately or only after repair feedback, while reasoning-text diagnostics show whether a valid plan was present in the reasoning trace but not correctly transferred to the final answer.
+
+Therefore, the benchmark can measure both valid-plan discovery within a fixed iteration budget and the quality of the model's reasoning behaviour. It does not only report whether a model succeeds, but also helps explain how it succeeds or why it fails.
+
+
+
+
+
+
+
+
+

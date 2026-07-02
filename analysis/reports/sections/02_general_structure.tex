@@ -1,5 +1,5 @@
 \section{General Structure}
-The root folder contains various sub folders, specifically:
+The root folder contains various directories, specifically:
 \begin{itemize}
     \item analysis
     \item archive
@@ -8,15 +8,17 @@ The root folder contains various sub folders, specifically:
 \end{itemize}
 
 \subsection{analysis}
-This folder is used to gather all the datas useful for the production fo the report and the slides, contains the summary of the raw scores for the PDDL domains and the jupiter notebooks and the report.
+This folder contains post run analysis material, such as notebooks and derived files used to inspect and summarize the benchmark results. Raw outputs, final reports and slides are stored elsewhere.
 
 \subsection{archive}
-This folder contains all the material given us by the professor, specifically papers, a list of PDDL planning domains, two github repos given us as a reference and last a Quick PDDL guide written by us to help understand better the language.   
+This folder contains material provided by the professor, including research papaers, a list of PDDl planning domains, two reference Github repositories and a Quick PDDL guide that we wrote to better understand the main features of the language.  
 
 \subsection{Benchmark Framework structure}
-The folder Benchmark Framework is the core of all the work we've done. The main goal of this framework was to provide a easy to use and general testing platform to be employed when evaluating the performances of a LLM is needed, 
-The following pages are going to be used to show the folders and the structure of the framework:
+The Benchmark Framework folder is the core of our work. The main goal of this framework was to provide an easy-to-use and general testing platform to be employed for evaluating the performance of LLMs on PDDL planning tasks. 
+The following pages describe the folder structure of the framework and explain the role of its main components:
+
 \vspace{0.2cm}
+
 \begin{center}
         
 
@@ -57,58 +59,61 @@ The following pages are going to be used to show the folders and the structure o
             \end{forest}
 \end{center}
 
-\paragraph{docs} 
-Contains a single file for the model preparation which i useful because the benchmark can run on a local PC or on an HPC system such as Leonardo. The important operational rule is that GPU benchmark jobs should not download large model weights. Prepare Hugging Face models first, then run benchmarks from local files.
+\paragraph{\texttt{docs}}
+Contains operational documentation that is too specific for the main README or setup guide. In particular, it includes documentation for preparing Hugging Face model weights before running local on HPC. This is important because GPU benchmark jobs should not download large model weights during execution: models should be prepared first and then loaded from local files.
 
-\paragraph{evaluators}
-Provides tools for to understand, validate and measure the capabilities of LLMs to solve planning problems
+\paragraph{\texttt{evaluators}}
+Provides the shared evaluation layer used by all model backends and protocols. It includes tools for parsing model outputs, validating generated plans with VAL, classifying errors and computing comparable metrics across runs.
 
-\paragraph{Leonardo script}
-Contains specific scripts to launch and manage jobs on Leonardo HPC.
+\paragraph{\texttt{Leonardo_script}}
+Contains SLURM scripts used to launch, configure, and manage benchmark jobs on the Leonardo HPC system. These scripts handle environment activation, model preparation, cache checks and benchmark execution on compute nodes.
 
-\paragraph{models}
-Manages the communication with various LLMs, using "adapters" which creates a common interface for different backends like NVIDIA API.
+\paragraph{\texttt{models}}
+Manages model registries and backend adapters. The adapters provide a common interface for different execution backends, such as the NVIDIA API, local Hugging Face models.
 
-\paragraph{outputs}
-folder containing all the output from the LLMs, divided in 3 sub folders \textit{raw, parsed, scored} to better separate respectively the raw output from the model,PDDL extracted and strctured plans and validation and metrics results.
+\paragraph{\texttt{outputs}}
+Contains the generated benchmark artifacts. The outputs are divided into subfolders such as \textit{raw}, \textit{parsed}, \textit{scored}, and \textit{logs}. The \textit{raw} folder stores prompts and model responses, \textit{parsed} stores the extracted and structured plans, and \textit{scored} stores validation results, metrics and benchmark summaries.
 
-\paragraph{prompts}
-contains text files each one used to explain to the LLM the rules of the domain and how to manage the problem in order to solve it.
+\paragraph{\texttt{prompts}}
+Contains the text used to build the prompts given to the LLMs. These files define the general benchmark rules, task-specific instructions, examples and feedback templates used during iterative repair.
 
-\paragraph{protocols}
-defines different strategies for test execution, for example direct plan (which is one shot) or iteratoive repair.
+\paragraph{\texttt{protocols}}
+Defines the different benchmark execution strategies. For example, \texttt{direct_plan} asks the model to solve the problem in a single attempt, while \texttt{iterative_repair} allows multiple attempts using validator feedback.
 
-\paragraph{reporting}
-contains scripts for creation of teh plots used in the reports.
+\paragraph{\texttt{reporting}}
+Contains post-run analysis helpers used to generate plots and additional reports from the benchmark outputs. These scripts are used after the benchmark has finished, not during the main execution loop. This folder could be useful for future implementations.
 
-\paragraph{runner}
-contains scripts useful to launch a singlke test or the whole suite.
+\paragraph{\texttt{requirements}}
+Contains the Python dependency files used to configure the environments, especially for Leonardo HPC runs. Different requirement files are used for different model setups.
 
-\paragraph{scripts}
-contains scripts for the computation of the numerical score assigned to each domain.
+\paragraph{\texttt{runner}}
+Contains the orchestration logic used to launch a single benchmark case or an entire benchmark suite. It connects tasks, prompts, protocols, model adapters, parsing, validation, metrics and output writing.
 
-\paragraph{slurm logs}
-Used to gather information for debug when the benchmark runs on Leonardo HPC
+\paragraph{\texttt{scripts}}
+Contains utility scripts that support benchmark operation. For example, it includes scripts for preparing Hugging Face models before execution and for computing domain complexity scores.
 
-\paragraph{tasks}
-PDDL problems and related instances selected for the runs, the instances are divided in 3 categories \textit{easy, medium, hard}.
+\paragraph{\texttt{slurm_logs}}
+Stores stdout and stderr logs generated by SLURM jobs on Leonardo. These logs are mainly used for debugging HPC execution, environment setup and job-level failures.
 
-\paragraph{tests}
-Used to run tests in preparation for the real run of the benchmark.
+\paragraph{\texttt{tasks}}
+Contains the PDDL domains and problem instances used by the benchmark. The instances are divided into three difficulty levels: \textit{easy}, \textit{medium} and \textit{hard}.
 
-\paragraph{utils}
-contains executable for the validator to be used during the run of benchmark framework
+\paragraph{\texttt{tests}}
+Contains unit and integration-style tests used to verify the benchmark pipeline before running real experiments. These tests check components such as parsing, validation, model adapters, suite execution, and output generation.
 
-\paragraph{advanced planning evaluation.py}
-it reads benchmark artifacts from the output folder and writes a model-centric JSON report in the folder results.
+\paragraph{\texttt{utils}}
+Contains bundled VAL binaries and related validation utilities for Linux and Windows. These executables are used to validate PDDL plans during benchmark execution.
 
-\paragraph{clear outputs}
-is used to empty a folder during Leonardo tests
+\paragraph{\texttt{advanced_planning_evaluation_sp.py}}
+Reads benchmark artifacts from the \texttt{outputs} folder, computes additional analysis metrics and writes a model-centric JSON report under the \texttt{results} folder.
 
-\paragraph{run benchmark} 
-is the file that runs the whole sequence of tests\\
+\paragraph{\texttt{clear_outputs.py}}
+Safely clears generated benchmark outputs while preserving the folder structure and required placeholder files, used to clean folders during benchmark execution on Leonardo HPC.
 
-The framework and its structure is organized in this way in order to allow teh user to change fundamental parameters such as the numbers of iterations easily and effectively and then run the benchmark again with the modified parameters.
+\paragraph{\texttt{run_benchmark.py}}
+Is the main entry point used to run the benchmark suite. It parses command-line arguments, selects models, protocols, tasks, validators, output settings and then launches the benchmark execution pipeline.
+
+The framework is organized in this way to keep all the logic clearly separated. This modular structure makes it easier to modify important parameters, such as the selected models, protocols, task families, difficulty levels, or number of repair iterations and then rerun the benchmark with the updated configuration.
 
 \subsection{results}
 This folder contains all the plots and the output archive of all the analysis process; the outputs folder contains only raw datas the results folder contains the analysis done on the data. 

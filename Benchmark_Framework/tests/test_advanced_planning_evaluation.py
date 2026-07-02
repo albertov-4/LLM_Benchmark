@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock
 
 # ── import the module under test ──────────────────────────────────────────────
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-import advanced_planning_evaluation_sp as ape
+import Benchmark_Framework.advanced_planning_evaluation as ape
 from reporting import cot_alignment as cot
 from reporting import plots as reporting_plots
 

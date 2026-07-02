@@ -1,11 +1,9 @@
-Within-domain ranking and its direction rules, the per-domain heatmap normalisation caveat and the seven literature-grounded capability profiles with their NaN-aware assignment logic.
-
 A single overall leaderboard hides the most scientifically interesting fact about a model:\emph{where} it is good. This view documents the three machinery pieces that turn per-domain metrics into comparative claims, the Spearman domain-correlation matrix  and the seven literature-grounded capability profiles that convert those numbers into a named diagnosis.
 
 
 \subsubsection{Domain correlation: redundancy vs complementarity}
 
-The \code{domain\_correlation} plot is a model\(\times\)model Spearman \(\rho\) matrix built from each model's vector of per-domain success rates. Two models with \(\rho\)\(\approx\)1 succeed and fail on the same domains --- they are \emph{redundant} probes of capability. Two with low or negative \(\rho\) stress different things --- they are \emph{complementary}, and a benchmark wants both. It is a tool for curating the model set and the domain set, not for ranking.
+The \code{domain\_correlation} plot is a model\(\times\)model Spearman \(\rho\) matrix built from each model's vector of per-domain success rates. Two models with \(\rho\)\(\approx\)1 succeed and fail on the same domains - they are \emph{redundant} probes of capability. Two with low or negative \(\rho\) stress different things - they are \emph{complementary}, and a benchmark wants both. It is a tool for curating the model set and the domain set, not for ranking.
 
 \begin{lstlisting}
 sr_pivot = df_metrics.pivot_table(index="Model", columns="Domain", values="Success_Rate")
@@ -22,37 +20,12 @@ Spearman over success-rate vectors is only meaningful with several domains and s
 
 The \code{success\_rate\_heatmap} is the raw companion: model\(\times\)domain SR with no normalisation, so here unlike the rank heatmap cells \emph{are} comparable across the whole grid. Use it to spot empty columns (domains no model solved \(\rightarrow\) an infrastructure or difficulty problem, not a model problem) and empty rows (models that solved nothing).
 
-\subsubsection{The seven capability profiles}
+\subsubsection{The seven capability profiles and How a model is assigned a profile}
 
 The profiles are the taxonomy made formal: each is a conjunction of threshold conditions over
 \(\{SR,\allowbreak FASR,\allowbreak IWSR,\allowbreak RG,\allowbreak IHR,\allowbreak ER,\allowbreak PAS,\allowbreak CoT,\allowbreak p_{\mathrm{valid},k,\mathrm{flat}}\}\),, and each maps to a specific claim in the planning literature. They are the bridge from "here are nine numbers" to "this model is doing X".
 
-\begin{table}[h]\small
-\centering
-\begin{tabularx}{\linewidth}{@{}l I P@{}}
-\toprule
-Profile & Conditions & Interpretation \(\cdot\) reference\\
-\midrule
-\textbf{Genuine Planner} & \(\mathrm{SR}>0.70 \cdot \mathrm{FASR}>0.50 \cdot \mathrm{RG}<0.10 \cdot \mathrm{IHR}>0.90 \cdot \mathrm{CoT}>0.70\) & Reads the schema, solves first try, reasoning tracks the plan.\\ Strongest claim\\
-\addlinespace
-\textbf{Efficient Corrector} & \(\mathrm{SR}>0.50 \cdot \mathrm{FASR}<0.30 \cdot \lvert\mathrm{SR}-\mathrm{IWSR}\rvert\le 0.10 \cdot 0.10\le \mathrm{RG}\le 0.30\) & Rarely first-try, but repairs land early so IWSR stays near SR.\\ Stechly 2023 (verify via P(Valid|k))\\
-\addlinespace
-\textbf{Stochastic Searcher} & \(\mathrm{SR}\ge 0.30 \cdot \mathrm{FASR}<0.20 \cdot \mathrm{RG}>0.30\) \(\cdot\) [opt] \(P(\mathrm{Valid}\mid k)\) flat & Success inflated by retries; attempts behave like resampling.\\ Stechly 2023\\
-\addlinespace
-\textbf{Lucky Retriever} & \(\mathrm{SR}>0.60 \cdot \mathrm{FASR}>0.50 \cdot \mathrm{IHR}<0.30 \cdot \mathrm{CoT}<0.40\) & Solves from surface patterns; weak grounding, post-hoc reasoning.\\ Kambhampati 2024 \(\cdot\) Valmeekam obfuscation\\
-\addlinespace
-\textbf{Understander} & \(\mathrm{SR}<0.20 \cdot \mathrm{FASR}<0.10 \cdot \mathrm{ER}>0.70 \cdot \mathrm{IHR}>0.90 \cdot \mathrm{PAS}>0.70\) & Knows vocabulary \&local preconditions, fails long-horizon order.\\ Valmeekam Phase 2 \(\cdot\) Dziri 2023\\
-\addlinespace
-\textbf{Vocabulary-Only} & \(\mathrm{SR}<0.15 \cdot \mathrm{IHR}>0.90 \cdot 0.30\le \mathrm{ER}\le 0.70 \cdot \mathrm{PAS}<0.30\) & Legal action names, no coherent state-transition model.\\ Kambhampati 2024 \(\cdot\) Vafa 2024\\
-\addlinespace
-\textbf{No Grounding} & \(\mathrm{SR}\le 0.05 \cdot \mathrm{IHR}<0.60 \cdot \mathrm{ER}<0.30 \cdot \mathrm{PAS}<0.30\) & Not reading the formal domain at all; everything ungrounded.\\ Valmeekam 2023 \(\cdot\) McCoy 2024\\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsubsection{How a model is assigned a profile}
-
-Assignment is deliberately conservative. Every profile is evaluated; the \textbf{first exact match}(all required conditions met, none unavailable) wins. If nothing matches exactly the model is labelled \code{Mixed/Unclassified} and reported against its \emph{closest} profile --- the one with the highest matched-condition count, ties broken by fewest required conditions.
+Assignment is deliberately conservative. Every profile is evaluated and the \textbf{first exact match}(all required conditions met, none unavailable) wins. If nothing matches exactly the model is labelled \code{Mixed/Unclassified} and reported against its \emph{closest} profile - the one with the highest matched-condition count, ties broken by fewest required conditions.
 
 \begin{lstlisting}
 evaluations = [evaluate_profile_conditions(metrics, p) for p in PROFILE_DEFINITIONS]
@@ -64,13 +37,37 @@ else:
     assigned = exact["profile"]
 \end{lstlisting}
 
+\begin{table}[h]\small
+\centering
+\begin{tabularx}{\linewidth}{@{}l I P@{}}
+\toprule
+Profile & Conditions & Interpretation \(\cdot\) reference\\
+\midrule
+\textbf{Genuine Planner} & \(\mathrm{SR}>0.70 \cdot \mathrm{FASR}>0.50 \cdot \mathrm{RG}<0.10 \cdot \mathrm{IHR}>0.90 \cdot \mathrm{CoT}>0.70\) & Reads the schema, solves first try, reasoning tracks the plan. Strongest claim\\
+\addlinespace
+\textbf{Efficient Corrector} & \(\mathrm{SR}>0.50 \cdot \mathrm{FASR}<0.30 \cdot \lvert\mathrm{SR}-\mathrm{IWSR}\rvert\le 0.10 \cdot 0.10\le \mathrm{RG}\le 0.30\) & Rarely first-try, but repairs land early so IWSR stays near SR. Stechly 2023 (verify via P(Valid|k))\\
+\addlinespace
+\textbf{Stochastic Searcher} & \(\mathrm{SR}\ge 0.30 \cdot \mathrm{FASR}<0.20 \cdot \mathrm{RG}>0.30\) \(\cdot\) [opt] \(P(\mathrm{Valid}\mid k)\) flat & Success inflated by retries; attempts behave like resampling. Stechly 2023\\
+\addlinespace
+\textbf{Lucky Retriever} & \(\mathrm{SR}>0.60 \cdot \mathrm{FASR}>0.50 \cdot \mathrm{IHR}<0.30 \cdot \mathrm{CoT}<0.40\) & Solves from surface patterns; weak grounding, post-hoc reasoning. Kambhampati 2024 \(\cdot\) Valmeekam obfuscation\\
+\addlinespace
+\textbf{Understander} & \(\mathrm{SR}<0.20 \cdot \mathrm{FASR}<0.10 \cdot \mathrm{ER}>0.70 \cdot \mathrm{IHR}>0.90 \cdot \mathrm{PAS}>0.70\) & Knows vocabulary \&local preconditions, fails long-horizon order. Valmeekam Phase 2 \(\cdot\) Dziri 2023\\
+\addlinespace
+\textbf{Vocabulary-Only} & \(\mathrm{SR}<0.15 \cdot \mathrm{IHR}>0.90 \cdot 0.30\le \mathrm{ER}\le 0.70 \cdot \mathrm{PAS}<0.30\) & Legal action names, no coherent state-transition model. Kambhampati 2024 \(\cdot\) Vafa 2024\\
+\addlinespace
+\textbf{No Grounding} & \(\mathrm{SR}\le 0.05 \cdot \mathrm{IHR}<0.60 \cdot \mathrm{ER}<0.30 \cdot \mathrm{PAS}<0.30\) & Not reading the formal domain at all; everything ungrounded. Valmeekam 2023 \(\cdot\) McCoy 2024\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
 \begin{bmkeybox}{NaN-aware conditions: "unavailable" \(\neq\) "missing"}
 A condition whose metric is NaN (e.g. CoT when reasoning was never produced) is marked \emph{unavailable}, not \emph{failed}.
-This is what stops a model being thrown out of "Genuine Planner" merely because CoT could not be computed --- and it is why the report exposes the full matched/missing/unavailable breakdown per profile, so you can see exactly how close a model sat to each boundary rather than trusting a bare label.
+This is what stops a model being thrown out of "Genuine Planner" merely because CoT could not be computed - and it is why the report exposes the full matched/missing/unavailable breakdown per profile, so you can see exactly how close a model sat to each boundary rather than trusting a bare label.
 \end{bmkeybox}
 
 \begin{bmcavbox}{Profiles are thresholds, not ground truth}
-The cut-points (\(\mathrm{SR}>0.70\), \(\mathrm{IHR}>0.90\), ...) encode the literature's qualitative claims as hard numbers; they are defensible but not sacred. A model just under a boundary is reported as Mixed against its closest profile precisely so the threshold choice stays visible and auditable. the label as to be treated as hypothesis that the condition breakdown lets you check, not a verdict.
+The cut-points (\(\mathrm{SR}>0.70\), \(\mathrm{IHR}>0.90\), ...) encode the literature's qualitative claims as hard numbers; they are defensible but not sacred. A model just under a boundary is reported as Mixed against its closest profile precisely so the threshold choice stays visible and auditable. The label as to be treated as hypothesis that the condition breakdown lets you check, not a verdict.
 \end{bmcavbox}
 
 \subsubsection{Reading the metric set together: the diagnostic framework}

@@ -3,7 +3,7 @@ The analysis stage converts the three benchmark artifact layers into one canonic
 \begin{center}\small
 \begin{tabular}{@{}ccccc@{}}
 \toprule
-\textbf{3} & \textbf{1} & \textbf{8} & \textbf{27} & \textbf{7}\\
+\textbf{3} & \textbf{1} & \textbf{8} & \textbf{21} & \textbf{7}\\
 artifact layers & canonical DataFrame & aggregate tables & registered plots & capability profiles\\
 \bottomrule
 \end{tabular}
@@ -17,8 +17,7 @@ The pipeline has a fixed data path:
 \small
 \texttt{raw/} $\rightarrow$ \texttt{parsed/} $\rightarrow$ \texttt{scored/} $\rightarrow$ \texttt{df\_metrics} $\rightarrow$ \texttt{aggregate tables} $\rightarrow$ \texttt{plots + report.json}
 \end{center}
-
-\texttt{raw/} stores the original model generations, \texttt{parsed/} stores the extracted action sequences, and \texttt{scored/} stores the validation outcomes produced after VAL has checked the candidate plan. The analysis script joins these layers with the selected PDDL task files, so every row can be evaluated against the exact domain and problem that generated it.
+The analysis script joins these layers with the selected PDDL task files, so every row can be evaluated against the exact domain and problem that generated it.
 
 \begin{table}[H]\small
 \centering
@@ -43,9 +42,10 @@ Visualize and export & Generates the registered plots and serializes the report 
 
 \subsubsection{The canonical table: \texorpdfstring{\texttt{df\_metrics}}{df\_metrics}}
 
-\texttt{df\_metrics} is the central object of the analysis. It starts from the artifact rows and is horizontally extended with computed columns. Its grain is one benchmark instance, not one retry attempt. This is important because success rates, hallucination rates and executability scores are averaged over comparable units.
+\texttt{df\_metrics} is the central object of the analysis. It starts from the artifact rows and is horizontally extended with computed columns, its grain is one benchmark instance not one retry attempt.\\
+This is important because success rates, hallucination rates and executability scores are averaged over comparable units.
 
-The retry structure is still available: the loader preserves per-attempt lists in private columns, and only the metrics that need them, such as FASR, IWSR, iteration profiles and CoT alignment, read those lists.
+The retry structure is still available: the loader preserves per-attempt lists in private columns and only the metrics that need them, such as FASR, IWSR, iteration profiles and CoT alignment, read those lists.
 
 \begin{table}[H]\small
 \centering
@@ -68,6 +68,7 @@ Warnings & Records missing or malformed inputs without dropping rows.\\
 
 \subsubsection{\texorpdfstring{\texttt{PDDLSimulator}}{PDDLSimulator} role}
 
-Some metrics require more than the final VAL decision. A plan can be invalid because it fails immediately, because it follows legal actions in the wrong order, or because it invents a state that never existed. To separate these cases, the analysis uses a lightweight forward simulator over the parsed PDDL fragments.
+Some metrics require more than the final VAL decision. A plan can be invalid because it fails immediately, because it follows legal actions in the wrong order or because it invents a state that never existed; to separate these cases, the analysis uses a lightweight forward simulator over the parsed PDDL fragments.
 
-The simulator starts from the problem initial state, applies each known action step by step, and stops at the first unsatisfied precondition. If a missing proposition was true before, the error is classified as sequencing; if it was never true, it is classified as state fabrication. VAL remains the official correctness oracle; the simulator is a diagnostic layer for explaining invalid plans.
+The simulator starts from the problem initial state, applies each known action step by step and stops at the first unsatisfied precondition. If a missing proposition was true before, the error is classified as sequencing; if it was never true, it is classified as state fabrication.\\
+VAL remains the official correctness oracle: the simulator is a diagnostic layer for explaining invalid plans.

@@ -301,24 +301,92 @@
     \vspace{0.2cm}
     CoTaL checks for reasoning traces in the extracted plans. Therefore, it helps assess whether LLMs maintain consistency between what they reasoned about and what they ultimately generated.
 \end{frame}
+\begin{frame}{Capability Profiles}\scriptsize
+    \centering
+    \includegraphics[width=0.98\linewidth,height=0.35\textheight,keepaspectratio]{../../results/final_evaluation_results/metrics_summary_table.png}
+
+    \vspace{0.12cm}
+    Based on the aggregate metrics and the eight-attempt limit, the final profiles are:
+
+    \vspace{0.08cm}
+    \renewcommand{\arraystretch}{1.03}
+    \begin{tabularx}{0.86\textwidth}{l>{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Model} & \textbf{Assigned profile} \\
+        \midrule
+        GPT-OSS 120B & Efficient Corrector \\
+        Kimi K2.6 & No Grounding \\
+        Llama 3.3 70B & Efficient Corrector \\
+        Nemotron Nano & No Grounding \\
+        Nemotron Ultra & No Grounding \\
+        Phi-4 Mini & No Grounding \\
+        Qwen 3.5 122B & No Grounding \\
+        \bottomrule
+    \end{tabularx}
+
+    \vspace{0.12cm}
+    \raggedright
+     Based on the data we gathered, only GPT-OSS 120B and Llama 3.3 70B obtain a meaningful profile.
+\end{frame}
+
+\begin{frame}{Reasoning Plans Do Not Always Become Final Plans}\scriptsize
+    The reasoning trace can contain a valid plan even when the submitted final output remains invalid.
+
+    \vspace{0.15cm}
+    \centering
+    \renewcommand{\arraystretch}{1.15}
+    \begin{tabularx}{0.92\textwidth}{>{\raggedright\arraybackslash}Xcc}
+        \toprule
+        \textbf{Model} & \textbf{Valid reasoning plan} & \textbf{Valid reasoning, invalid output} \\
+        \midrule
+        GPT-OSS 120B & 44.4\% & 29.9\% \\
+        Kimi K2.6 & 1.9\% & 50.0\% \\
+        Llama 3.3 70B & -- & -- \\
+        Nemotron Nano & 33.7\% & 27.8\% \\
+        Nemotron Ultra & 50.0\% & 31.3\% \\
+        Phi-4 Mini & -- & -- \\
+        Qwen 3.5 122B & 27.9\% & 33.8\% \\
+        \bottomrule
+    \end{tabularx}
+
+    \vspace{0.25cm}
+    \raggedright
+    This separates reasoning-related behaviour from reliable autonomous planning.
+\end{frame}
 \section{Conclusions}
 
-\begin{frame}{Conclusions and Future Work}\footnotesize
-    \textbf{Main conclusion:} LLMs can sometimes solve PDDL tasks, but robust long-horizon planning remains fragile.
+\begin{frame}{What We Can Conclude}\footnotesize
+    \textbf{Main conclusion:} LLMs can sometimes solve PDDL tasks, but robust long-horizon and goal-directed planning remains fragile.
 
     \vspace{0.3cm}
     \begin{itemize}
-        \item The benchmark provides a reproducible pipeline from generation to formal validation.
-        \item Current models often behave as repair-assisted generators rather than deterministic planners.
-        \item Failures are diagnosable through executability, hallucination, PAS, retry behavior and CoTaL.
+        \item The benchmark measures both valid-plan discovery and reasoning behaviour.
+        \item Many failures are not syntax problems: models often produce locally plausible actions without maintaining a coherent world state.
+        \item The gap between first-attempt success, final success and IWSR shows that many successes depend on repair.
+        \item Current models are better described as partial planners or repair-assisted generators than as reliable autonomous planners.
     \end{itemize}
+\end{frame}
 
-    \vspace{0.25cm}
-    \textbf{Next steps:}
+\begin{frame}{Study Limitations}\footnotesize
+    The conclusions should be read with three practical limits in mind:
+
+    \vspace{0.3cm}
     \begin{itemize}
-        \item expand the domain set and model matrix;
-        \item test stronger feedback strategies;
-        \item deepen reasoning-trace analysis across domains and releases.
+        \item The collected datasets are not fully complete because of NVIDIA API issues, generation errors and Leonardo setup constraints.
+        \item Model performance is tied to the specific prompts and repair strategy used in the benchmark.
+        \item LLM calls are stateless across iterations, so useful memory must be rebuilt through explicit and useful feedback.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Future Work}\footnotesize
+    The benchmark is modular enough to support more targeted follow-up studies:
+
+    \vspace{0.3cm}
+    \begin{itemize}
+        \item test one reasoning category at a time while gradually increasing task difficulty;
+        \item improve feedback prompts with precise precondition-failure information;
+        \item evaluate a broader model matrix and compare multiple releases of the same model;
+        \item use the stored artifacts for deeper correlation studies across failures, domains and model families.
     \end{itemize}
 \end{frame}
 
